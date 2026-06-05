@@ -1,0 +1,192 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="card">
+    <h2>Dashboard</h2>
+    <div class="grid">
+        <div class="stat-card">
+            <h3>{{ stats.total_channels }}</h3>
+            <p>Active Channels</p>
+        </div>
+        <div class="stat-card">
+            <h3>{{ stats.total_messages }}</h3>
+            <p>Total Messages</p>
+        </div>
+        <div class="stat-card">
+            <h3>{{ stats.total_jobs }}</h3>
+            <p>Jobs Found</p>
+        </div>
+        <div class="stat-card">
+            <h3>{{ stats.unreviewed_jobs }}</h3>
+            <p>Unreviewed</p>
+        </div>
+    </div>
+</div>
+
+<div class="card">
+    <h2>Quick Actions</h2>
+    <div style="display: flex; gap: 1rem; flex-wrap: wrap;">
+        <button class="btn btn-success" onclick="searchAll()">
+            Search All Channels
+        </button>
+        <button class="btn btn-warning" onclick="reanalyzeMessages()">
+            Re-analyze Queued Messages
+        </button>
+        <a href="/channels" class="btn btn-primary">Manage Channels</a>
+        <a href="/jobs" class="btn btn-primary">View All Jobs</a>
+    </div>
+    <div id="search-status" style="margin-top: 1rem; display: none;"></div>
+</div>
+
+<div class="card">
+    <h2>Channels</h2>
+    {% if channels %}
+        <table>
+            <thead>
+                <tr>
+                    <th>Channel</th>
+                    <th>Messages</th>
+                    <th>Jobs</th>
+                    <th>Actions</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for channel in channels %}
+                <tr>
+                    <td>
+                        <strong>{{ channel.username }}</strong>
+                        {% if channel.name %}<br><small>{{ channel.name }}</small>{% endif %}
+                    </td>
+                    <td>{{ channel.messages|length }}</td>
+                    <td>{{ channel.jobs|length }}</td>
+                    <td>
+                        <button class="btn btn-primary" onclick="searchChannel({{ channel.id }})">
+                            Search
+                        </button>
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    {% else %}
+        <p>No channels configured. <a href="/channels">Add your first channel</a>.</p>
+    {% endif %}
+</div>
+
+{% if recent_jobs %}
+<div class="card">
+    <h2>Recent Jobs</h2>
+    {% for job in recent_jobs[:5] %}
+    <div class="job-card">
+        <h3>
+            <a href="/jobs/{{ job.id }}" style="text-decoration: none; color: inherit;">
+                {% if job.ai_title %}{{ job.ai_title }}{% else %}Untitled Job{% endif %}
+            </a>
+            <span class="badge badge-{{ job.category }}">{{ job.category }}</span>
+        </h3>
+        <div class="job-meta">
+            {% if job.ai_company %}<span>Company: {{ job.ai_company }}</span>{% endif %}
+            {% if job.ai_location %}<span>Location: {{ job.ai_location }}</span>{% endif %}
+            {% if job.ai_remote %}<span style="color: #27ae60;">Remote</span>{% endif %}
+            <span>From: {{ job.channel.username }}</span>
+        </div>
+        {% if job.ai_summary %}
+        <p>{{ job.ai_summary[:150] }}{% if job.ai_summary|length > 150 %}...{% endif %}</p>
+        {% endif %}
+    </div>
+    {% endfor %}
+    <a href="/jobs" class="btn btn-secondary">View All Jobs</a>
+</div>
+{% endif %}
+{% endblock %}
+
+{% block extra_js %}
+<script>
+function showStatus(message, isError = false) {
+    const status = document.getElementById('search-status');
+    status.className = 'alert ' + (isError ? 'alert-error' : 'alert-success');
+    status.textContent = message;
+    status.style.display = 'block';
+    setTimeout(() => status.style.display = 'none', 5000);
+}
+
+async function searchChannel(channelId) {
+    const btn = event.target;
+    btn.classList.add('searching');
+    btn.disabled = true;
+    btn.textContent = 'Searching...';
+    
+    try {
+        const response = await fetch(`/search/${channelId}`, { method: 'POST' });
+        const data = await response.json();
+        
+        if (data.success) {
+            showStatus(`Fetched ${data.fetched} messages, found ${data.jobs_found} jobs`);
+            setTimeout(() => location.reload(), 1500);
+        } else {
+            showStatus('Error: ' + (data.error || 'Unknown error'), true);
+        }
+    } catch (e) {
+        showStatus('Error: ' + e.message, true);
+    } finally {
+        btn.classList.remove('searching');
+        btn.disabled = false;
+        btn.textContent = 'Search';
+    }
+}
+
+async function searchAll() {
+    const btn = event.target;
+    btn.classList.add('searching');
+    btn.disabled = true;
+    btn.textContent = 'Searching all channels...';
+
+    try {
+        const response = await fetch('/search-all', { method: 'POST' });
+        const data = await response.json();
+
+        if (data.success) {
+            let totalJobs = 0;
+            data.results.forEach(r => {
+                if (r.result.success) totalJobs += r.result.jobs_found || 0;
+            });
+            showStatus(`Search complete! Found ${totalJobs} total jobs`);
+            setTimeout(() => location.reload(), 2000);
+        } else {
+            showStatus('Error: ' + (data.error || 'Unknown error'), true);
+        }
+    } catch (e) {
+        showStatus('Error: ' + e.message, true);
+    } finally {
+        btn.classList.remove('searching');
+        btn.disabled = false;
+        btn.textContent = 'Search All Channels';
+    }
+}
+
+async function reanalyzeMessages() {
+    const btn = event.target;
+    btn.classList.add('searching');
+    btn.disabled = true;
+    btn.textContent = 'Re-analyzing...';
+
+    try {
+        const response = await fetch('/api/reanalyze', { method: 'POST' });
+        const data = await response.json();
+
+        if (data.success) {
+            showStatus(`Re-analysis complete! Processed ${data.reanalyzed} messages`);
+            setTimeout(() => location.reload(), 1500);
+        } else {
+            showStatus('Error: ' + (data.error || 'Unknown error'), true);
+        }
+    } catch (e) {
+        showStatus('Error: ' + e.message, true);
+    } finally {
+        btn.classList.remove('searching');
+        btn.disabled = false;
+        btn.textContent = 'Re-analyze Queued Messages';
+    }
+}
+</script>
+{% endblock %}

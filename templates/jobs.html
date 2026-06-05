@@ -1,0 +1,94 @@
+{% extends "base.html" %}
+
+{% block title %}Jobs - Telegram Job Scraper{% endblock %}
+
+{% block content %}
+<div class="card">
+    <h2>Job Listings</h2>
+    <div class="filters">
+        <select id="category-filter" onchange="applyFilters()">
+            <option value="">All Categories</option>
+            {% for cat in categories %}
+            <option value="{{ cat }}" {% if selected_category == cat %}selected{% endif %}>{{ cat }}</option>
+            {% endfor %}
+        </select>
+        <select id="remote-filter" onchange="applyFilters()">
+            <option value="">All Locations</option>
+            <option value="true" {% if remote_filter == True %}selected{% endif %}>Remote Only</option>
+            <option value="false" {% if remote_filter == False %}selected{% endif %}>Non-Remote</option>
+        </select>
+        <button class="btn btn-secondary" onclick="clearFilters()">Clear</button>
+    </div>
+</div>
+
+{% if jobs %}
+    {% for job in jobs %}
+    <div class="job-card">
+        <h3>
+            <a href="/jobs/{{ job.id }}" style="text-decoration: none; color: inherit;">
+                {% if job.ai_title %}{{ job.ai_title }}{% else %}Untitled Job{% endif %}
+            </a>
+            {% if job.category == 'job_posting' %}
+                <span class="badge badge-job">Job</span>
+            {% elif job.category == 'remote_work' %}
+                <span class="badge badge-remote">Remote</span>
+            {% elif job.category == 'contact_info' %}
+                <span class="badge badge-contact">Contact</span>
+            {% endif %}
+            {% if job.confidence %}
+                <span class="badge badge-info">{{ job.confidence }}</span>
+            {% endif %}
+        </h3>
+        <div class="job-meta">
+            {% if job.ai_company %}<span><strong>Company:</strong> {{ job.ai_company }}</span>{% endif %}
+            {% if job.ai_role_type %}<span><strong>Role:</strong> {{ job.ai_role_type }}</span>{% endif %}
+            {% if job.ai_skills %}<span><strong>Skills:</strong> {{ job.ai_skills[:3]|join(', ') }}{% if job.ai_skills|length > 3 %}...{% endif %}</span>{% endif %}
+            {% if job.ai_location %}<span><strong>Location:</strong> {{ job.ai_location }}</span>{% endif %}
+            {% if job.ai_remote %}<span style="color: #27ae60;">Remote</span>{% endif %}
+            <span><strong>From:</strong> {{ job.channel.username }}</span>
+            <span><strong>Posted:</strong> {{ job.message.date.strftime('%Y-%m-%d') if job.message.date else 'Unknown' }}</span>
+        </div>
+        {% if job.ai_summary %}
+        <p style="margin-top: 0.5rem;">{{ job.ai_summary[:200] }}{% if job.ai_summary|length > 200 %}...{% endif %}</p>
+        {% endif %}
+        {% if job.ai_contact %}
+        <p style="margin-top: 0.5rem; color: #3498db;"><strong>Contact:</strong> {{ job.ai_contact }}</p>
+        {% endif %}
+        <div style="margin-top: 1rem;">
+            <a href="/jobs/{{ job.id }}" class="btn btn-primary">View Details</a>
+            {% if not job.is_reviewed %}
+            <span class="badge badge-warning">Needs Review</span>
+            {% elif job.is_approved %}
+            <span class="badge badge-success">Approved</span>
+            {% else %}
+            <span class="badge badge-secondary">Rejected</span>
+            {% endif %}
+        </div>
+    </div>
+    {% endfor %}
+{% else %}
+    <div class="card">
+        <p>No jobs found. Try searching some channels first.</p>
+        <a href="/channels" class="btn btn-primary">Go to Channels</a>
+    </div>
+{% endif %}
+{% endblock %}
+
+{% block extra_js %}
+<script>
+function applyFilters() {
+    const category = document.getElementById('category-filter').value;
+    const remote = document.getElementById('remote-filter').value;
+    
+    let url = '/jobs?';
+    if (category) url += 'category=' + encodeURIComponent(category) + '&';
+    if (remote) url += 'remote=' + encodeURIComponent(remote);
+    
+    window.location.href = url;
+}
+
+function clearFilters() {
+    window.location.href = '/jobs';
+}
+</script>
+{% endblock %}

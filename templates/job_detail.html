@@ -1,0 +1,148 @@
+{% extends "base.html" %}
+
+{% block title %}{{ job.ai_title or 'Job Details' }} - Telegram Job Scraper{% endblock %}
+
+{% block content %}
+<div class="card">
+    <div style="display: flex; justify-content: space-between; align-items: start;">
+        <div>
+            <h2>{{ job.ai_title or 'Untitled Job' }}</h2>
+            <div style="margin-top: 0.5rem;">
+                {% if job.category == 'job_posting' %}
+                    <span class="badge badge-job">Job Posting</span>
+                {% elif job.category == 'remote_work' %}
+                    <span class="badge badge-remote">Remote Work</span>
+                {% elif job.category == 'contact_info' %}
+                    <span class="badge badge-contact">Contact Info</span>
+                {% else %}
+                    <span class="badge badge-secondary">{{ job.category }}</span>
+                {% endif %}
+                <span class="badge badge-info">Confidence: {{ job.confidence or 'unknown' }}</span>
+                {% if job.is_reviewed %}
+                    {% if job.is_approved %}
+                        <span class="badge badge-success">Approved</span>
+                    {% else %}
+                        <span class="badge badge-secondary">Rejected</span>
+                    {% endif %}
+                {% else %}
+                    <span class="badge badge-warning">Needs Review</span>
+                {% endif %}
+            </div>
+        </div>
+        <a href="/jobs" class="btn btn-secondary">Back to Jobs</a>
+    </div>
+</div>
+
+<div class="grid" style="grid-template-columns: 2fr 1fr;">
+    <div>
+        <div class="card">
+            <h3>Job Details</h3>
+            <table>
+                {% if job.ai_company %}
+                <tr><td><strong>Company</strong></td><td>{{ job.ai_company }}</td></tr>
+                {% endif %}
+                {% if job.ai_company_link %}
+                <tr><td><strong>Company Link</strong></td><td><a href="{{ job.ai_company_link }}" target="_blank">{{ job.ai_company_link }}</a></td></tr>
+                {% endif %}
+                {% if job.ai_location %}
+                <tr><td><strong>Location</strong></td><td>{{ job.ai_location }}</td></tr>
+                {% endif %}
+                <tr><td><strong>Remote</strong></td><td>{{ 'Yes' if job.ai_remote else ('No' if job.ai_remote is false else 'Unknown') }}</td></tr>
+                {% if job.ai_role_type %}
+                <tr><td><strong>Role Type</strong></td><td>{{ job.ai_role_type }}</td></tr>
+                {% endif %}
+                {% if job.ai_skills %}
+                <tr><td><strong>Skills</strong></td><td>{{ job.ai_skills|join(', ') }}</td></tr>
+                {% endif %}
+                {% if job.ai_contact %}
+                <tr><td><strong>Contact</strong></td><td>{{ job.ai_contact }}</td></tr>
+                {% endif %}
+                {% if job.ai_contact_type %}
+                <tr><td><strong>Contact Type</strong></td><td>{{ job.ai_contact_type }}</td></tr>
+                {% endif %}
+                <tr><td><strong>Source Channel</strong></td><td>{{ job.channel.username }}</td></tr>
+                <tr><td><strong>Posted Date</strong></td><td>{{ job.message.date.strftime('%Y-%m-%d %H:%M') if job.message.date else 'Unknown' }}</td></tr>
+                <tr><td><strong>Analyzed</strong></td><td>{{ job.analyzed_at.strftime('%Y-%m-%d %H:%M') if job.analyzed_at else 'Unknown' }}</td></tr>
+            </table>
+        </div>
+
+        {% if job.ai_summary %}
+        <div class="card">
+            <h3>Summary</h3>
+            <p>{{ job.ai_summary }}</p>
+        </div>
+        {% endif %}
+
+        <div class="card">
+            <h3>Original Message</h3>
+            <div style="background: #f8f9fa; padding: 1rem; border-radius: 4px; white-space: pre-wrap;">
+                {{ job.message.text or 'No text content' }}
+            </div>
+            {% if job.message.has_image %}
+            <p style="margin-top: 0.5rem; color: #e67e22;"><strong>This message contains an image</strong></p>
+            {% endif %}
+        </div>
+    </div>
+
+    <div>
+        <div class="card">
+            <h3>Review Job</h3>
+            <form id="review-form" onsubmit="submitReview(event)">
+                <div class="form-group">
+                    <label>Status</label>
+                    <select name="is_approved">
+                        <option value="true" {% if job.is_approved %}selected{% endif %}>Approve</option>
+                        <option value="false" {% if not job.is_approved and job.is_reviewed %}selected{% endif %}>Reject</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label>Notes</label>
+                    <textarea name="notes" rows="4" placeholder="Add your notes here...">{{ job.notes or '' }}</textarea>
+                </div>
+                <button type="submit" class="btn btn-success">Save Review</button>
+            </form>
+            <div id="review-status" style="margin-top: 1rem; display: none;"></div>
+        </div>
+
+        <div class="card">
+            <h3>Quick Actions</h3>
+            <a href="/jobs" class="btn btn-secondary" style="display: block; margin-bottom: 0.5rem;">All Jobs</a>
+            <a href="/channels" class="btn btn-secondary" style="display: block;">Manage Channels</a>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+function showStatus(message, isError = false) {
+    const status = document.getElementById('review-status');
+    status.className = 'alert ' + (isError ? 'alert-error' : 'alert-success');
+    status.textContent = message;
+    status.style.display = 'block';
+    setTimeout(() => status.style.display = 'none', 3000);
+}
+
+async function submitReview(event) {
+    event.preventDefault();
+    const form = event.target;
+    const formData = new FormData(form);
+    
+    try {
+        const response = await fetch('/jobs/{{ job.id }}/review', {
+            method: 'POST',
+            body: formData
+        });
+        
+        if (response.ok) {
+            showStatus('Review saved!');
+            setTimeout(() => location.reload(), 1000);
+        } else {
+            showStatus('Error saving review', true);
+        }
+    } catch (e) {
+        showStatus('Error: ' + e.message, true);
+    }
+}
+</script>
+{% endblock %}
