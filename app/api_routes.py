@@ -5,7 +5,7 @@ from fastapi import HTTPException, Depends, Form
 from sqlalchemy.orm import Session
 
 from app.connection import get_db
-from app.models import Channel, Job, Message, AnalysisRun
+from app.models import Channel, Job, Developer, Message, AnalysisRun
 from app.tasks import fetch_and_store_messages, analyze_messages
 
 
@@ -68,6 +68,7 @@ def register_api_routes(app):
     async def reanalyze_messages(db: Session = Depends(get_db)):
         """Re-analyze messages that were marked for re-analysis."""
         from telegram_processor import analyze_message
+        from app.tasks import should_analyze_message
         from datetime import datetime
 
         # Get messages that need re-analysis
@@ -77,9 +78,17 @@ def register_api_routes(app):
             return {"success": True, "reanalyzed": 0, "message": "No messages need re-analysis"}
 
         reanalyzed_count = 0
+        skipped_count = 0
 
         for message in messages:
             if not message.text:
+                continue
+
+            # Quick keyword pre-filter
+            if not should_analyze_message(message.text):
+                skipped_count += 1
+                message.needs_reanalysis = False
+                db.commit()
                 continue
 
             analysis = await analyze_message(message.text)
@@ -88,53 +97,60 @@ def register_api_routes(app):
                 continue
 
             category = analysis.get("category", "other")
-            extracted = analysis.get("extracted", {})
+            confidence = analysis.get("confidence")
+            translated_text = analysis.get("translated_text")
 
-            # Check if job already exists
-            existing_job = db.query(Job).filter(Job.message_id == message.id).first()
+            # Delete existing records for this message
+            db.query(Job).filter(Job.message_id == message.id).delete()
+            db.query(Developer).filter(Developer.message_id == message.id).delete()
 
-            if existing_job:
-                # Update existing job
-                existing_job.category = category
-                existing_job.confidence = analysis.get("confidence")
-                existing_job.ai_title = extracted.get("title")
-                existing_job.ai_company = extracted.get("company")
-                existing_job.ai_company_link = extracted.get("company_link")
-                existing_job.ai_location = extracted.get("location")
-                existing_job.ai_remote = extracted.get("remote")
-                existing_job.ai_role_type = extracted.get("role_type")
-                existing_job.ai_skills = extracted.get("skills", [])
-                existing_job.ai_contact = extracted.get("contact")
-                existing_job.ai_contact_type = extracted.get("contact_type")
-                existing_job.ai_summary = extracted.get("summary")
-                existing_job.analyzed_at = datetime.utcnow()
-            else:
-                # Create new job
+            # Create new record based on category
+            if category == "job_posting":
+                job_data = analysis.get("job_posting", {})
                 job = Job(
                     message_id=message.id,
                     channel_id=message.channel_id,
-                    category=category,
-                    confidence=analysis.get("confidence"),
-                    ai_title=extracted.get("title"),
-                    ai_company=extracted.get("company"),
-                    ai_company_link=extracted.get("company_link"),
-                    ai_location=extracted.get("location"),
-                    ai_remote=extracted.get("remote"),
-                    ai_role_type=extracted.get("role_type"),
-                    ai_skills=extracted.get("skills", []),
-                    ai_contact=extracted.get("contact"),
-                    ai_contact_type=extracted.get("contact_type"),
-                    ai_summary=extracted.get("summary"),
+                    confidence=confidence,
+                    translated_text=translated_text,
+                    title=job_data.get("title"),
+                    company=job_data.get("company"),
+                    company_link=job_data.get("company_link"),
+                    location=job_data.get("location"),
+                    is_remote=job_data.get("is_remote"),
+                    role_type=job_data.get("role_type"),
+                    skills=job_data.get("skills", []),
+                    contact=job_data.get("contact"),
+                    contact_type=job_data.get("contact_type"),
+                    summary=job_data.get("summary"),
                 )
                 db.add(job)
+            elif category == "personal_info":
+                pi_data = analysis.get("personal_info", {})
+                developer = Developer(
+                    message_id=message.id,
+                    channel_id=message.channel_id,
+                    confidence=confidence,
+                    translated_text=translated_text,
+                    name=pi_data.get("name"),
+                    skills=pi_data.get("skills", []),
+                    experience=pi_data.get("experience"),
+                    portfolio=pi_data.get("portfolio"),
+                    github=pi_data.get("github"),
+                    linkedin=pi_data.get("linkedin"),
+                    contact=pi_data.get("contact"),
+                    contact_type=pi_data.get("contact_type"),
+                    looking_for_work=pi_data.get("looking_for_work"),
+                    summary=pi_data.get("summary"),
+                )
+                db.add(developer)
+            # "other" category - no record created
 
             # Clear re-analysis flag
             message.needs_reanalysis = False
+            db.commit()  # Commit after each message for real-time visibility
             reanalyzed_count += 1
 
-        db.commit()
-
-        return {"success": True, "reanalyzed": reanalyzed_count}
+        return {"success": True, "reanalyzed": reanalyzed_count, "skipped": skipped_count}
 
     @app.post("/search/{channel_id}")
     async def search_channel(channel_id: int, db: Session = Depends(get_db)):
@@ -216,7 +232,6 @@ def register_api_routes(app):
 
     @app.get("/api/jobs")
     async def api_jobs(
-        category: Optional[str] = None,
         remote: Optional[bool] = None,
         limit: int = 50,
         offset: int = 0,
@@ -225,11 +240,8 @@ def register_api_routes(app):
         """Get jobs as JSON."""
         query = db.query(Job).join(Channel).filter(Channel.is_active == True)
 
-        if category:
-            query = query.filter(Job.category == category)
-
         if remote is not None:
-            query = query.filter(Job.ai_remote == remote)
+            query = query.filter(Job.is_remote == remote)
 
         total = query.count()
         jobs = query.order_by(Job.analyzed_at.desc()).offset(offset).limit(limit).all()
@@ -240,6 +252,65 @@ def register_api_routes(app):
             "limit": limit,
             "offset": offset,
         }
+
+    @app.get("/api/developers")
+    async def api_developers(
+        looking_for_work: Optional[bool] = None,
+        limit: int = 50,
+        offset: int = 0,
+        db: Session = Depends(get_db),
+    ):
+        """Get developers as JSON."""
+        query = db.query(Developer).join(Channel).filter(Channel.is_active == True)
+
+        if looking_for_work is not None:
+            query = query.filter(Developer.looking_for_work == looking_for_work)
+
+        total = query.count()
+        developers = query.order_by(Developer.analyzed_at.desc()).offset(offset).limit(limit).all()
+
+        return {
+            "developers": [dev.to_dict() for dev in developers],
+            "total": total,
+            "limit": limit,
+            "offset": offset,
+        }
+
+    @app.post("/api/jobs/{job_id}/toggle-applied")
+    async def toggle_job_applied(job_id: int, db: Session = Depends(get_db)):
+        """Toggle applied status for a job."""
+        from datetime import datetime
+        
+        job = db.query(Job).get(job_id)
+        if not job:
+            raise HTTPException(status_code=404, detail="Job not found")
+
+        job.is_applied = not job.is_applied
+        if job.is_applied:
+            job.applied_at = datetime.utcnow()
+        else:
+            job.applied_at = None
+        db.commit()
+
+        return {"success": True, "is_applied": job.is_applied}
+
+    @app.post("/api/developers/{developer_id}/toggle-contacted")
+    async def toggle_developer_contacted(developer_id: int, db: Session = Depends(get_db)):
+        """Toggle contacted status for a developer."""
+        from datetime import datetime
+        
+        developer = db.query(Developer).get(developer_id)
+        if not developer:
+            raise HTTPException(status_code=404, detail="Developer not found")
+
+        developer.is_contacted = not developer.is_contacted
+        if developer.is_contacted:
+            developer.contacted_at = datetime.utcnow()
+        else:
+            developer.contacted_at = None
+        db.commit()
+
+        return {"success": True, "is_contacted": developer.is_contacted}
 
     @app.get("/api/messages")
     async def api_messages(
@@ -267,16 +338,82 @@ def register_api_routes(app):
     @app.get("/api/stats")
     async def api_stats(db: Session = Depends(get_db)):
         """Get dashboard statistics."""
+        from telegram_processor import is_ollama_available
+        from datetime import datetime, timedelta
+        
+        ollama_available = await is_ollama_available()
+        
+        # Count pending analysis
+        pending_analysis = db.query(Message).outerjoin(Job).outerjoin(Developer).filter(
+            (Job.id == None) & (Developer.id == None),
+            Message.text != None,
+        ).count()
+        
+        # Count by type
+        job_postings = db.query(Job).count()
+        developers = db.query(Developer).count()
+        
+        # Application stats with time periods
+        now = datetime.utcnow()
+        one_day_ago = now - timedelta(days=1)
+        one_week_ago = now - timedelta(weeks=1)
+        one_month_ago = now - timedelta(days=30)
+        
+        # Job applications
+        total_applied_jobs = db.query(Job).filter(Job.is_applied == True).count()
+        daily_applied_jobs = db.query(Job).filter(
+            Job.is_applied == True,
+            Job.applied_at >= one_day_ago
+        ).count()
+        weekly_applied_jobs = db.query(Job).filter(
+            Job.is_applied == True,
+            Job.applied_at >= one_week_ago
+        ).count()
+        monthly_applied_jobs = db.query(Job).filter(
+            Job.is_applied == True,
+            Job.applied_at >= one_month_ago
+        ).count()
+        
+        # Developer contacts
+        total_contacted_developers = db.query(Developer).filter(Developer.is_contacted == True).count()
+        daily_contacted_developers = db.query(Developer).filter(
+            Developer.is_contacted == True,
+            Developer.contacted_at >= one_day_ago
+        ).count()
+        weekly_contacted_developers = db.query(Developer).filter(
+            Developer.is_contacted == True,
+            Developer.contacted_at >= one_week_ago
+        ).count()
+        monthly_contacted_developers = db.query(Developer).filter(
+            Developer.is_contacted == True,
+            Developer.contacted_at >= one_month_ago
+        ).count()
+        
         return {
             "total_channels": db.query(Channel).filter(Channel.is_active == True).count(),
             "total_messages": db.query(Message).count(),
-            "total_jobs": db.query(Job).filter(
-                Job.category.in_(["job_posting", "remote_work"])
-            ).count(),
-            "unreviewed_jobs": db.query(Job).filter(
-                Job.is_reviewed == False,
-                Job.category.in_(["job_posting", "remote_work"]),
-            ).count(),
+            "job_postings": job_postings,
+            "developers": developers,
+            "applications": {
+                "jobs": {
+                    "total": total_applied_jobs,
+                    "daily": daily_applied_jobs,
+                    "weekly": weekly_applied_jobs,
+                    "monthly": monthly_applied_jobs,
+                },
+            },
+            "contacts": {
+                "developers": {
+                    "total": total_contacted_developers,
+                    "daily": daily_contacted_developers,
+                    "weekly": weekly_contacted_developers,
+                    "monthly": monthly_contacted_developers,
+                },
+            },
+            "unreviewed_jobs": db.query(Job).filter(Job.is_reviewed == False).count(),
+            "unreviewed_developers": db.query(Developer).filter(Developer.is_reviewed == False).count(),
+            "pending_analysis": pending_analysis,
+            "ollama_available": ollama_available,
             "recent_runs": db.query(AnalysisRun).order_by(
                 AnalysisRun.started_at.desc()
             ).limit(5).count(),

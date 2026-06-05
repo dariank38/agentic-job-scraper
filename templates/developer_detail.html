@@ -1,0 +1,181 @@
+{% extends "base.html" %}
+
+{% block title %}{{ developer.name or 'Developer Details' }} - Telegram Job Scraper{% endblock %}
+
+{% block content %}
+<div class="card">
+    <div class="card-header">
+        <div>
+            <div class="page-title">{{ developer.name or 'Unnamed Developer' }}</div>
+            <div style="margin-top: 0.5rem;">
+                <span class="badge badge-job">Developer</span>
+                {% if developer.confidence %}
+                <span class="badge badge-info">{{ developer.confidence }}</span>
+                {% endif %}
+                {% if developer.looking_for_work %}
+                <span class="badge badge-success">Looking for Work</span>
+                {% else %}
+                <span class="badge badge-secondary">Not Looking</span>
+                {% endif %}
+                {% if developer.is_contacted %}
+                <span class="badge badge-success">Contacted</span>
+                {% endif %}
+                {% if developer.is_reviewed %}
+                    {% if developer.is_approved %}
+                        <span class="badge badge-success">Approved</span>
+                    {% else %}
+                        <span class="badge badge-secondary">Rejected</span>
+                    {% endif %}
+                {% else %}
+                    <span class="badge badge-warning">Needs Review</span>
+                {% endif %}
+            </div>
+        </div>
+        <div style="display: flex; gap: 0.5rem;">
+            <button class="btn {% if developer.is_contacted %}btn-success{% else %}btn-secondary{% endif %}" onclick="toggleContacted({{ developer.id }})">
+                {% if developer.is_contacted %}Contacted{% else %}Mark Contacted{% endif %}
+            </button>
+            <a href="/developers" class="btn btn-secondary">Back</a>
+        </div>
+    </div>
+</div>
+
+<div class="grid" style="grid-template-columns: 2fr 1fr;">
+    <div>
+        <div class="card">
+            <h3>Developer Details</h3>
+            <table>
+                {% if developer.skills %}
+                <tr><td><strong>Skills</strong></td><td>
+                    <div class="tag-list">
+                        {% for skill in developer.skills %}
+                        <span class="tag">{{ skill }}</span>
+                        {% endfor %}
+                    </div>
+                </td></tr>
+                {% endif %}
+                {% if developer.experience %}
+                <tr><td><strong>Experience</strong></td><td>{{ developer.experience }}</td></tr>
+                {% endif %}
+                {% if developer.portfolio %}
+                <tr><td><strong>Portfolio</strong></td><td><a href="{{ developer.portfolio }}" target="_blank">{{ developer.portfolio }}</a></td></tr>
+                {% endif %}
+                {% if developer.github %}
+                <tr><td><strong>GitHub</strong></td><td><a href="{{ developer.github }}" target="_blank">{{ developer.github }}</a></td></tr>
+                {% endif %}
+                {% if developer.linkedin %}
+                <tr><td><strong>LinkedIn</strong></td><td><a href="{{ developer.linkedin }}" target="_blank">{{ developer.linkedin }}</a></td></tr>
+                {% endif %}
+                {% if developer.contact %}
+                <tr><td><strong>Contact</strong></td><td>{{ developer.contact }}</td></tr>
+                {% endif %}
+                {% if developer.contact_type %}
+                <tr><td><strong>Contact Type</strong></td><td>{{ developer.contact_type }}</td></tr>
+                {% endif %}
+                <tr><td><strong>Source</strong></td><td>@{{ developer.channel.username }}</td></tr>
+                <tr><td><strong>Posted</strong></td><td>{{ developer.message.date.strftime('%Y-%m-%d %H:%M') if developer.message.date else 'Unknown' }}</td></tr>
+                <tr><td><strong>Analyzed</strong></td><td>{{ developer.analyzed_at.strftime('%Y-%m-%d %H:%M') if developer.analyzed_at else 'Unknown' }}</td></tr>
+            </table>
+        </div>
+
+        {% if developer.summary %}
+        <div class="card">
+            <h3>Summary</h3>
+            <p>{{ developer.summary }}</p>
+        </div>
+        {% endif %}
+
+        {% if developer.translated_text %}
+        <div class="card">
+            <h3>English Translation</h3>
+            <div class="translated-box">
+                <p style="margin: 0; line-height: 1.6;">{{ developer.translated_text }}</p>
+            </div>
+        </div>
+        {% endif %}
+
+        <div class="card">
+            <h3>Original Message</h3>
+            <div class="original-message">
+                {{ developer.message.text or 'No text content' }}
+            </div>
+            {% if developer.message.has_image %}
+            <p style="margin-top: 0.5rem; color: #e67e22;"><i>This message contains an image</i></p>
+            {% endif %}
+        </div>
+    </div>
+
+    <div>
+        <div class="card">
+            <h3>Review Developer</h3>
+            <form id="review-form" onsubmit="submitReview(event)">
+                <div class="form-group">
+                    <label>Status</label>
+                    <select name="is_approved">
+                        <option value="true" {% if developer.is_approved %}selected{% endif %}>Approve</option>
+                        <option value="false" {% if not developer.is_approved and developer.is_reviewed %}selected{% endif %}>Reject</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label>Notes</label>
+                    <textarea name="notes" rows="4" placeholder="Add your notes here...">{{ developer.notes or '' }}</textarea>
+                </div>
+                <button type="submit" class="btn btn-success">Save Review</button>
+            </form>
+            <div id="review-status" style="margin-top: 1rem; display: none;"></div>
+        </div>
+
+        <div class="card">
+            <h3>Quick Actions</h3>
+            <a href="/developers" class="btn btn-secondary" style="display: block; margin-bottom: 0.5rem;">All Developers</a>
+            <a href="/channels" class="btn btn-secondary" style="display: block;">Manage Channels</a>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+function showStatus(message, isError = false) {
+    const status = document.getElementById('review-status');
+    status.className = 'alert ' + (isError ? 'alert-error' : 'alert-success');
+    status.textContent = message;
+    status.style.display = 'block';
+    setTimeout(() => status.style.display = 'none', 3000);
+}
+
+async function submitReview(event) {
+    event.preventDefault();
+    const form = event.target;
+    const formData = new FormData(form);
+    
+    try {
+        const response = await fetch('/developers/{{ developer.id }}/review', {
+            method: 'POST',
+            body: formData
+        });
+        
+        if (response.ok) {
+            showStatus('Review saved!');
+            setTimeout(() => location.reload(), 1000);
+        } else {
+            showStatus('Error saving review', true);
+        }
+    } catch (e) {
+        showStatus('Error: ' + e.message, true);
+    }
+}
+
+async function toggleContacted(id) {
+    try {
+        const response = await fetch('/api/developers/' + id + '/toggle-contacted', { method: 'POST' });
+        const data = await response.json();
+        if (data.success) {
+            location.reload();
+        }
+    } catch (e) {
+        console.error('Failed to toggle contacted status:', e);
+    }
+}
+</script>
+{% endblock %}
