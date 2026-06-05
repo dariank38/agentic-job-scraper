@@ -8,7 +8,7 @@ from fastapi.templating import Jinja2Templates
 from sqlalchemy.orm import Session
 
 from app.connection import get_db
-from app.models import Channel, Job, Message
+from app.models import Channel, Job, Developer, Message
 
 # Initialize templates once at module level
 _BASE_DIR = Path(__file__).parent.parent
@@ -23,16 +23,67 @@ def register_web_routes(app):
         channels = db.query(Channel).filter(Channel.is_active == True).all()
         recent_jobs = db.query(Job).order_by(Job.analyzed_at.desc()).limit(10).all()
 
+        from datetime import datetime, timedelta
+        
+        # Application stats with time periods
+        now = datetime.utcnow()
+        one_day_ago = now - timedelta(days=1)
+        one_week_ago = now - timedelta(weeks=1)
+        one_month_ago = now - timedelta(days=30)
+        
+        # Job applications
+        total_applied_jobs = db.query(Job).filter(Job.is_applied == True).count()
+        daily_applied_jobs = db.query(Job).filter(
+            Job.is_applied == True,
+            Job.applied_at >= one_day_ago
+        ).count()
+        weekly_applied_jobs = db.query(Job).filter(
+            Job.is_applied == True,
+            Job.applied_at >= one_week_ago
+        ).count()
+        monthly_applied_jobs = db.query(Job).filter(
+            Job.is_applied == True,
+            Job.applied_at >= one_month_ago
+        ).count()
+        
+        # Developer contacts
+        total_contacted_developers = db.query(Developer).filter(Developer.is_contacted == True).count()
+        daily_contacted_developers = db.query(Developer).filter(
+            Developer.is_contacted == True,
+            Developer.contacted_at >= one_day_ago
+        ).count()
+        weekly_contacted_developers = db.query(Developer).filter(
+            Developer.is_contacted == True,
+            Developer.contacted_at >= one_week_ago
+        ).count()
+        monthly_contacted_developers = db.query(Developer).filter(
+            Developer.is_contacted == True,
+            Developer.contacted_at >= one_month_ago
+        ).count()
+        
         stats = {
             "total_channels": db.query(Channel).filter(Channel.is_active == True).count(),
             "total_messages": db.query(Message).count(),
-            "total_jobs": db.query(Job).filter(
-                Job.category.in_(["job_posting", "remote_work"])
-            ).count(),
-            "unreviewed_jobs": db.query(Job).filter(
-                Job.is_reviewed == False,
-                Job.category.in_(["job_posting", "remote_work"]),
-            ).count(),
+            "job_postings": db.query(Job).count(),
+            "developers": db.query(Developer).count(),
+            "applications": {
+                "jobs": {
+                    "total": total_applied_jobs,
+                    "daily": daily_applied_jobs,
+                    "weekly": weekly_applied_jobs,
+                    "monthly": monthly_applied_jobs,
+                },
+            },
+            "contacts": {
+                "developers": {
+                    "total": total_contacted_developers,
+                    "daily": daily_contacted_developers,
+                    "weekly": weekly_contacted_developers,
+                    "monthly": monthly_contacted_developers,
+                },
+            },
+            "unreviewed_jobs": db.query(Job).filter(Job.is_reviewed == False).count(),
+            "unreviewed_developers": db.query(Developer).filter(Developer.is_reviewed == False).count(),
         }
 
         return templates.TemplateResponse(
@@ -57,32 +108,48 @@ def register_web_routes(app):
             },
         )
 
+    @app.get("/developers", response_class=HTMLResponse)
+    async def developers_page(
+        request: Request,
+        looking_for_work: Optional[bool] = None,
+        db: Session = Depends(get_db),
+    ):
+        """Developers listing page."""
+        query = db.query(Developer).join(Channel).filter(Channel.is_active == True)
+
+        if looking_for_work is not None:
+            query = query.filter(Developer.looking_for_work == looking_for_work)
+
+        developers = query.order_by(Developer.analyzed_at.desc()).all()
+
+        return templates.TemplateResponse(
+            request,
+            "developers.html",
+            {
+                "developers": developers,
+                "looking_for_work_filter": looking_for_work,
+            },
+        )
+
     @app.get("/jobs", response_class=HTMLResponse)
     async def jobs_page(
         request: Request,
-        category: Optional[str] = None,
         remote: Optional[bool] = None,
         db: Session = Depends(get_db),
     ):
         """Jobs listing page."""
         query = db.query(Job).join(Channel).filter(Channel.is_active == True)
 
-        if category:
-            query = query.filter(Job.category == category)
-
         if remote is not None:
-            query = query.filter(Job.ai_remote == remote)
+            query = query.filter(Job.is_remote == remote)
 
         jobs = query.order_by(Job.analyzed_at.desc()).all()
-        categories = ["job_posting", "remote_work", "contact_info", "other"]
 
         return templates.TemplateResponse(
             request,
             "jobs.html",
             {
                 "jobs": jobs,
-                "categories": categories,
-                "selected_category": category,
                 "remote_filter": remote,
             },
         )
@@ -117,6 +184,40 @@ def register_web_routes(app):
         job.is_reviewed = True
         job.is_approved = is_approved
         job.notes = notes
+        db.commit()
+
+        return {"success": True}
+
+    @app.get("/developers/{developer_id}", response_class=HTMLResponse)
+    async def developer_detail(request: Request, developer_id: int, db: Session = Depends(get_db)):
+        """Developer detail page."""
+        developer = db.query(Developer).get(developer_id)
+        if not developer:
+            raise HTTPException(status_code=404, detail="Developer not found")
+
+        return templates.TemplateResponse(
+            request,
+            "developer_detail.html",
+            {
+                "developer": developer,
+            },
+        )
+
+    @app.post("/developers/{developer_id}/review")
+    async def review_developer(
+        developer_id: int,
+        is_approved: bool = Form(...),
+        notes: Optional[str] = Form(None),
+        db: Session = Depends(get_db),
+    ):
+        """Mark developer as reviewed."""
+        developer = db.query(Developer).get(developer_id)
+        if not developer:
+            raise HTTPException(status_code=404, detail="Developer not found")
+
+        developer.is_reviewed = True
+        developer.is_approved = is_approved
+        developer.notes = notes
         db.commit()
 
         return {"success": True}

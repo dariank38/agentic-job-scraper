@@ -25,6 +25,7 @@ class Channel(Base):
     # Relationships
     messages = relationship("Message", back_populates="channel", cascade="all, delete-orphan")
     jobs = relationship("Job", back_populates="channel", cascade="all, delete-orphan")
+    developers = relationship("Developer", back_populates="channel", cascade="all, delete-orphan")
 
     def __repr__(self) -> str:
         return f"<Channel {self.username}>"
@@ -51,6 +52,7 @@ class Message(Base):
     # Relationships
     channel = relationship("Channel", back_populates="messages")
     job = relationship("Job", back_populates="message", uselist=False)
+    developer = relationship("Developer", back_populates="message", uselist=False)
 
     def __repr__(self) -> str:
         return f"<Message {self.telegram_id} from {self.channel_id}>"
@@ -70,7 +72,7 @@ class Message(Base):
 
 
 class Job(Base):
-    """Analyzed job posting (AI-enhanced)."""
+    """Job posting (AI-enhanced)."""
 
     __tablename__ = "jobs"
 
@@ -79,21 +81,25 @@ class Job(Base):
     channel_id = Column(Integer, ForeignKey("channels.id"), nullable=False)
 
     # AI Analysis results
-    category = Column(String, nullable=True)  # job_posting, contact_info, remote_work, other
     confidence = Column(String, nullable=True)  # high, medium, low
-    ai_title = Column(String, nullable=True)
-    ai_company = Column(String, nullable=True)
-    ai_company_link = Column(String, nullable=True)  # Company website/careers link
-    ai_location = Column(String, nullable=True)
-    ai_remote = Column(Boolean, nullable=True)
-    ai_role_type = Column(String, nullable=True)  # frontend, backend, fullstack, devops, etc.
-    ai_skills = Column(JSON, default=list)  # List of required skills
-    ai_contact = Column(String, nullable=True)
-    ai_contact_type = Column(String, nullable=True)  # telegram, email, linkedin, etc.
-    ai_summary = Column(Text, nullable=True)
+    translated_text = Column(Text, nullable=True)  # English translation of original message
+
+    # Job posting fields
+    title = Column(String, nullable=True)
+    company = Column(String, nullable=True)
+    company_link = Column(String, nullable=True)
+    location = Column(String, nullable=True)
+    is_remote = Column(Boolean, nullable=True)
+    role_type = Column(String, nullable=True)
+    skills = Column(JSON, default=list)
+    contact = Column(String, nullable=True)
+    contact_type = Column(String, nullable=True)
+    summary = Column(Text, nullable=True)
 
     is_reviewed = Column(Boolean, default=False)
     is_approved = Column(Boolean, default=False)
+    is_applied = Column(Boolean, default=False)
+    applied_at = Column(DateTime, nullable=True)
     notes = Column(Text, nullable=True)
 
     created_at = Column(DateTime, default=datetime.utcnow)
@@ -104,7 +110,7 @@ class Job(Base):
     channel = relationship("Channel", back_populates="jobs")
 
     def __repr__(self) -> str:
-        return f"<Job {self.id} category={self.category}>"
+        return f"<Job {self.id} title={self.title}>"
 
     def to_dict(self) -> dict:
         """Convert to dictionary."""
@@ -112,20 +118,88 @@ class Job(Base):
             "id": self.id,
             "message_id": self.message_id,
             "channel_id": self.channel_id,
-            "category": self.category,
             "confidence": self.confidence,
-            "title": self.ai_title,
-            "company": self.ai_company,
-            "company_link": self.ai_company_link,
-            "location": self.ai_location,
-            "remote": self.ai_remote,
-            "role_type": self.ai_role_type,
-            "skills": self.ai_skills or [],
-            "contact": self.ai_contact,
-            "contact_type": self.ai_contact_type,
-            "summary": self.ai_summary,
+            "translated_text": self.translated_text,
+            "title": self.title,
+            "company": self.company,
+            "company_link": self.company_link,
+            "location": self.location,
+            "is_remote": self.is_remote,
+            "role_type": self.role_type,
+            "skills": self.skills or [],
+            "contact": self.contact,
+            "contact_type": self.contact_type,
+            "summary": self.summary,
             "is_reviewed": self.is_reviewed,
             "is_approved": self.is_approved,
+            "is_applied": self.is_applied,
+            "analyzed_at": self.analyzed_at.isoformat() if self.analyzed_at else None,
+            "message": self.message.to_dict() if self.message else None,
+        }
+
+
+class Developer(Base):
+    """Developer personal info (AI-enhanced)."""
+
+    __tablename__ = "developers"
+
+    id = Column(Integer, primary_key=True)
+    message_id = Column(Integer, ForeignKey("messages.id"), unique=True, nullable=False)
+    channel_id = Column(Integer, ForeignKey("channels.id"), nullable=False)
+
+    # AI Analysis results
+    confidence = Column(String, nullable=True)  # high, medium, low
+    translated_text = Column(Text, nullable=True)  # English translation of original message
+
+    # Personal info fields
+    name = Column(String, nullable=True)
+    skills = Column(JSON, default=list)
+    experience = Column(Text, nullable=True)
+    portfolio = Column(String, nullable=True)
+    github = Column(String, nullable=True)
+    linkedin = Column(String, nullable=True)
+    contact = Column(String, nullable=True)
+    contact_type = Column(String, nullable=True)
+    looking_for_work = Column(Boolean, nullable=True)
+    summary = Column(Text, nullable=True)
+
+    is_reviewed = Column(Boolean, default=False)
+    is_approved = Column(Boolean, default=False)
+    is_contacted = Column(Boolean, default=False)
+    contacted_at = Column(DateTime, nullable=True)
+    notes = Column(Text, nullable=True)
+
+    created_at = Column(DateTime, default=datetime.utcnow)
+    analyzed_at = Column(DateTime, default=datetime.utcnow)
+
+    # Relationships
+    message = relationship("Message", back_populates="developer")
+    channel = relationship("Channel", back_populates="developers")
+
+    def __repr__(self) -> str:
+        return f"<Developer {self.id} name={self.name}>"
+
+    def to_dict(self) -> dict:
+        """Convert to dictionary."""
+        return {
+            "id": self.id,
+            "message_id": self.message_id,
+            "channel_id": self.channel_id,
+            "confidence": self.confidence,
+            "translated_text": self.translated_text,
+            "name": self.name,
+            "skills": self.skills or [],
+            "experience": self.experience,
+            "portfolio": self.portfolio,
+            "github": self.github,
+            "linkedin": self.linkedin,
+            "contact": self.contact,
+            "contact_type": self.contact_type,
+            "looking_for_work": self.looking_for_work,
+            "summary": self.summary,
+            "is_reviewed": self.is_reviewed,
+            "is_approved": self.is_approved,
+            "is_contacted": self.is_contacted,
             "analyzed_at": self.analyzed_at.isoformat() if self.analyzed_at else None,
             "message": self.message.to_dict() if self.message else None,
         }

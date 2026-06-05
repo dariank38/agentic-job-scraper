@@ -27,33 +27,46 @@ async def is_ollama_available() -> bool:
         return False
 
 
-SYSTEM_PROMPT = """You are a job posting analyzer specialized in tech roles. Analyze the message and extract key information. The message may be in any language — always respond in English JSON only.
+SYSTEM_PROMPT = """You are a Telegram message analyzer for tech job boards. Analyze the message and categorize it. The message may be in any language — always respond in English JSON only.
+
+CATEGORIES:
+1. "job_posting" - Software/tech job posting (frontend, backend, fullstack, devops, mobile, blockchain, smart_contract, QA, data engineer, ML/AI engineer, etc.)
+2. "personal_info" - Personal information of developers/engineers (skills, experience, portfolio, looking for work, etc.)
+3. "other" - Non-tech content, marketing, sales, HR, design, etc.
 
 RULES:
-1. SKIP (category: "other") if ANY of the following apply:
-   - The job is EXPLICITLY stated as NOT remote (e.g., "onsite only", "in-office required", "no remote")
-   - The job is NOT a software/tech development role (e.g., marketing, SEO, sales, HR, design, community manager, social media, content writing, accounting)
-2. Only KEEP jobs that are software/tech roles: frontend, backend, fullstack, devops, mobile, blockchain, smart_contract, QA, data engineer, ML/AI engineer, or similar technical roles
-3. If remote status is ambiguous, not mentioned, or suggests flexibility, KEEP IT (remote: true or null)
-4. Identify the specific role type: frontend, backend, fullstack, devops, mobile, blockchain, smart_contract, data, ml_ai, qa, or other_tech
-5. Extract ALL required skills mentioned in the job posting (e.g., Python, JavaScript, React, Docker, AWS, etc.)
-6. Extract contact information and identify the type: telegram, email, linkedin, twitter, discord, or other
-7. For company job postings, extract any company website/careers page link
+- ALWAYS translate the message to English in the "translated_text" field
+- For job_posting: Extract job details (title, company, location, remote status, role type, skills, contact)
+- For personal_info: Extract developer details (name, skills, experience, portfolio, github, linkedin, contact, looking_for_work)
+- SKIP as "other" if: non-tech role, onsite-only jobs, marketing, sales, HR, design, community management, content writing, accounting
 
 Return ONLY a raw JSON object. No markdown, no explanation, no code blocks. Exact format:
 {
-  "category": "job_posting | contact_info | remote_work | other",
+  "category": "job_posting | personal_info | other",
   "confidence": "high | medium | low",
-  "extracted": {
+  "translated_text": "Full English translation of the original message",
+  "job_posting": {
     "title": "",
     "company": "",
     "company_link": "",
     "location": "",
-    "remote": true/false/null,
+    "is_remote": true/false,
     "role_type": "frontend | backend | fullstack | devops | mobile | blockchain | smart_contract | data | ml_ai | qa | other_tech",
-    "skills": ["skill1", "skill2", "skill3"],
+    "skills": ["skill1", "skill2"],
     "contact": "",
     "contact_type": "telegram | email | linkedin | twitter | discord | other",
+    "summary": ""
+  },
+  "personal_info": {
+    "name": "",
+    "skills": ["skill1", "skill2"],
+    "experience": "",
+    "portfolio": "",
+    "github": "",
+    "linkedin": "",
+    "contact": "",
+    "contact_type": "telegram | email | linkedin | twitter | discord | other",
+    "looking_for_work": true/false,
     "summary": ""
   }
 }"""

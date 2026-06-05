@@ -13,12 +13,70 @@
             <p>Total Messages</p>
         </div>
         <div class="stat-card">
-            <h3>{{ stats.total_jobs }}</h3>
-            <p>Jobs Found</p>
+            <h3>{{ stats.job_postings }}</h3>
+            <p>Job Postings</p>
         </div>
         <div class="stat-card">
-            <h3>{{ stats.unreviewed_jobs }}</h3>
-            <p>Unreviewed</p>
+            <h3>{{ stats.developers }}</h3>
+            <p>Developers</p>
+        </div>
+    </div>
+</div>
+
+<div class="card">
+    <h2>Job Applications</h2>
+    <div class="grid">
+        <div class="stat-card">
+            <h3>{{ stats.applications.jobs.daily }}</h3>
+            <p>Daily</p>
+        </div>
+        <div class="stat-card">
+            <h3>{{ stats.applications.jobs.weekly }}</h3>
+            <p>Weekly</p>
+        </div>
+        <div class="stat-card">
+            <h3>{{ stats.applications.jobs.monthly }}</h3>
+            <p>Monthly</p>
+        </div>
+        <div class="stat-card">
+            <h3>{{ stats.applications.jobs.total }}</h3>
+            <p>Total</p>
+        </div>
+    </div>
+</div>
+
+<div class="card">
+    <h2>Developer Contacts</h2>
+    <div class="grid">
+        <div class="stat-card">
+            <h3>{{ stats.contacts.developers.daily }}</h3>
+            <p>Daily</p>
+        </div>
+        <div class="stat-card">
+            <h3>{{ stats.contacts.developers.weekly }}</h3>
+            <p>Weekly</p>
+        </div>
+        <div class="stat-card">
+            <h3>{{ stats.contacts.developers.monthly }}</h3>
+            <p>Monthly</p>
+        </div>
+        <div class="stat-card">
+            <h3>{{ stats.contacts.developers.total }}</h3>
+            <p>Total</p>
+        </div>
+    </div>
+</div>
+
+<div class="card">
+    <h2>System Status</h2>
+    <div class="grid">
+        <div class="stat-card" id="ollama-status">
+            <h3 id="ollama-text">Checking...</h3>
+            <p>Ollama Status</p>
+        </div>
+        <div class="stat-card">
+            <h3 id="pending-text">{{ stats.pending_analysis }}</h3>
+            <p>Pending Analysis</p>
         </div>
     </div>
 </div>
@@ -34,6 +92,7 @@
         </button>
         <a href="/channels" class="btn btn-primary">Manage Channels</a>
         <a href="/jobs" class="btn btn-primary">View All Jobs</a>
+        <a href="/developers" class="btn btn-primary">View Developers</a>
     </div>
     <div id="search-status" style="margin-top: 1rem; display: none;"></div>
 </div>
@@ -60,7 +119,7 @@
                     <td>{{ channel.messages|length }}</td>
                     <td>{{ channel.jobs|length }}</td>
                     <td>
-                        <button class="btn btn-primary" onclick="searchChannel({{ channel.id }})">
+                        <button class="btn btn-primary btn-sm" onclick="searchChannel({{ channel.id }})">
                             Search
                         </button>
                     </td>
@@ -80,18 +139,20 @@
     <div class="job-card">
         <h3>
             <a href="/jobs/{{ job.id }}" style="text-decoration: none; color: inherit;">
-                {% if job.ai_title %}{{ job.ai_title }}{% else %}Untitled Job{% endif %}
+                {% if job.title %}{{ job.title }}{% else %}Untitled Job{% endif %}
             </a>
-            <span class="badge badge-{{ job.category }}">{{ job.category }}</span>
+            {% if job.is_applied %}
+            <span class="badge badge-success">Applied</span>
+            {% endif %}
         </h3>
         <div class="job-meta">
-            {% if job.ai_company %}<span>Company: {{ job.ai_company }}</span>{% endif %}
-            {% if job.ai_location %}<span>Location: {{ job.ai_location }}</span>{% endif %}
-            {% if job.ai_remote %}<span style="color: #27ae60;">Remote</span>{% endif %}
-            <span>From: {{ job.channel.username }}</span>
+            {% if job.company %}<span>Company: {{ job.company }}</span>{% endif %}
+            {% if job.location %}<span>Location: {{ job.location }}</span>{% endif %}
+            {% if job.is_remote %}<span style="color: #27ae60;">Remote</span>{% endif %}
+            <span>From: @{{ job.channel.username }}</span>
         </div>
-        {% if job.ai_summary %}
-        <p>{{ job.ai_summary[:150] }}{% if job.ai_summary|length > 150 %}...{% endif %}</p>
+        {% if job.summary %}
+        <p>{{ job.summary[:150] }}{% if job.summary|length > 150 %}...{% endif %}</p>
         {% endif %}
     </div>
     {% endfor %}
@@ -109,6 +170,33 @@ function showStatus(message, isError = false) {
     status.style.display = 'block';
     setTimeout(() => status.style.display = 'none', 5000);
 }
+
+async function checkOllamaStatus() {
+    try {
+        const response = await fetch('/api/stats');
+        const data = await response.json();
+        
+        const ollamaText = document.getElementById('ollama-text');
+        const ollamaCard = document.getElementById('ollama-status');
+        const pendingText = document.getElementById('pending-text');
+        
+        if (data.ollama_available) {
+            ollamaText.textContent = 'Online';
+            ollamaCard.style.border = '2px solid #27ae60';
+        } else {
+            ollamaText.textContent = 'Offline';
+            ollamaCard.style.border = '2px solid #e74c3c';
+        }
+        
+        pendingText.textContent = data.pending_analysis;
+    } catch (e) {
+        console.error('Failed to check Ollama status:', e);
+    }
+}
+
+// Check Ollama status on load and every 30 seconds
+checkOllamaStatus();
+setInterval(checkOllamaStatus, 30000);
 
 async function searchChannel(channelId) {
     const btn = event.target;

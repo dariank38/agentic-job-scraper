@@ -1,23 +1,20 @@
 {% extends "base.html" %}
 
-{% block title %}{{ job.ai_title or 'Job Details' }} - Telegram Job Scraper{% endblock %}
+{% block title %}{{ job.title or 'Job Details' }} - Telegram Job Scraper{% endblock %}
 
 {% block content %}
 <div class="card">
-    <div style="display: flex; justify-content: space-between; align-items: start;">
+    <div class="card-header">
         <div>
-            <h2>{{ job.ai_title or 'Untitled Job' }}</h2>
+            <div class="page-title">{{ job.title or 'Untitled Job' }}</div>
             <div style="margin-top: 0.5rem;">
-                {% if job.category == 'job_posting' %}
-                    <span class="badge badge-job">Job Posting</span>
-                {% elif job.category == 'remote_work' %}
-                    <span class="badge badge-remote">Remote Work</span>
-                {% elif job.category == 'contact_info' %}
-                    <span class="badge badge-contact">Contact Info</span>
-                {% else %}
-                    <span class="badge badge-secondary">{{ job.category }}</span>
+                <span class="badge badge-job">Job Posting</span>
+                {% if job.confidence %}
+                <span class="badge badge-info">{{ job.confidence }}</span>
                 {% endif %}
-                <span class="badge badge-info">Confidence: {{ job.confidence or 'unknown' }}</span>
+                {% if job.is_applied %}
+                <span class="badge badge-success">Applied</span>
+                {% endif %}
                 {% if job.is_reviewed %}
                     {% if job.is_approved %}
                         <span class="badge badge-success">Approved</span>
@@ -29,7 +26,12 @@
                 {% endif %}
             </div>
         </div>
-        <a href="/jobs" class="btn btn-secondary">Back to Jobs</a>
+        <div style="display: flex; gap: 0.5rem;">
+            <button class="btn {% if job.is_applied %}btn-success{% else %}btn-secondary{% endif %}" onclick="toggleApplied({{ job.id }})">
+                {% if job.is_applied %}Applied{% else %}Mark Applied{% endif %}
+            </button>
+            <a href="/jobs" class="btn btn-secondary">Back</a>
+        </div>
     </div>
 </div>
 
@@ -38,48 +40,63 @@
         <div class="card">
             <h3>Job Details</h3>
             <table>
-                {% if job.ai_company %}
-                <tr><td><strong>Company</strong></td><td>{{ job.ai_company }}</td></tr>
+                {% if job.company %}
+                <tr><td><strong>Company</strong></td><td>{{ job.company }}</td></tr>
                 {% endif %}
-                {% if job.ai_company_link %}
-                <tr><td><strong>Company Link</strong></td><td><a href="{{ job.ai_company_link }}" target="_blank">{{ job.ai_company_link }}</a></td></tr>
+                {% if job.company_link %}
+                <tr><td><strong>Company Link</strong></td><td><a href="{{ job.company_link }}" target="_blank">{{ job.company_link }}</a></td></tr>
                 {% endif %}
-                {% if job.ai_location %}
-                <tr><td><strong>Location</strong></td><td>{{ job.ai_location }}</td></tr>
+                {% if job.location %}
+                <tr><td><strong>Location</strong></td><td>{{ job.location }}</td></tr>
                 {% endif %}
-                <tr><td><strong>Remote</strong></td><td>{{ 'Yes' if job.ai_remote else ('No' if job.ai_remote is false else 'Unknown') }}</td></tr>
-                {% if job.ai_role_type %}
-                <tr><td><strong>Role Type</strong></td><td>{{ job.ai_role_type }}</td></tr>
+                <tr><td><strong>Remote</strong></td><td>{{ 'Yes' if job.is_remote else ('No' if job.is_remote is false else 'Unknown') }}</td></tr>
+                {% if job.role_type %}
+                <tr><td><strong>Role Type</strong></td><td>{{ job.role_type }}</td></tr>
                 {% endif %}
-                {% if job.ai_skills %}
-                <tr><td><strong>Skills</strong></td><td>{{ job.ai_skills|join(', ') }}</td></tr>
+                {% if job.skills %}
+                <tr><td><strong>Skills</strong></td><td>
+                    <div class="tag-list">
+                        {% for skill in job.skills %}
+                        <span class="tag">{{ skill }}</span>
+                        {% endfor %}
+                    </div>
+                </td></tr>
                 {% endif %}
-                {% if job.ai_contact %}
-                <tr><td><strong>Contact</strong></td><td>{{ job.ai_contact }}</td></tr>
+                {% if job.contact %}
+                <tr><td><strong>Contact</strong></td><td>{{ job.contact }}</td></tr>
                 {% endif %}
-                {% if job.ai_contact_type %}
-                <tr><td><strong>Contact Type</strong></td><td>{{ job.ai_contact_type }}</td></tr>
+                {% if job.contact_type %}
+                <tr><td><strong>Contact Type</strong></td><td>{{ job.contact_type }}</td></tr>
                 {% endif %}
-                <tr><td><strong>Source Channel</strong></td><td>{{ job.channel.username }}</td></tr>
-                <tr><td><strong>Posted Date</strong></td><td>{{ job.message.date.strftime('%Y-%m-%d %H:%M') if job.message.date else 'Unknown' }}</td></tr>
+                <tr><td><strong>Source</strong></td><td>@{{ job.channel.username }}</td></tr>
+                <tr><td><strong>Posted</strong></td><td>{{ job.message.date.strftime('%Y-%m-%d %H:%M') if job.message.date else 'Unknown' }}</td></tr>
                 <tr><td><strong>Analyzed</strong></td><td>{{ job.analyzed_at.strftime('%Y-%m-%d %H:%M') if job.analyzed_at else 'Unknown' }}</td></tr>
             </table>
         </div>
 
-        {% if job.ai_summary %}
+        {% if job.summary %}
         <div class="card">
             <h3>Summary</h3>
-            <p>{{ job.ai_summary }}</p>
+            <p>{{ job.summary }}</p>
+        </div>
+        {% endif %}
+
+        {% if job.translated_text %}
+        <div class="card">
+            <h3>English Translation</h3>
+            <div class="translated-box">
+                <p style="margin: 0; line-height: 1.6;">{{ job.translated_text }}</p>
+            </div>
         </div>
         {% endif %}
 
         <div class="card">
             <h3>Original Message</h3>
-            <div style="background: #f8f9fa; padding: 1rem; border-radius: 4px; white-space: pre-wrap;">
+            <div class="original-message">
                 {{ job.message.text or 'No text content' }}
             </div>
             {% if job.message.has_image %}
-            <p style="margin-top: 0.5rem; color: #e67e22;"><strong>This message contains an image</strong></p>
+            <p style="margin-top: 0.5rem; color: #e67e22;"><i>This message contains an image</i></p>
             {% endif %}
         </div>
     </div>
@@ -142,6 +159,18 @@ async function submitReview(event) {
         }
     } catch (e) {
         showStatus('Error: ' + e.message, true);
+    }
+}
+
+async function toggleApplied(id) {
+    try {
+        const response = await fetch('/api/jobs/' + id + '/toggle-applied', { method: 'POST' });
+        const data = await response.json();
+        if (data.success) {
+            location.reload();
+        }
+    } catch (e) {
+        console.error('Failed to toggle applied status:', e);
     }
 }
 </script>
