@@ -1,23 +1,25 @@
-"""Reset the database by deleting and reinitializing."""
+"""Reset the database by dropping and reinitializing tables."""
 
-import os
-from pathlib import Path
+import asyncio
+from sqlalchemy.ext.asyncio import create_async_engine
+from telegram_processor.config import DATABASE_URL
+from app import models
 
-from app.connection import DATABASE_PATH, init_db
-
-def reset_database():
-    """Delete the database file and reinitialize."""
-    db_path = Path(DATABASE_PATH)
+async def reset_database():
+    """Drop all tables and recreate them."""
+    print(f"Connecting to database: {DATABASE_URL}")
     
-    if db_path.exists():
-        print(f"Deleting database: {db_path}")
-        os.remove(db_path)
-    else:
-        print(f"Database not found: {db_path}")
+    engine = create_async_engine(DATABASE_URL, echo=False)
     
-    print("Reinitializing database...")
-    init_db()
+    async with engine.begin() as conn:
+        print("Dropping all tables...")
+        await conn.run_sync(models.Base.metadata.drop_all)
+        
+        print("Creating all tables...")
+        await conn.run_sync(models.Base.metadata.create_all)
+    
+    await engine.dispose()
     print("Database reset complete!")
 
 if __name__ == "__main__":
-    reset_database()
+    asyncio.run(reset_database())

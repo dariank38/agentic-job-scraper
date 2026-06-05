@@ -12,16 +12,14 @@ BASE_DIR = Path(__file__).parent.parent
 DATA_DIR = BASE_DIR / "data"
 OUTPUT_DIR = BASE_DIR / "output"
 SESSION_DIR = BASE_DIR / "session"
-DB_DIR = BASE_DIR / "db"
 
 # Ensure directories exist
 DATA_DIR.mkdir(exist_ok=True)
 OUTPUT_DIR.mkdir(exist_ok=True)
 SESSION_DIR.mkdir(exist_ok=True)
-DB_DIR.mkdir(exist_ok=True)
 
 # Database
-DATABASE_PATH = DB_DIR / "job_scraper.db"
+DATABASE_URL = os.getenv("DATABASE_URL")
 
 # Telegram settings
 TELEGRAM_API_ID = int(os.getenv("TELEGRAM_API_ID", "0"))

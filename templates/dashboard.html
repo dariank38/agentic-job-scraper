@@ -1,16 +1,13 @@
 {% extends "base.html" %}
 
 {% block content %}
+<!-- Overview Stats -->
 <div class="card">
-    <h2>Dashboard</h2>
+    <h2>Overview</h2>
     <div class="grid">
         <div class="stat-card">
             <h3>{{ stats.total_channels }}</h3>
             <p>Active Channels</p>
-        </div>
-        <div class="stat-card">
-            <h3>{{ stats.total_messages }}</h3>
-            <p>Total Messages</p>
         </div>
         <div class="stat-card">
             <h3>{{ stats.job_postings }}</h3>
@@ -20,67 +17,18 @@
             <h3>{{ stats.developers }}</h3>
             <p>Developers</p>
         </div>
-    </div>
-</div>
-
-<div class="card">
-    <h2>Job Applications</h2>
-    <div class="grid">
-        <div class="stat-card">
-            <h3>{{ stats.applications.jobs.daily }}</h3>
-            <p>Daily</p>
-        </div>
-        <div class="stat-card">
-            <h3>{{ stats.applications.jobs.weekly }}</h3>
-            <p>Weekly</p>
-        </div>
-        <div class="stat-card">
-            <h3>{{ stats.applications.jobs.monthly }}</h3>
-            <p>Monthly</p>
-        </div>
         <div class="stat-card">
             <h3>{{ stats.applications.jobs.total }}</h3>
-            <p>Total</p>
+            <p>Jobs Applied</p>
         </div>
-    </div>
-</div>
-
-<div class="card">
-    <h2>Developer Contacts</h2>
-    <div class="grid">
-        <div class="stat-card">
-            <h3>{{ stats.contacts.developers.daily }}</h3>
-            <p>Daily</p>
-        </div>
-        <div class="stat-card">
-            <h3>{{ stats.contacts.developers.weekly }}</h3>
-            <p>Weekly</p>
-        </div>
-        <div class="stat-card">
-            <h3>{{ stats.contacts.developers.monthly }}</h3>
-            <p>Monthly</p>
-        </div>
-        <div class="stat-card">
-            <h3>{{ stats.contacts.developers.total }}</h3>
-            <p>Total</p>
-        </div>
-    </div>
-</div>
-
-<div class="card">
-    <h2>System Status</h2>
-    <div class="grid">
         <div class="stat-card" id="ollama-status">
             <h3 id="ollama-text">Checking...</h3>
             <p>Ollama Status</p>
         </div>
-        <div class="stat-card">
-            <h3 id="pending-text">{{ stats.pending_analysis }}</h3>
-            <p>Pending Analysis</p>
-        </div>
     </div>
 </div>
 
+<!-- Quick Actions -->
 <div class="card">
     <h2>Quick Actions</h2>
     <div style="display: flex; gap: 1rem; flex-wrap: wrap;">
@@ -88,15 +36,24 @@
             Search All Channels
         </button>
         <button class="btn btn-warning" onclick="reanalyzeMessages()">
-            Re-analyze Queued Messages
+            Re-analyze Queued
         </button>
         <a href="/channels" class="btn btn-primary">Manage Channels</a>
-        <a href="/jobs" class="btn btn-primary">View All Jobs</a>
-        <a href="/developers" class="btn btn-primary">View Developers</a>
+        <a href="/jobs" class="btn btn-secondary">View Jobs</a>
+        <a href="/developers" class="btn btn-secondary">View Developers</a>
     </div>
     <div id="search-status" style="margin-top: 1rem; display: none;"></div>
 </div>
 
+<!-- Progress -->
+<div class="card">
+    <h2>Progress</h2>
+    <div id="progress-content">
+        <p>Loading progress...</p>
+    </div>
+</div>
+
+<!-- Channels -->
 <div class="card">
     <h2>Channels</h2>
     {% if channels %}
@@ -116,8 +73,8 @@
                         <strong>{{ channel.username }}</strong>
                         {% if channel.name %}<br><small>{{ channel.name }}</small>{% endif %}
                     </td>
-                    <td>{{ channel.messages|length }}</td>
-                    <td>{{ channel.jobs|length }}</td>
+                    <td>{{ channel.messages_count }}</td>
+                    <td>{{ channel.jobs_count }}</td>
                     <td>
                         <button class="btn btn-primary btn-sm" onclick="searchChannel({{ channel.id }})">
                             Search
@@ -132,6 +89,7 @@
     {% endif %}
 </div>
 
+<!-- Recent Jobs -->
 {% if recent_jobs %}
 <div class="card">
     <h2>Recent Jobs</h2>
@@ -209,7 +167,7 @@ async function searchChannel(channelId) {
         const data = await response.json();
         
         if (data.success) {
-            showStatus(`Fetched ${data.fetched} messages, found ${data.jobs_found} jobs`);
+            showStatus(`Fetched ${data.total_new_messages} messages, found ${data.total_jobs} jobs (using ${data.days_back_used} day window)`);
             setTimeout(() => location.reload(), 1500);
         } else {
             showStatus('Error: ' + (data.error || 'Unknown error'), true);
@@ -236,7 +194,7 @@ async function searchAll() {
         if (data.success) {
             let totalJobs = 0;
             data.results.forEach(r => {
-                if (r.result.success) totalJobs += r.result.jobs_found || 0;
+                if (r.success) totalJobs += r.total_jobs || 0;
             });
             showStatus(`Search complete! Found ${totalJobs} total jobs`);
             setTimeout(() => location.reload(), 2000);
@@ -276,5 +234,46 @@ async function reanalyzeMessages() {
         btn.textContent = 'Re-analyze Queued Messages';
     }
 }
+
+async function updateProgress() {
+    try {
+        const response = await fetch('/api/progress');
+        const data = await response.json();
+        
+        const progressContent = document.getElementById('progress-content');
+        
+        if (data.recent_runs.length === 0 && data.pending_by_channel.length === 0) {
+            progressContent.innerHTML = '<p>No recent activity. All channels up to date.</p>';
+            return;
+        }
+        
+        let html = '';
+        
+        if (data.recent_runs.length > 0) {
+            html += '<h3>Recent Runs</h3><table><thead><tr><th>Channel ID</th><th>Status</th><th>Fetched</th><th>Analyzed</th><th>Jobs</th></tr></thead><tbody>';
+            for (const run of data.recent_runs) {
+                const statusClass = run.status === 'completed' ? 'status-success' : run.status === 'failed' ? 'status-error' : 'status-running';
+                html += `<tr><td>${run.channel_id || 'All'}</td><td class="${statusClass}">${run.status}</td><td>${run.messages_fetched}</td><td>${run.messages_analyzed}</td><td>${run.jobs_found}</td></tr>`;
+            }
+            html += '</tbody></table>';
+        }
+        
+        if (data.pending_by_channel.length > 0) {
+            html += '<h3>Pending Analysis</h3><ul>';
+            for (const item of data.pending_by_channel) {
+                html += `<li>${item.channel}: ${item.pending} messages</li>`;
+            }
+            html += '</ul>';
+        }
+        
+        progressContent.innerHTML = html;
+    } catch (e) {
+        console.error('Failed to fetch progress:', e);
+    }
+}
+
+// Update progress every 3 seconds
+updateProgress();
+setInterval(updateProgress, 3000);
 </script>
 {% endblock %}

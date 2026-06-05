@@ -3,7 +3,7 @@
 from datetime import datetime
 from typing import Optional
 
-from sqlalchemy import Column, Integer, String, Text, Boolean, DateTime, ForeignKey, JSON
+from sqlalchemy import Column, Integer, BigInteger, String, Text, Boolean, DateTime, ForeignKey, JSON
 from sqlalchemy.orm import declarative_base, relationship
 
 Base = declarative_base()
@@ -37,11 +37,11 @@ class Message(Base):
     __tablename__ = "messages"
 
     id = Column(Integer, primary_key=True)
-    telegram_id = Column(Integer, nullable=False, index=True)
+    telegram_id = Column(BigInteger, nullable=False, index=True)
     channel_id = Column(Integer, ForeignKey("channels.id"), nullable=False)
     date = Column(DateTime, nullable=True)
     text = Column(Text, nullable=True)
-    sender_id = Column(Integer, nullable=True)
+    sender_id = Column(BigInteger, nullable=True)
     sender_username = Column(String, nullable=True)
     sender_first_name = Column(String, nullable=True)
     has_image = Column(Boolean, default=False)
