@@ -1,0 +1,10 @@
+telethon
+python-dotenv
+aiohttp
+asyncpg
+uvicorn
+sqlalchemy
+python-multipart
+websockets
+ollama
+fastapi
