@@ -3,9 +3,11 @@ import { useEffect, useRef, useState } from 'react';
 export interface ProgressUpdate {
   type: 'fetch_start' | 'fetch_progress' | 'analyze_start' | 'analyze_progress' | 'analyze_complete' | 'error';
   channel?: string;
+  channel_id?: number;
   status?: string;
   count?: number;
   total?: number;
+  current?: number;
   analyzed?: number;
   processed?: number;
   jobs?: number;
@@ -22,7 +24,7 @@ export const useWebSocket = (url: string) => {
 
   useEffect(() => {
     let ws: WebSocket | null = null;
-    let reconnectTimer: NodeJS.Timeout | null = null;
+    let reconnectTimer: number | null = null;
 
     const connect = () => {
       try {
@@ -50,7 +52,7 @@ export const useWebSocket = (url: string) => {
         ws.onclose = () => {
           setIsConnected(false);
           // Attempt to reconnect after 5 seconds
-          reconnectTimer = setTimeout(() => {
+          reconnectTimer = window.setTimeout(() => {
             connect();
           }, 5000);
         };

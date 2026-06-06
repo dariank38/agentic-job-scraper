@@ -1,4 +1,5 @@
-const API_BASE = 'http://localhost:8000';
+// Use empty string for same-domain requests in production
+const API_BASE = import.meta.env.VITE_API_BASE_URL || '';
 
 export interface Channel {
   id: number;
@@ -7,7 +8,10 @@ export interface Channel {
   description?: string;
   is_active: boolean;
   message_count?: number;
+  pending_count?: number;
   job_count?: number;
+  last_fetch_new_count?: number;
+  last_fetch_at?: string;
 }
 
 export interface Job {

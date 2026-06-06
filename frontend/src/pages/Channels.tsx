@@ -12,6 +12,7 @@ import { useWebSocketProgress } from '@/components/Layout';
 const Channels = () => {
   const [channels, setChannels] = useState<Channel[]>([]);
   const [dialogs, setDialogs] = useState<any[]>([]);
+  const [allDialogs, setAllDialogs] = useState<any[]>([]);
   const [showDialogs, setShowDialogs] = useState(false);
   const [status, setStatus] = useState<{ message: string; isError: boolean } | null>(null);
   const [loadingActions, setLoadingActions] = useState<Set<string>>(new Set());
@@ -19,6 +20,7 @@ const Channels = () => {
   const [addedUsernames, setAddedUsernames] = useState<Set<string>>(new Set());
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [channelToDelete, setChannelToDelete] = useState<number | null>(null);
+  const [stats, setStats] = useState<any>(null);
   const { progress: wsProgress, channelProgress } = useWebSocketProgress();
 
   useEffect(() => {
@@ -29,7 +31,17 @@ const Channels = () => {
 
   useEffect(() => {
     loadChannels();
+    loadStats();
   }, []);
+
+  const loadStats = async () => {
+    try {
+      const data = await api.getStats();
+      setStats(data);
+    } catch (error) {
+      console.error('Failed to load stats:', error);
+    }
+  };
 
   const loadChannels = async () => {
     try {
@@ -65,14 +77,8 @@ const Channels = () => {
     try {
       const data = await withLoading('load-dialogs', () => api.getTelegramDialogs());
       if (data.success) {
-        const existingUsernames = new Set(channels.map(c => c.username));
-        const filteredDialogs = data.dialogs.filter(
-          (dialog: any) => {
-            const username = (dialog.username || '');
-            return !existingUsernames.has(username) && !addedUsernames.has(username) && !channels.some(c => c.username === ("@"+ username));
-          }
-        );
-        setDialogs(filteredDialogs);
+        setAllDialogs(data.dialogs);
+        filterDialogsLocally(data.dialogs);
         setShowDialogs(true);
       } else {
         showStatus('Error: ' + (data.error || 'Failed to load dialogs'), true);
@@ -80,6 +86,17 @@ const Channels = () => {
     } catch (e: any) {
       showStatus('Error: ' + e.message, true);
     }
+  };
+
+  const filterDialogsLocally = (dialogsList = allDialogs) => {
+    const existingUsernames = new Set(channels.map(c => c.username));
+    const filteredDialogs = dialogsList.filter(
+      (dialog: any) => {
+        const username = (dialog.username || '');
+        return !existingUsernames.has(username) && !addedUsernames.has(username) && !channels.some(c => c.username === ("@"+ username));
+      }
+    );
+    setDialogs(filteredDialogs);
   };
 
   const addChannelDirect = async (username: string, name: string) => {
@@ -92,7 +109,11 @@ const Channels = () => {
       await withLoading(`add-${username}`, () => api.addChannel(data));
       showStatus('Channel added successfully!');
       setAddedUsernames(prev => new Set(prev).add(username));
-      setTimeout(() => loadChannels(), 100);
+      setTimeout(() => {
+        loadChannels();
+        // Filter dialogs locally to remove the added channel from the list
+        filterDialogsLocally();
+      }, 100);
     } catch (e: any) {
       showStatus('Error: ' + e.message, true);
     }
@@ -109,7 +130,12 @@ const Channels = () => {
       await withLoading('add-channel', () => api.addChannel(data));
       showStatus('Channel added successfully!');
       setFormData({ username: '', name: '', description: '' });
-      setTimeout(() => loadChannels(), 100);
+      setAddedUsernames(prev => new Set(prev).add(formData.username));
+      setTimeout(() => {
+        loadChannels();
+        // Filter dialogs locally to remove the added channel from the list
+        filterDialogsLocally();
+      }, 100);
     } catch (e: any) {
       showStatus('Error: ' + e.message, true);
     }
@@ -117,9 +143,15 @@ const Channels = () => {
 
   const searchChannel = async (channelId: number) => {
     try {
-      const data = await withLoading(`search-${channelId}`, () => api.fetchChannel(channelId));
+      // Check if Ollama is available before attempting analysis (search includes analysis)
+      if (!stats?.ollama_available) {
+        showStatus('Error: Ollama is not available. Please check if Ollama is running.', true);
+        return;
+      }
+
+      const data = await withLoading(`search-${channelId}`, () => api.searchChannel(channelId));
       if (data.success) {
-        showStatus(`Fetched ${data.new_messages} new messages (${data.days_back_used}d window)`);
+        showStatus(`Fetched ${data.total_new_messages} new messages, found ${data.total_jobs} jobs (${data.days_back_used}d window)`);
         setTimeout(() => loadChannels(), 1500);
       } else {
         showStatus('Error: ' + (data.error || 'Unknown error'), true);
@@ -261,6 +293,16 @@ const Channels = () => {
                     {channel.description && <p>{channel.description}</p>}
                     <p className="text-sm text-gray-500">
                       {channel.message_count || 0} messages | {channel.job_count || 0} jobs
+                      {(channel.last_fetch_new_count || 0) > 0 && (
+                        <span className="ml-2 inline-flex items-center px-1.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
+                          +{channel.last_fetch_new_count} fetched
+                        </span>
+                      )}
+                      {(channel.pending_count || 0) > 0 && (
+                        <span className="ml-2 inline-flex items-center px-1.5 py-0.5 rounded-full text-xs font-medium bg-orange-100 text-orange-800">
+                          {channel.pending_count} pending
+                        </span>
+                      )}
                     </p>
                     {channelProgress[channel.username] && (
                       <div className="mt-2">

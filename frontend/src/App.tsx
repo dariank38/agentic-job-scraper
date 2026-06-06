@@ -5,8 +5,6 @@ import Channels from '@/pages/Channels';
 import Jobs from '@/pages/Jobs';
 import Developers from '@/pages/Developers';
 import Messages from '@/pages/Messages';
-import JobDetail from '@/pages/JobDetail';
-import DeveloperDetail from '@/pages/DeveloperDetail';
 
 function App() {
   return (
@@ -18,9 +16,7 @@ function App() {
               <Route path="/" element={<Dashboard />} />
               <Route path="/channels" element={<Channels />} />
               <Route path="/jobs" element={<Jobs />} />
-              <Route path="/jobs/:id" element={<JobDetail />} />
               <Route path="/developers" element={<Developers />} />
-              <Route path="/developers/:id" element={<DeveloperDetail />} />
               <Route path="/messages" element={<Messages />} />
             </Routes>
           </Layout>

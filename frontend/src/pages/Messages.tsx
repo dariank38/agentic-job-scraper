@@ -50,7 +50,7 @@ const Messages = () => {
   const limit = 8;
   const offset = parseInt(searchParams.get('offset') || '0');
 
-  const { progress: wsProgress, channelProgress } = useWebSocketProgress();
+  const { progress: wsProgress } = useWebSocketProgress();
 
   useEffect(() => {
     loadMessages();
@@ -165,7 +165,7 @@ const Messages = () => {
               <Loader2 className="w-5 h-5 text-blue-600 animate-spin" />
               <div className="flex-1">
                 <p className="font-medium text-blue-900">
-                  Analyzing @{analyzingChannel}
+                  Analyzing {analyzingChannel}
                 </p>
                 {analysisProgress && (
                   <div className="mt-2">
@@ -246,7 +246,7 @@ const Messages = () => {
                           <div className="flex-1 min-w-0">
                             <div className="flex items-center gap-2 mb-1.5 flex-wrap">
                               <span className="font-semibold text-sm text-gray-900 truncate">
-                                @{msg.channel?.username || 'unknown'}
+                                {msg.channel?.username || 'unknown'}
                               </span>
                               <Badge variant={statusInfo.variant} className="text-xs px-2 py-0.5">
                                 <StatusIcon className="w-3 h-3 mr-1" />
