@@ -142,7 +142,10 @@ const WebSocketProgressProvider = ({ children }: { children: React.ReactNode }) 
 
     const connect = () => {
       try {
-        ws = new WebSocket('ws://localhost:8000/ws/progress');
+        // Use environment variable or construct from current location for same-domain requests
+        const wsUrl = import.meta.env.VITE_WS_BASE_URL || 
+          `${window.location.protocol === 'https:' ? 'wss:' : 'ws:'}//${window.location.host}/ws/progress`;
+        ws = new WebSocket(wsUrl);
         wsRef.current = ws;
 
         ws.onopen = () => {
@@ -166,7 +169,7 @@ const WebSocketProgressProvider = ({ children }: { children: React.ReactNode }) 
                 setChannelProgress(prev => ({
                   ...prev,
                   [channel]: {
-                    current: data.analyzed || 0,
+                    current: data.current || 0,
                     total: data.total || 0,
                   }
                 }));

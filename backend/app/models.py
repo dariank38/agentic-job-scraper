@@ -19,6 +19,8 @@ class Channel(Base):
     name = Column(String, nullable=True)
     description = Column(Text, nullable=True)
     is_active = Column(Boolean, default=True)
+    last_fetch_new_count = Column(Integer, default=0)  # Number of new messages from last fetch
+    last_fetch_at = Column(DateTime, nullable=True)  # Timestamp of last fetch
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 

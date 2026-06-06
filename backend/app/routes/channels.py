@@ -106,6 +106,15 @@ def register_channel_routes(app):
             )
             message_count = msg_count_result.scalar() or 0
             
+            # Count pending messages (not yet analyzed)
+            pending_count_result = await db.execute(
+                select(func.count()).select_from(Message).filter(
+                    Message.channel_id == channel.id,
+                    Message.analysis_status == "pending"
+                )
+            )
+            pending_count = pending_count_result.scalar() or 0
+            
             # Count jobs
             job_count_result = await db.execute(
                 select(func.count()).select_from(Job).filter(Job.channel_id == channel.id)
@@ -119,7 +128,10 @@ def register_channel_routes(app):
                 "description": channel.description,
                 "is_active": channel.is_active,
                 "message_count": message_count,
+                "pending_count": pending_count,
                 "job_count": job_count,
+                "last_fetch_new_count": channel.last_fetch_new_count,
+                "last_fetch_at": channel.last_fetch_at.isoformat() if channel.last_fetch_at else None,
             })
         
         return {"channels": channels_data}

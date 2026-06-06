@@ -18,6 +18,7 @@ import {
   Play,
   Square,
   ChevronRight,
+  Loader2,
   Zap,
 } from 'lucide-react';
 import api from '@/services/api';
@@ -30,6 +31,7 @@ const Dashboard = () => {
   const [status, setStatus] = useState<{ message: string; isError: boolean } | null>(null);
   const [loadingActions, setLoadingActions] = useState<Set<string>>(new Set());
   const [cronRunning, setCronRunning] = useState(false);
+  const [initialLoading, setInitialLoading] = useState(true);
 
   const { progress: wsProgress, channelProgress } = useWebSocketProgress();
 
@@ -57,8 +59,10 @@ const Dashboard = () => {
       ]);
       setStats(statsData);
       setChannels(channelsData.channels);
+      setInitialLoading(false);
     } catch (error) {
       console.error('Failed to load data:', error);
+      setInitialLoading(false);
     }
   };
 
@@ -99,6 +103,12 @@ const Dashboard = () => {
 
   const analyzeChannel = async (channelId: number) => {
     try {
+      // Check if Ollama is available before attempting analysis
+      if (!stats?.ollama_available) {
+        showStatus('Error: Ollama is not available. Please check if Ollama is running.', true);
+        return;
+      }
+
       const data = await withLoading(`analyze-${channelId}`, () => api.analyzeChannel(channelId));
       if (data.success) {
         if (data.stopped) {
@@ -179,6 +189,12 @@ const Dashboard = () => {
 
   const analyzeAll = async () => {
     try {
+      // Check if Ollama is available before attempting analysis
+      if (!stats?.ollama_available) {
+        showStatus('Error: Ollama is not available. Please check if Ollama is running.', true);
+        return;
+      }
+
       const data = await withLoading('analyze-all', () => api.analyzeAll());
       if (data.success) {
         const totalJobs = data.results.reduce((s: number, r: any) => s + (r.jobs_found || 0), 0);
@@ -199,6 +215,12 @@ const Dashboard = () => {
 
   const searchAll = async () => {
     try {
+      // Check if Ollama is available before attempting analysis (search includes analysis)
+      if (!stats?.ollama_available) {
+        showStatus('Error: Ollama is not available. Please check if Ollama is running.', true);
+        return;
+      }
+
       const data = await withLoading('search-all', () => api.searchAll());
       if (data.success) {
         const totalJobs = data.results.reduce((s: number, r: any) => s + (r.total_jobs || 0), 0);
@@ -214,6 +236,12 @@ const Dashboard = () => {
 
   const reanalyzeMessages = async () => {
     try {
+      // Check if Ollama is available before attempting analysis
+      if (!stats?.ollama_available) {
+        showStatus('Error: Ollama is not available. Please check if Ollama is running.', true);
+        return;
+      }
+
       const data = await withLoading('reanalyze', () => api.reanalyzeMessages());
       if (data.success) {
         showStatus(`Re-analysis complete! Processed ${data.reanalyzed} messages`);
@@ -395,7 +423,12 @@ const Dashboard = () => {
               </div>
             </CardHeader>
             <CardContent className="p-0">
-              {channels.length > 0 ? (
+              {initialLoading ? (
+                <div className="px-4 py-8 text-center">
+                  <Loader2 className="w-5 h-5 text-gray-400 animate-spin mx-auto mb-2" />
+                  <p className="text-sm text-gray-500">Loading channels...</p>
+                </div>
+              ) : channels.length > 0 ? (
                 channels.map((channel) => (
                   <div key={channel.id} className="px-4 py-3 border-b last:border-b-0 hover:bg-gray-50 transition-colors">
                     <div className="flex justify-between items-center gap-3">
@@ -409,6 +442,16 @@ const Dashboard = () => {
                         {channel.name && <p className="text-xs text-gray-500 truncate">{channel.name}</p>}
                         <p className="text-xs text-gray-400 mt-0.5">
                           {(channel.message_count || 0).toLocaleString()} msgs &bull; {(channel.job_count || 0).toLocaleString()} jobs
+                          {(channel.last_fetch_new_count || 0) > 0 && (
+                            <span className="ml-2 inline-flex items-center px-1.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
+                              +{channel.last_fetch_new_count} fetched
+                            </span>
+                          )}
+                          {(channel.pending_count || 0) > 0 && (
+                            <span className="ml-2 inline-flex items-center px-1.5 py-0.5 rounded-full text-xs font-medium bg-orange-100 text-orange-800">
+                              {channel.pending_count} pending
+                            </span>
+                          )}
                         </p>
                         {channelProgress[channel.username] && (
                           <div className="mt-2">

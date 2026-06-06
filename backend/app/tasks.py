@@ -146,6 +146,12 @@ async def fetch_and_store_messages(
 
         await db.commit()
         print(f"[Fetch] Stored {new_count} new messages for {channel.username}")
+        
+        # Update channel with last fetch info
+        channel.last_fetch_new_count = new_count
+        channel.last_fetch_at = datetime.utcnow()
+        await db.commit()
+        
         await broadcast_progress("fetch_complete", {"channel": channel.username, "new_messages": new_count})
 
         if run_id:
@@ -331,17 +337,18 @@ async def analyze_messages(
         total_messages = len(messages)
         # batch_size aligned with analyzer semaphore max_concurrent=3
         batch_size = 3
+        total_batches = (total_messages + batch_size - 1) // batch_size  # Ceiling division
 
-        logger.info(f"Analyzing {total_messages} messages in batches of {batch_size} with stop support")
+        logger.info(f"Analyzing {total_messages} messages in {total_batches} batches of {batch_size} with stop support")
 
-        for batch_start in range(0, total_messages, batch_size):
+        for batch_num, batch_start in enumerate(range(0, total_messages, batch_size), 1):
             if is_analysis_stopped(channel.id):
-                print(f"[Analyze] Stop requested for channel {channel.id}, halting after batch {batch_start // batch_size}")
+                print(f"[Analyze] Stop requested for channel {channel.id}, halting after batch {batch_num}")
                 stopped_count = total_messages - batch_start
                 break
 
             batch = messages[batch_start:batch_start + batch_size]
-            print(f"[Analyze] Processing batch {batch_start // batch_size + 1}: messages {batch_start + 1}-{min(batch_start + batch_size, total_messages)}")
+            print(f"[Analyze] Processing batch {batch_num}/{total_batches}: messages {batch_start + 1}-{min(batch_start + batch_size, total_messages)}")
 
             filtered_messages = []
             for msg in batch:
@@ -352,7 +359,9 @@ async def analyze_messages(
                     msg.analysis_status = "skipped"
 
             if not filtered_messages:
-                print(f"[Analyze] Batch {batch_start // batch_size + 1}: all messages filtered out")
+                print(f"[Analyze] Batch {batch_num}/{total_batches}: all messages filtered out")
+                # Still broadcast progress even if filtered out
+                await broadcast_progress("analyze_progress", {"channel": channel.username, "current": batch_num, "total": total_batches})
                 continue
 
             # BUG FIX #5: Use module-level _analyze_single instead of inner closure
@@ -383,22 +392,54 @@ async def analyze_messages(
                         message.analysis_status = "skipped"
                         continue
 
+                    # Convert location to string if it's a list
+                    location = job_data.get("location")
+                    if isinstance(location, list):
+                        location = ", ".join(location)
+
+                    # Convert contact to string if it's a list
+                    contact = job_data.get("contact")
+                    if isinstance(contact, list):
+                        contact = ", ".join(contact)
+
+                    # Convert contact_type to string if it's a list
+                    contact_type = job_data.get("contact_type")
+                    if isinstance(contact_type, list):
+                        contact_type = ", ".join(contact_type)
+
+                    # Check for duplicate job by title + company
+                    title = job_data.get("title")
+                    company = job_data.get("company")
+                    if title and company:
+                        existing_job_result = await db.execute(
+                            select(Job).filter(
+                                Job.title == title,
+                                Job.company == company,
+                            )
+                        )
+                        existing_job = existing_job_result.scalar_one_or_none()
+                        if existing_job:
+                            print(f"[Analyze] Skipping duplicate job: {title} at {company}")
+                            skipped_count += 1
+                            message.analysis_status = "skipped"
+                            continue
+
                     job = Job(
                         message_id=message.id,
                         channel_id=channel.id,
                         confidence=confidence,
                         translated_text=translated_text,
-                        title=job_data.get("title"),
-                        company=job_data.get("company"),
+                        title=title,
+                        company=company,
                         company_link=job_data.get("company_link"),
-                        location=job_data.get("location"),
+                        location=location,
                         is_remote=is_remote,
                         role_type=job_data.get("role_type"),
                         # BUG FIX #6: JSON column must receive list directly, not json.dumps()
                         # Storing json.dumps() causes double-serialization: "[\"python\"]" instead of ["python"]
                         skills=job_data.get("skills", []),
-                        contact=job_data.get("contact"),
-                        contact_type=job_data.get("contact_type"),
+                        contact=contact,
+                        contact_type=contact_type,
                         summary=job_data.get("summary"),
                     )
                     db.add(job)
@@ -408,39 +449,87 @@ async def analyze_messages(
 
                 elif category == "personal_info" and result.get("personal_info"):
                     pi_data = result.get("personal_info", {})
+
+                    # Convert contact to string if it's a list
+                    contact = pi_data.get("contact")
+                    if isinstance(contact, list):
+                        contact = ", ".join(contact)
+
+                    # Convert contact_type to string if it's a list
+                    contact_type = pi_data.get("contact_type")
+                    if isinstance(contact_type, list):
+                        contact_type = ", ".join(contact_type)
+
+                    # Convert portfolio to string if it's a list
+                    portfolio = pi_data.get("portfolio")
+                    if isinstance(portfolio, list):
+                        portfolio = ", ".join(portfolio)
+
+                    # Convert github to string if it's a list
+                    github = pi_data.get("github")
+                    if isinstance(github, list):
+                        github = ", ".join(github)
+
+                    # Convert linkedin to string if it's a list
+                    linkedin = pi_data.get("linkedin")
+                    if isinstance(linkedin, list):
+                        linkedin = ", ".join(linkedin)
+
+                    # Check for duplicate developer by name + contact/github/linkin
+                    name = pi_data.get("name")
+                    if name:
+                        conditions = [Developer.name == name]
+                        if contact:
+                            conditions.append(Developer.contact == contact)
+                        if github:
+                            conditions.append(Developer.github == github)
+                        if linkedin:
+                            conditions.append(Developer.linkedin == linkedin)
+
+                        # Only check if we have at least name + one identifier
+                        if len(conditions) >= 2:
+                            existing_dev_result = await db.execute(
+                                select(Developer).filter(*conditions)
+                            )
+                            existing_dev = existing_dev_result.scalar_one_or_none()
+                            if existing_dev:
+                                print(f"[Analyze] Skipping duplicate developer: {name}")
+                                skipped_count += 1
+                                message.analysis_status = "skipped"
+                                continue
+
                     developer = Developer(
                         message_id=message.id,
                         channel_id=channel.id,
                         confidence=confidence,
                         translated_text=translated_text,
-                        name=pi_data.get("name"),
+                        name=name,
                         # BUG FIX #6: Same double-serialization fix for Developer.skills
                         skills=pi_data.get("skills", []),
                         experience=pi_data.get("experience"),
-                        portfolio=pi_data.get("portfolio"),
-                        github=pi_data.get("github"),
-                        linkedin=pi_data.get("linkedin"),
-                        contact=pi_data.get("contact"),
-                        contact_type=pi_data.get("contact_type"),
+                        portfolio=portfolio,
+                        github=github,
+                        linkedin=linkedin,
+                        contact=contact,
+                        contact_type=contact_type,
                         looking_for_work=pi_data.get("looking_for_work"),
                         summary=pi_data.get("summary"),
                     )
                     db.add(developer)
                     devs_added += 1
                     message.analysis_status = "analyzed"
-                    print(f"[Analyze] Staged developer: {pi_data.get('name', 'unknown')}")
+                    print(f"[Analyze] Staged developer: {name or 'unknown'}")
                 else:
                     skipped_count += 1
                     message.analysis_status = "skipped"
 
                 analyzed_count += 1
 
-            processed = min(batch_start + batch_size, total_messages)
             await broadcast_progress("analyze_progress", {
                 "channel": channel.username,
                 "channel_id": channel.id,
-                "processed": processed,
-                "total": total_messages,
+                "current": batch_num,
+                "total": total_batches,
                 "analyzed": analyzed_count,
                 "jobs": jobs_added,
                 "developers": devs_added,
