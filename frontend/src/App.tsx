@@ -1,0 +1,33 @@
+import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
+import Layout, { ToastProvider, WebSocketProgressProvider } from '@/components/Layout';
+import Dashboard from '@/pages/Dashboard';
+import Channels from '@/pages/Channels';
+import Jobs from '@/pages/Jobs';
+import Developers from '@/pages/Developers';
+import Messages from '@/pages/Messages';
+import JobDetail from '@/pages/JobDetail';
+import DeveloperDetail from '@/pages/DeveloperDetail';
+
+function App() {
+  return (
+    <Router>
+      <WebSocketProgressProvider>
+        <ToastProvider>
+          <Layout>
+            <Routes>
+              <Route path="/" element={<Dashboard />} />
+              <Route path="/channels" element={<Channels />} />
+              <Route path="/jobs" element={<Jobs />} />
+              <Route path="/jobs/:id" element={<JobDetail />} />
+              <Route path="/developers" element={<Developers />} />
+              <Route path="/developers/:id" element={<DeveloperDetail />} />
+              <Route path="/messages" element={<Messages />} />
+            </Routes>
+          </Layout>
+        </ToastProvider>
+      </WebSocketProgressProvider>
+    </Router>
+  );
+}
+
+export default App;
