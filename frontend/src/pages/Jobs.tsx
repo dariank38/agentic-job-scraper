@@ -262,7 +262,7 @@ const Jobs = () => {
                           )}
                           <div className="flex items-center gap-1 mt-1 text-[10px] text-gray-400">
                             <MessageSquare className="w-3 h-3" />
-                            @{job.channel?.username || 'Unknown'}
+                            {job.channel_name || job.channel?.username || 'Unknown'}
                           </div>
                         </div>
                       </div>
@@ -436,7 +436,7 @@ const Jobs = () => {
                     <div className="mt-3 pt-3 border-t border-gray-200 flex flex-wrap gap-x-4 gap-y-1 text-xs text-gray-500">
                       <span className="flex items-center gap-1">
                         <MessageSquare className="w-3 h-3" />
-                        @{selectedJob.channel?.username || 'Unknown'}
+                        {selectedJob.channel_name || selectedJob.channel?.username || 'Unknown'}
                       </span>
                       <span className="flex items-center gap-1">
                         <Calendar className="w-3 h-3" />

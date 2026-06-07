@@ -25,29 +25,24 @@ cron_task: asyncio.Task | None = None
 
 
 def reset_stop_event(channel_id: int):
-    """Reset the stop event for a specific channel before starting analysis."""
     analysis_stop_events[channel_id] = asyncio.Event()
 
 
 def stop_analysis(channel_id: int):
-    """Signal the analysis for a specific channel to stop."""
     if channel_id in analysis_stop_events:
         analysis_stop_events[channel_id].set()
         print(f"[Analyze] Stop signal received for channel {channel_id}")
 
 
 def is_analysis_stopped(channel_id: int) -> bool:
-    """Check if analysis for a specific channel has been stopped."""
     return analysis_stop_events.get(channel_id, asyncio.Event()).is_set()
 
 
 def is_cron_running() -> bool:
-    """Check if the cron job is currently running."""
     return cron_running
 
 
 def start_cron_task() -> bool:
-    """Start the continuous scanner background task."""
     global cron_running, cron_task
     if cron_running:
         return False
@@ -58,7 +53,6 @@ def start_cron_task() -> bool:
 
 
 def stop_cron_task() -> bool:
-    """Stop the continuous scanner background task."""
     global cron_running, cron_task
     if not cron_running:
         return False
@@ -71,7 +65,6 @@ def stop_cron_task() -> bool:
 
 
 async def broadcast_progress(event_type: str, data: dict):
-    """Broadcast progress update to all WebSocket clients."""
     try:
         message = {"type": event_type, **data}
         print(f"[Broadcast] Sending: {message}")
@@ -85,9 +78,7 @@ async def create_operation(
     operation_type: str,
     channel: Channel,
 ) -> int:
-    """Create a new operation record and return its ID."""
     from app.models import Operation
-
     operation = Operation(
         operation_type=operation_type,
         channel_id=channel.id,
@@ -111,9 +102,7 @@ async def update_operation(
     developers_found: Optional[int] = None,
     error_message: Optional[str] = None,
 ):
-    """Update an operation record."""
     from app.models import Operation
-
     result = await db.execute(select(Operation).filter(Operation.id == operation_id))
     operation = result.scalar_one_or_none()
     if operation:
@@ -136,6 +125,101 @@ async def update_operation(
         await db.commit()
 
 
+# ── PRE-FILTER ────────────────────────────────────────────────────────────────
+
+def should_analyze_message(text: str) -> bool:
+    text_lower = text.lower()
+
+    exclusion_keywords = [
+        "marketing", "seo", "digital marketing", "growth hacker",
+        "advertising", "dropshipping", "mlm",
+        "crypto investment", "forex", "trading signal",
+        "airdrop", "casino", "gambling", "betting",
+        "medical", "healthcare", "nursing", "doctor", "pharmacist",
+        "accountant", "accounting", "finance manager", "auditor",
+        "graphic designer", "visual designer",
+        "content writer", "copywriter", "journalist",
+        "community manager", "social media manager",
+        "community moderator",
+        "real estate", "property agent", "construction worker",
+        "driver", "delivery rider", "cleaning",
+        "customer service", "customer support", "call center",
+        "recruiter", "talent acquisition", "headhunter",
+        "hr manager", "human resources",
+        "product manager", "project manager",
+        "teacher", "tutor", "professor",
+        # Chinese
+        "营销", "推广", "广告", "销售", "微商",
+        "投资", "外汇", "赌博", "博彩",
+        "医疗", "护士", "医生", "会计", "财务",
+        "人力资源", "人事", "招聘专员", "猎头",
+        "社群运营", "新媒体运营", "内容运营", "运营专员", "运营经理",
+        "文案", "编辑", "平面设计", "客服",
+        "产品经理", "项目经理", "商务",
+        "房产", "建筑工", "司机", "快递员",
+        "ui设计", "ux设计", "视觉设计",
+    ]
+
+    for keyword in exclusion_keywords:
+        if keyword in text_lower:
+            return False
+
+    role_keywords = [
+        "software engineer", "software developer", "software programmer",
+        "backend", "frontend", "front-end", "front end",
+        "fullstack", "full-stack", "full stack",
+        "devops", "platform engineer", "site reliability", "sre",
+        "mobile developer", "ios developer", "android developer",
+        "ml engineer", "ai engineer", "data engineer", "data scientist",
+        "blockchain developer", "smart contract", "web3 developer",
+        "qa engineer", "test engineer", "automation engineer",
+        "security engineer", "cloud engineer", "infrastructure engineer",
+        "tech lead", "team lead", "staff engineer", "principal engineer",
+        "solutions architect", "software architect", "cto",
+        "junior developer", "senior developer", "junior engineer", "senior engineer",
+        "web developer", "programmer", "coder",
+        # Chinese roots
+        "前端", "后端", "全栈", "运维",
+        "移动开发", "安卓", "鸿蒙",
+        "区块链", "智能合约",
+        "数据工程", "算法", "机器学习", "人工智能", "大模型",
+        "爬虫", "研发", "架构师", "技术负责人", "小程序",
+        "测试工程",
+    ]
+
+    stack_keywords = [
+        "python", "javascript", "typescript",
+        "golang", "rust", "java", "kotlin", "swift", "scala", "elixir",
+        "php", "ruby", "c++", "c#",
+        "react", "vue", "angular", "next.js", "nuxt", "svelte",
+        "h5", "uni-app", "uniapp", "taro",
+        "antd", "ant design", "element ui", "element plus",
+        "webpack", "vite",
+        "django", "flask", "fastapi", "laravel", "rails",
+        "spring boot", "springboot", "spring cloud", "mybatis", "dubbo",
+        "node.js", "nodejs", "express", "nestjs",
+        "flutter", "react native",
+        "docker", "kubernetes", "k8s", "terraform", "jenkins",
+        "ci/cd", "cicd", "github actions",
+        "aws", "gcp", "azure", "阿里云", "腾讯云", "华为云",
+        "linux",
+        "postgresql", "mongodb", "redis", "mysql", "elasticsearch",
+        "flink", "spark", "hadoop", "kafka",
+        "graphql", "microservices",
+        "分布式", "高并发", "中间件",
+        "solidity", "web3.js", "ethers.js",
+        "llm", "rag", "langchain",
+    ]
+
+    has_role = any(kw in text_lower for kw in role_keywords)
+    has_stack = any(kw in text_lower for kw in stack_keywords)
+
+    # role or stack keywords indicate software development content
+    return has_role or has_stack
+
+
+# ── FETCH ─────────────────────────────────────────────────────────────────────
+
 async def fetch_and_store_messages(
     db: AsyncSession,
     channel: Channel,
@@ -144,21 +228,24 @@ async def fetch_and_store_messages(
     account_id: Optional[int] = None,
 ) -> dict:
     """Fetch messages from Telegram and store in database."""
-    # Get Telegram account from database
     if account_id:
         result = await db.execute(select(TelegramAccount).filter(TelegramAccount.id == account_id))
         account = result.scalar_one_or_none()
         if not account:
-            return {
-                "success": False,
-                "error": "Telegram account not found",
-            }
-    else:
-        # Get first active account
-        result = await db.execute(
-            select(TelegramAccount).filter(TelegramAccount.is_active == True, TelegramAccount.is_authenticated == True)
-        )
+            return {"success": False, "error": "Telegram account not found"}
+    elif channel.telegram_account_id:
+        result = await db.execute(select(TelegramAccount).filter(TelegramAccount.id == channel.telegram_account_id))
         account = result.scalar_one_or_none()
+        if not account:
+            return {"success": False, "error": "Associated Telegram account not found"}
+    else:
+        result = await db.execute(
+            select(TelegramAccount).filter(
+                TelegramAccount.is_active == True,
+                TelegramAccount.is_authenticated == True,
+            )
+        )
+        account = result.scalars().first()
         if not account:
             return {
                 "success": False,
@@ -172,7 +259,6 @@ async def fetch_and_store_messages(
         session_name=account.session_name,
     )
 
-    # Create operation record for tracking
     operation_id = await create_operation(db, "fetch", channel)
 
     try:
@@ -200,40 +286,46 @@ async def fetch_and_store_messages(
                     )
                 )
                 existing = result.scalar_one_or_none()
-
                 if existing:
                     continue
 
                 sender = msg_data.get("sender") or {}
+                has_text = bool(msg_data.get("text"))
 
-                message = Message(
-                    telegram_id=msg_data["id"],
-                    channel_id=channel.id,
-                    date=msg_data.get("date"),
-                    text=msg_data.get("text"),
-                    sender_id=msg_data.get("sender_id"),
-                    sender_username=sender.get("username"),
-                    sender_first_name=sender.get("first_name"),
-                    has_image=msg_data.get("has_image", False),
-                )
-                db.add(message)
-                await db.flush()
-                new_count += 1
+                async with db.begin_nested():
+                    message = Message(
+                        telegram_id=msg_data["id"],
+                        channel_id=channel.id,
+                        date=msg_data.get("date"),
+                        text=msg_data.get("text"),
+                        sender_id=msg_data.get("sender_id"),
+                        sender_username=sender.get("username"),
+                        sender_first_name=sender.get("first_name"),
+                        has_image=msg_data.get("has_image", False),
+                        analysis_status="pending" if has_text else "skipped",
+                    )
+                    db.add(message)
+                    await db.flush()
+                    new_count += 1
 
                 if (i + 1) % 10 == 0:
                     print(f"[Fetch] Processed {i + 1}/{len(messages)} messages for {channel.username}, {new_count} new")
-                    await broadcast_progress("fetch_progress", {"channel": channel.username, "processed": i + 1, "total": len(messages), "new": new_count, "operation_id": operation_id})
+                    await broadcast_progress("fetch_progress", {
+                        "channel": channel.username,
+                        "processed": i + 1,
+                        "total": len(messages),
+                        "new": new_count,
+                        "operation_id": operation_id,
+                    })
                     await update_operation(db, operation_id, current=i + 1, total=len(messages))
 
             except Exception as e:
                 print(f"[Fetch] Error storing message {msg_data.get('id')}: {e}")
-                await db.rollback()
                 continue
 
         await db.commit()
         print(f"[Fetch] Stored {new_count} new messages for {channel.username}")
 
-        # Update channel with last fetch info
         channel.last_fetch_new_count = new_count
         channel.last_fetch_at = datetime.utcnow()
         await db.commit()
@@ -263,13 +355,8 @@ async def fetch_and_store_messages(
         await update_operation(db, operation_id, status="error", error_message=str(e))
         error_msg = str(e).lower()
         invalid_channel_errors = [
-            "channel not found",
-            "channel invalid",
-            "username not occupied",
-            "username invalid",
-            "no such entity",
-            "private",
-            "forbidden",
+            "channel not found", "channel invalid", "username not occupied",
+            "username invalid", "no such entity", "private", "forbidden",
         ]
 
         if any(err in error_msg for err in invalid_channel_errors):
@@ -280,125 +367,27 @@ async def fetch_and_store_messages(
             except Exception as delete_error:
                 print(f"[Fetch] Error deleting channel: {delete_error}")
                 await db.rollback()
-            return {
-                "success": False,
-                "error": f"Channel removed: {str(e)}",
-                "channel_removed": True,
-            }
+            return {"success": False, "error": f"Channel removed: {str(e)}", "channel_removed": True}
 
         print(f"[Fetch] Error fetching {channel.username}: {e}")
-        return {
-            "success": False,
-            "error": str(e),
-        }
+        return {"success": False, "error": str(e)}
+
     finally:
         try:
             await telegram_manager.disconnect()
         except Exception:
             pass
 
-def should_analyze_message(text: str) -> bool:
-    text_lower = text.lower()
 
-    exclusion_keywords = [
-        "marketing", "seo", "digital marketing", "growth hacker",
-        "advertising", "sales", "affiliate", "dropshipping",
-        "mlm", "crypto investment", "forex", "trading signal",
-        "airdrop", "casino", "gambling", "betting",
-        "medical", "healthcare", "nursing", "doctor", "pharmacist",
-        "accountant", "accounting", "finance manager", "auditor",
-        "graphic designer", "visual designer", "ui designer", "ux designer",
-        "content writer", "copywriter", "editor", "journalist",
-        "community manager", "social media manager", "social media",
-        "community moderator", "moderator", " mod ",
-        "real estate", "property agent", "construction",
-        "driver", "delivery", "cleaning", "logistics",
-        "customer service", "customer support", "call center",
-        "recruiter", "recruitment", "talent acquisition", "hr manager",
-        "human resources", "headhunter", "staffing",
-        "product manager", "project manager", "scrum master",
-        "operations manager", "business analyst", "business development",
-        "teacher", "tutor", "instructor", "professor",
-        "营销", "推广", "广告", "销售", "微商",
-        "投资", "外汇", "赌博", "博彩",
-        "医疗", "护士", "医生", "会计", "财务",
-        "人力资源", "人事", "招聘专员", "猎头",
-        "社群运营", "新媒体运营", "内容运营", "运营专员", "运营经理",
-        "文案", "编辑", "平面设计", "客服",
-        "产品经理", "项目经理", "商务",
-        "房产", "建筑", "司机", "快递",
-        "ui设计", "ux设计", "视觉设计",
-    ]
-
-    for keyword in exclusion_keywords:
-        if keyword in text_lower:
-            return False
-
-    remote_keywords = [
-        "remote", "work from home", "wfh", "fully remote", "100% remote",
-        "anywhere", "distributed team", "globally",
-        "远程", "居家办公", "在家办公", "全球",
-    ]
-    has_remote_signal = any(kw in text_lower for kw in remote_keywords)
-
-    role_keywords = [
-        "software engineer", "software developer", "software programmer",
-        "backend engineer", "backend developer",
-        "frontend engineer", "frontend developer",
-        "fullstack", "full-stack", "full stack",
-        "devops engineer", "platform engineer", "site reliability", "sre",
-        "mobile developer", "ios developer", "android developer",
-        "ml engineer", "ai engineer", "data engineer", "data scientist",
-        "blockchain developer", "smart contract developer", "web3 developer",
-        "qa engineer", "test engineer", "automation engineer",
-        "security engineer", "cloud engineer", "infrastructure engineer",
-        "tech lead", "team lead", "staff engineer", "principal engineer",
-        "solutions architect", "software architect", "cto",
-        "junior developer", "senior developer", "mid-level developer",
-        "junior engineer", "senior engineer",
-        "前端", "后端", "全栈", "运维", "测试工程",
-        "移动开发", "安卓", "鸿蒙", "区块链", "智能合约",
-        "数据工程", "算法", "机器学习", "人工智能", "大模型",
-        "爬虫", "研发", "架构师", "技术负责人", "小程序",
-    ]
-
-    stack_keywords = [
-        "python", "javascript", "typescript", "golang", " go ",
-        "rust", "java", "kotlin", "swift", "scala", "elixir",
-        "php", "ruby", "c++", "c#",
-        "react", "vue", "angular", "next.js", "nuxt", "svelte",
-        "h5", "uni-app", "uniapp", "taro",
-        "antd", "ant design", "element ui", "element plus",
-        "webpack", "vite",
-        "django", "flask", "fastapi", "laravel", "rails", "spring boot",
-        "springboot", "spring cloud", "mybatis", "dubbo", "nacos",
-        "node.js", "nodejs", "express", "nestjs",
-        "flutter", "react native",
-        "docker", "kubernetes", "k8s", "terraform", "jenkins", "ci/cd", "cicd",
-        "aws", "gcp", "azure", "阿里云", "腾讯云", "华为云",
-        "linux",
-        "postgresql", "mongodb", "redis", "mysql", "elasticsearch",
-        "flink", "spark", "hadoop", "kafka",
-        "graphql", "rest api", "microservices",
-        "分布式", "高并发", "中间件",
-        "solidity", "web3.js", "ethers.js",
-    ]
-
-    has_role = any(kw in text_lower for kw in role_keywords)
-    has_stack = any(kw in text_lower for kw in stack_keywords)
-
-    if has_role:
-        return True
-    if has_stack and has_remote_signal:
-        return True
-
-    return False
+# ── ANALYZE ───────────────────────────────────────────────────────────────────
 
 async def _analyze_single(analyzer, message):
     """Analyze a single message, returning (message, result, error)."""
     try:
-        # Add 60 second timeout to prevent hanging
-        result = await asyncio.wait_for(analyzer.analyze_message(message.text), timeout=60)
+        result = await asyncio.wait_for(
+            analyzer.analyze_message(message.text),
+            timeout=120,
+        )
         return message, result, None
     except asyncio.TimeoutError:
         print(f"[Analyze] Timeout analyzing message {message.id}")
@@ -416,12 +405,8 @@ async def analyze_messages(
     """Analyze unanalyzed messages with AI using concurrent pipeline."""
     if not await is_ollama_available():
         print(f"[Analyze] Ollama not available, skipping {channel.username}")
-        return {
-            "success": False,
-            "error": "Ollama not available",
-        }
+        return {"success": False, "error": "Ollama not available"}
 
-    # Create operation record for tracking
     operation_id = await create_operation(db, "analyze", channel)
 
     try:
@@ -453,9 +438,8 @@ async def analyze_messages(
         analyzed_count = 0
         stopped_count = 0
         total_messages = len(messages)
-        # Reduced batch size to 1 to avoid hanging on multiple messages
         batch_size = 1
-        total_batches = (total_messages + batch_size - 1) // batch_size  # Ceiling division
+        total_batches = (total_messages + batch_size - 1) // batch_size
 
         logger.info(f"Analyzing {total_messages} messages in {total_batches} batches of {batch_size} with stop support")
 
@@ -478,7 +462,6 @@ async def analyze_messages(
 
             if not filtered_messages:
                 print(f"[Analyze] Batch {batch_num}/{total_batches}: all messages filtered out")
-                # Still broadcast progress even if filtered out
                 await broadcast_progress("analyze_progress", {"channel": channel.username, "current": batch_num, "total": total_batches, "operation_id": operation_id})
                 await update_operation(db, operation_id, current=batch_num)
                 continue
@@ -499,12 +482,14 @@ async def analyze_messages(
                     message.analysis_status = "skipped"
                     continue
 
-                category = result.get("category", "other")
+                category = result.get("category")
                 confidence = result.get("confidence")
                 translated_text = result.get("translated_text")
 
-                if category == "job_posting" and result.get("job_posting"):
-                    job_data = result.get("job_posting", {})
+                # ── JOB POSTING ───────────────────────────────────────────────
+                if category == "job_posting":
+                    job_data = result.get("job_posting") or {}
+
                     is_remote = job_data.get("is_remote")
                     if is_remote is False:
                         print(f"[Analyze] Skipping on-site job: {job_data.get('title', 'unknown')}")
@@ -512,24 +497,28 @@ async def analyze_messages(
                         message.analysis_status = "skipped"
                         continue
 
-                    # Convert location to string if it's a list
+                    title = job_data.get("title")
+                    company = job_data.get("company")
+
                     location = job_data.get("location")
                     if isinstance(location, list):
                         location = ", ".join(location)
 
-                    # Convert contact to string if it's a list
                     contact = job_data.get("contact")
                     if isinstance(contact, list):
                         contact = ", ".join(contact)
 
-                    # Convert contact_type to string if it's a list
                     contact_type = job_data.get("contact_type")
                     if isinstance(contact_type, list):
                         contact_type = ", ".join(contact_type)
 
-                    # Check for duplicate job by title + company
-                    title = job_data.get("title")
-                    company = job_data.get("company")
+                    if not contact:
+                        contact = message.sender_username or (str(message.sender_id) if message.sender_id else None)
+                        contact_type = "telegram" if contact else None
+
+                    if not title:
+                        title = f"[No Title] sender:{message.sender_username or message.sender_id or 'unknown'}"
+
                     if title and company:
                         existing_job_result = await db.execute(
                             select(Job).filter(
@@ -537,8 +526,7 @@ async def analyze_messages(
                                 Job.company == company,
                             )
                         )
-                        existing_job = existing_job_result.scalar_one_or_none()
-                        if existing_job:
+                        if existing_job_result.scalar_one_or_none():
                             print(f"[Analyze] Skipping duplicate job: {title} at {company}")
                             skipped_count += 1
                             message.analysis_status = "skipped"
@@ -547,6 +535,7 @@ async def analyze_messages(
                     job = Job(
                         message_id=message.id,
                         channel_id=channel.id,
+                        channel_name=channel.name,
                         confidence=confidence,
                         translated_text=translated_text,
                         title=title,
@@ -563,38 +552,41 @@ async def analyze_messages(
                     db.add(job)
                     jobs_added += 1
                     message.analysis_status = "analyzed"
-                    print(f"[Analyze] Staged job: {job_data.get('title', 'unknown')}")
+                    print(f"[Analyze] Staged job: {title}")
 
-                elif category == "personal_info" and result.get("personal_info"):
-                    pi_data = result.get("personal_info", {})
+                # ── PERSONAL INFO ─────────────────────────────────────────────
+                elif category == "personal_info":
+                    pi_data = result.get("personal_info") or {}
 
-                    # Convert contact to string if it's a list
+                    name = pi_data.get("name")
+
                     contact = pi_data.get("contact")
                     if isinstance(contact, list):
                         contact = ", ".join(contact)
 
-                    # Convert contact_type to string if it's a list
                     contact_type = pi_data.get("contact_type")
                     if isinstance(contact_type, list):
                         contact_type = ", ".join(contact_type)
 
-                    # Convert portfolio to string if it's a list
                     portfolio = pi_data.get("portfolio")
                     if isinstance(portfolio, list):
                         portfolio = ", ".join(portfolio)
 
-                    # Convert github to string if it's a list
                     github = pi_data.get("github")
                     if isinstance(github, list):
                         github = ", ".join(github)
 
-                    # Convert linkedin to string if it's a list
                     linkedin = pi_data.get("linkedin")
                     if isinstance(linkedin, list):
                         linkedin = ", ".join(linkedin)
 
-                    # Check for duplicate developer by name + contact/github/linkin
-                    name = pi_data.get("name")
+                    if not contact:
+                        contact = message.sender_username or (str(message.sender_id) if message.sender_id else None)
+                        contact_type = "telegram" if contact else None
+
+                    if not name:
+                        name = message.sender_username or f"sender:{message.sender_id or 'unknown'}"
+
                     if name:
                         conditions = [Developer.name == name]
                         if contact:
@@ -604,13 +596,11 @@ async def analyze_messages(
                         if linkedin:
                             conditions.append(Developer.linkedin == linkedin)
 
-                        # Only check if we have at least name + one identifier
                         if len(conditions) >= 2:
                             existing_dev_result = await db.execute(
                                 select(Developer).filter(*conditions)
                             )
-                            existing_dev = existing_dev_result.scalar_one_or_none()
-                            if existing_dev:
+                            if existing_dev_result.scalar_one_or_none():
                                 print(f"[Analyze] Skipping duplicate developer: {name}")
                                 skipped_count += 1
                                 message.analysis_status = "skipped"
@@ -635,7 +625,8 @@ async def analyze_messages(
                     db.add(developer)
                     devs_added += 1
                     message.analysis_status = "analyzed"
-                    print(f"[Analyze] Staged developer: {name or 'unknown'}")
+                    print(f"[Analyze] Staged developer: {name}")
+
                 else:
                     skipped_count += 1
                     message.analysis_status = "skipped"
@@ -698,23 +689,23 @@ async def analyze_messages(
             "stopped": stopped_count > 0,
             "remaining": stopped_count,
         }
+
     except Exception as e:
         await db.rollback()
         await update_operation(db, operation_id, status="error", error_message=str(e))
         print(f"[Analyze] Error in analyze_messages for {channel.username}: {e}")
-        return {
-            "success": False,
-            "error": str(e),
-        }
+        return {"success": False, "error": str(e)}
 
+
+# ── CRON ──────────────────────────────────────────────────────────────────────
 
 async def continuous_scanner(
     fetch_interval_minutes: int = 30,
     sleep_interval_seconds: int = 30,
 ) -> None:
-    """Continuously fetch messages from channels (fetch-only, no analysis)."""
+    """Continuously fetch and analyze messages from channels."""
     global cron_running
-    print(f"[Cron] Starting continuous scanner (fetch-only)")
+    print("[Cron] Starting continuous scanner")
 
     channel_index = 0
     last_fetch_time: dict[int, datetime] = {}
@@ -745,6 +736,14 @@ async def continuous_scanner(
                             if fetch_result["success"]:
                                 last_fetch_time[channel.id] = now
                                 print(f"[Cron] {channel.username}: fetched {fetch_result['fetched']}, new {fetch_result['new_stored']}")
+
+                                if fetch_result["new_stored"] > 0:
+                                    print(f"[Cron] {channel.username}: analyzing {fetch_result['new_stored']} new messages...")
+                                    try:
+                                        analyze_result = await analyze_messages(db, channel)
+                                        print(f"[Cron] {channel.username}: jobs={analyze_result.get('jobs_found')}, devs={analyze_result.get('developers_found')}")
+                                    except Exception as e:
+                                        print(f"[Cron] {channel.username}: analyze EXCEPTION - {e}")
                             else:
                                 print(f"[Cron] {channel.username}: fetch ERROR - {fetch_result.get('error', 'unknown')}")
                         except Exception as e:
@@ -767,7 +766,15 @@ async def continuous_scanner(
     print("[Cron] Continuous scanner stopped")
 
 
+# ── LIFESPAN ──────────────────────────────────────────────────────────────────
+
 @asynccontextmanager
 async def lifespan(app):
     """Startup and shutdown events."""
-    yield
+    start_cron_task()  # ← 앱 시작 시 cron 자동 시작
+    print("[Lifespan] Cron started")
+    try:
+        yield
+    finally:
+        stop_cron_task()  # ← 앱 종료 시 정리
+        print("[Lifespan] Cron stopped")

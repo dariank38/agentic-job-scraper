@@ -32,6 +32,8 @@ export interface Job {
   applied_at?: string;
   notes?: string;
   analyzed_at?: string;
+  channel_id?: number;
+  channel_name?: string;
   channel: Channel;
   message: {
     id: number;

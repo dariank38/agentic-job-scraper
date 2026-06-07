@@ -13,11 +13,6 @@ logger = logging.getLogger(__name__)
 
 
 async def is_ollama_available() -> bool:
-    """Check if Ollama server is accessible.
-
-    Returns:
-        True if Ollama is running and accessible, False otherwise.
-    """
     try:
         client = AsyncClient(host=OLLAMA_BASE_URL)
         await client.list()
@@ -41,6 +36,15 @@ RULES:
 - ONLY include pure software development/engineering roles: frontend, backend, fullstack, devops, mobile, blockchain, smart_contract, QA, data engineer, ML/AI engineer, security, systems programming, embedded systems
 - For skills: Split long skill strings into individual skills. Example: "DeFi protocols (prediction markets, perpetual contracts DEX, cross-chain aggregation trading engine, lending, staking/re-staking)" should become ["DeFi protocols", "prediction markets", "perpetual contracts DEX", "cross-chain aggregation trading engine", "lending", "staking", "re-staking"]
 
+FIELD RULES:
+- If a field is unknown or not mentioned, use null (not "", not "N/A", not "unknown")
+- "is_remote": true if remote/wfh/anywhere/居家/远程 mentioned, false if on-site only, null if not mentioned
+- "skills": always an array, empty array [] if none found
+- "contact": extract @username, email, or URL. If none found, null
+- "contact_type": only fill if contact is found, otherwise null
+- "confidence": "high" if category is clear, "medium" if somewhat ambiguous, "low" if guessing
+- "looking_for_work": true if person is actively seeking work, false if just sharing info, null if unclear
+
 Return ONLY a raw JSON object. No markdown, no explanation, no code blocks. Exact format:
 {
   "category": "job_posting | personal_info | other",
@@ -51,7 +55,7 @@ Return ONLY a raw JSON object. No markdown, no explanation, no code blocks. Exac
     "company": "",
     "company_link": "",
     "location": "",
-    "is_remote": true/false,
+    "is_remote": true/false/null,
     "role_type": "frontend | backend | fullstack | devops | mobile | blockchain | smart_contract | data | ml_ai | qa | security | systems | embedded | other_tech",
     "skills": ["skill1", "skill2"],
     "contact": "",
@@ -67,6 +71,7 @@ Return ONLY a raw JSON object. No markdown, no explanation, no code blocks. Exac
     "linkedin": "",
     "contact": "",
     "contact_type": "telegram | email | linkedin | twitter | discord | other",
+    "looking_for_work": true/false/null,
     "summary": ""
   }
 }"""
@@ -75,32 +80,12 @@ RECOMMENDED_MODEL = "qwen2.5:7b-instruct-q4_K_M"
 
 
 class AsyncOllamaAnalyzer:
-    """Async Ollama analyzer with semaphore-based concurrency control.
-    """
-
     def __init__(self, base_url: str = None, model_name: str = None, max_concurrent: int = 3):
-        """
-        Initializes the async parser.
-
-        Args:
-            base_url: Ollama server URL (defaults to config)
-            model_name: Ollama model name (defaults to RECOMMENDED_MODEL)
-            max_concurrent: Max concurrent requests (3 for hybrid GPU/CPU processing)
-        """
         self.client = AsyncClient(host=base_url or OLLAMA_BASE_URL)
         self.model_name = model_name or OLLAMA_MODEL or RECOMMENDED_MODEL
         self.semaphore = asyncio.Semaphore(max_concurrent)
 
     async def analyze_message(self, message_text: str) -> dict[str, Any]:
-        """
-        Sends a single message to Ollama concurrently using a semaphore constraint.
-
-        Args:
-            message_text: The message text to analyze
-
-        Returns:
-            Parsed JSON result or error dict with category="other"
-        """
         if not message_text or len(message_text.strip()) < 10:
             return {"category": "other"}
 
@@ -116,10 +101,10 @@ class AsyncOllamaAnalyzer:
                         format="json",
                         options={
                             "temperature": 0.0,
-                            "num_predict": 2048,   # Allow full JSON with translated_text
-                            "num_ctx": 4096,       # Sufficient context for prompt + input
-                            "low_vram": True,      # Offload to CPU/RAM when needed
-                            "num_gpu": 50,         # 50% layers on GPU, 50% on RAM (hybrid)
+                            "num_predict": 2048,
+                            "num_ctx": 4096,
+                            "low_vram": True,
+                            "num_gpu": 50,
                         }
                     ),
                     timeout=600.0
@@ -127,23 +112,20 @@ class AsyncOllamaAnalyzer:
 
                 response_text = response['response']
                 try:
-                    result = json.loads(response_text)
-                    return result
+                    return json.loads(response_text)
                 except json.JSONDecodeError:
                     if "```json" in response_text:
                         json_part = response_text.split("```json")[1].split("```")[0]
-                        result = json.loads(json_part.strip())
-                        return result
+                        return json.loads(json_part.strip())
                     elif "```" in response_text:
                         json_part = response_text.split("```")[1].split("```")[0]
-                        result = json.loads(json_part.strip())
-                        return result
+                        return json.loads(json_part.strip())
                     else:
                         logger.error(f"[Ollama] JSON parse failed, raw: {response_text[:300]}")
                         raise
 
             except asyncio.TimeoutError:
-                logger.error("Ollama request timed out at 60s limit.")
+                logger.error("Ollama request timed out at 110s limit.")
                 raise ValueError("Ollama request timed out")
             except json.JSONDecodeError as e:
                 logger.error(f"Failed parsing structural JSON from response: {e}")
@@ -156,7 +138,6 @@ class AsyncOllamaAnalyzer:
 _analyzer_instance: AsyncOllamaAnalyzer = None
 
 def get_analyzer() -> AsyncOllamaAnalyzer:
-    """Get or create the global analyzer instance."""
     global _analyzer_instance
     if _analyzer_instance is None:
         _analyzer_instance = AsyncOllamaAnalyzer()
