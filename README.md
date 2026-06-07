@@ -12,6 +12,62 @@ An automated job scraping system that fetches software development job postings 
 - **Smart Filtering**: Automatically filters out non-software-development content
 - **Remote Jobs Focus**: Prioritizes remote/work-from-home opportunities
 
+## Planned Features
+
+- **Web Scraping from Job Boards**: Support for scraping jobs from popular job board URLs (LinkedIn, Indeed, etc.) with AI analysis
+- **Source Tracking**: Distinguish between Telegram-sourced and web-sourced job postings
+- **Extended Job Board Support**: Add more job boards and career sites based on user demand
+
+## Screenshots
+
+### Dashboard
+![Dashboard](screenshots/Dashboard.png)
+
+### Channels
+![Channels](screenshots/Channels.png)
+
+### Add Channel
+![Add Channel](screenshots/Channels%20-%20add.png)
+
+### Messages
+![Messages](screenshots/Messages.png)
+
+### Jobs
+![Jobs](screenshots/Job.png)
+
+### Job Detail
+![Job Detail](screenshots/Job%20Detail%202.png)
+
+### Developers
+![Developers](screenshots/Developers.png)
+
+## Who is this for?
+
+**Primary Users:**
+- **Software Developers Job Hunting** - Developers looking for remote/work-from-home opportunities who want to monitor multiple Telegram job channels in one place
+- **Tech Recruiters/Hiring Managers** - Recruiters monitoring competitor job postings, hiring managers tracking market trends and salary information
+- **Telegram Channel Managers** - Admins analyzing their channel's job posting effectiveness and community engagement
+
+**Secondary Users:**
+- **Remote Work Enthusiasts** - Developers specifically seeking remote opportunities, especially in regions with limited local job markets
+- **AI/ML Enthusiasts** - Developers interested in practical applications of local LLMs (Ollama) for content analysis and web scraping integration
+
+## Project Status
+
+**Note:** This project is designed for personal use. While it provides a solid foundation for automated job scraping and AI analysis, it is not 100% production-ready and may be missing some enterprise-grade best practices such as:
+
+- Comprehensive testing suite (unit, integration, E2E tests)
+- CI/CD pipeline configuration
+- Code quality tools (ESLint, Prettier, Black, isort)
+- Pre-commit hooks for automated checks
+- Containerization (Docker, docker-compose)
+- Database migration management (Alembic)
+- Security hardening (rate limiting, input validation)
+- Monitoring and logging infrastructure
+- Backup and disaster recovery documentation
+
+However, the project is fully functional and can be used effectively for personal job hunting, monitoring Telegram channels, and learning about AI-powered web scraping. Feel free to extend it with additional features and best practices as needed for your use case.
+
 ## Architecture
 
 ### Backend (FastAPI + Python)

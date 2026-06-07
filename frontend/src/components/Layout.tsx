@@ -3,6 +3,7 @@ import { useState, createContext, useContext, useEffect, useRef } from 'react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from '@/components/ui/sheet';
+import Footer from '@/components/Footer';
 import type { ProgressUpdate } from '@/hooks/useWebSocket';
 import {
   LayoutDashboard,
@@ -356,6 +357,9 @@ const Layout = ({ children }: { children: React.ReactNode }) => {
       <main className="max-w-[1280px] mx-auto px-4 md:px-6 lg:px-8 py-8">
         {children}
       </main>
+
+      {/* Footer */}
+      <Footer />
     </div>
   );
 };
