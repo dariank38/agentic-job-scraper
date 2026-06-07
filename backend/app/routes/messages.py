@@ -16,15 +16,28 @@ def register_message_routes(app):
     @app.get("/api/messages")
     async def api_messages(
         channel_id: Optional[int] = None,
+        search: Optional[str] = None,
+        analysis_status: Optional[str] = None,
         limit: int = 50,
         offset: int = 0,
         db: AsyncSession = Depends(get_db),
     ):
-        """Get messages as JSON."""
+        """Get messages as JSON with search and filters."""
         query = select(Message)
 
         if channel_id:
             query = query.filter(Message.channel_id == channel_id)
+
+        # Apply search filter
+        if search:
+            search_pattern = f"%{search}%"
+            query = query.where(
+                (Message.text.ilike(search_pattern))
+            )
+
+        # Apply status filter
+        if analysis_status:
+            query = query.filter(Message.analysis_status == analysis_status)
 
         # Get total count
         count_query = select(func.count()).select_from(query.subquery())

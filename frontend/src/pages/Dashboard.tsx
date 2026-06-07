@@ -18,6 +18,7 @@ import {
   RefreshCw,
   Play,
   Square,
+  RotateCcw,
   ChevronRight,
   Loader2,
   Zap,
@@ -229,18 +230,37 @@ const Dashboard = () => {
     }
   };
 
-  const searchAll = async () => {
+  const fetchAnalyzeAll = async () => {
     try {
-      // Check if Ollama is available before attempting analysis (search includes analysis)
+      // Check if Ollama is available before attempting analysis (fetch-analyze includes analysis)
       if (!stats?.ollama_available) {
         showStatus('Error: Ollama is not available. Please check if Ollama is running.', true);
         return;
       }
 
-      const data = await withLoading('search-all', () => api.searchAll());
+      const data = await withLoading('fetch-analyze-all', () => api.fetchAnalyzeAll());
       if (data.success) {
         const totalJobs = data.results.reduce((s: number, r: any) => s + (r.total_jobs || 0), 0);
         showStatus(`Complete! Found ${totalJobs} jobs across all channels`);
+        setTimeout(() => loadData(), 2000);
+      } else {
+        showStatus('Error: ' + (data.error || 'Unknown'), true);
+      }
+    } catch (e: any) {
+      showStatus('Error: ' + e.message, true);
+    }
+  };
+
+  const reanalyzeSkipped = async () => {
+    try {
+      if (!stats?.ollama_available) {
+        showStatus('Error: Ollama is not available. Please check if Ollama is running.', true);
+        return;
+      }
+
+      const data = await withLoading('reanalyze-skipped', () => api.reanalyzeSkipped());
+      if (data.success) {
+        showStatus('Re-analysis started for skipped messages');
         setTimeout(() => loadData(), 2000);
       } else {
         showStatus('Error: ' + (data.error || 'Unknown'), true);
@@ -283,28 +303,32 @@ const Dashboard = () => {
 
   return (
     <div className="space-y-6">
-      {/* Stats Grid */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-        {statItems.map(({ icon: Icon, value, label, color }) => (
-          <Card key={label} className="hover:shadow-md transition-shadow">
-            <CardContent>
-              <div className="flex items-start justify-between">
-                <div>
-                  <p className="text-xs font-medium text-muted-foreground mb-0.5">{label}</p>
-                  <p className="text-xl font-bold">{value}</p>
-                </div>
-                <div className={`p-1.5 rounded-md ${color}`}>
-                  <Icon size={14} />
-                </div>
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        {/* Left Sidebar */}
+        <div className="lg:col-span-1 space-y-4">
+          {/* Stats */}
+          <Card>
+            <CardHeader className="px-4 py-3 pb-2">
+              <CardTitle className="text-sm">Statistics</CardTitle>
+            </CardHeader>
+            <CardContent className="px-4 pb-4 pt-0">
+              <div className="grid grid-cols-2 gap-2">
+                {statItems.map(({ icon: Icon, value, label, color }) => (
+                  <div key={label} className="flex items-center gap-2 p-2 rounded-lg bg-gray-50">
+                    <div className={`p-1.5 rounded-md ${color} shrink-0`}>
+                      <Icon size={14} />
+                    </div>
+                    <div className="min-w-0">
+                      <p className="text-xs font-medium text-muted-foreground">{label}</p>
+                      <p className="text-base font-bold truncate">{value}</p>
+                    </div>
+                  </div>
+                ))}
               </div>
             </CardContent>
           </Card>
-        ))}
-      </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Quick Actions */}
-        <div className="lg:col-span-1 space-y-4">
+          {/* Quick Actions */}
           <Card>
             <CardHeader className="px-4 py-3 pb-2">
               <CardTitle className="flex items-center gap-1.5 text-sm">
@@ -336,11 +360,11 @@ const Dashboard = () => {
                   <Button
                     className="w-full justify-start"
                     variant="outline"
-                    onClick={() => searchAll()}
-                    disabled={loadingActions.has('search-all') || Object.keys(operations).length > 0}
+                    onClick={() => fetchAnalyzeAll()}
+                    disabled={loadingActions.has('fetch-analyze-all') || Object.keys(operations).length > 0}
                   >
                     <Zap size={14} className="mr-2" />
-                    {loadingActions.has('search-all') ? 'Processing...' : Object.keys(operations).length > 0 ? 'Channel(s) processing...' : 'Fetch + Analyze All'}
+                    {loadingActions.has('fetch-analyze-all') ? 'Processing...' : Object.keys(operations).length > 0 ? 'Channel(s) processing...' : 'Fetch + Analyze All'}
                   </Button>
                 </div>
               </div>
@@ -379,6 +403,15 @@ const Dashboard = () => {
                   <Button
                     className="w-full justify-start"
                     variant="outline"
+                    onClick={() => reanalyzeSkipped()}
+                    disabled={loadingActions.has('reanalyze-skipped')}
+                  >
+                    <RotateCcw size={14} className="mr-2" />
+                    {loadingActions.has('reanalyze-skipped') ? 'Re-analyzing...' : 'Re-analyze Skipped'}
+                  </Button>
+                  <Button
+                    className="w-full justify-start"
+                    variant="outline"
                     onClick={() => reanalyzeMessages()}
                     disabled={loadingActions.has('reanalyze')}
                   >
@@ -393,33 +426,6 @@ const Dashboard = () => {
                   {status.message}
                 </div>
               )}
-            </CardContent>
-          </Card>
-
-          {/* Navigate */}
-          <Card>
-            <CardHeader className="px-4 py-3 pb-2">
-              <CardTitle className="text-sm">Navigate</CardTitle>
-            </CardHeader>
-            <CardContent className="p-0">
-              {[
-                { to: '/channels', label: 'Manage Channels', icon: Radio },
-                { to: '/messages', label: 'View Messages', icon: MessageSquare },
-                { to: '/jobs', label: 'View Jobs', icon: Briefcase },
-                { to: '/developers', label: 'View Developers', icon: Users },
-              ].map(({ to, label, icon: Icon }) => (
-                <Link
-                  key={to}
-                  to={to}
-                  className="flex items-center justify-between px-4 py-3 hover:bg-gray-50 transition-colors no-underline text-gray-700 border-b last:border-b-0"
-                >
-                  <div className="flex items-center gap-2 text-sm font-medium">
-                    <Icon size={15} className="text-gray-400" />
-                    {label}
-                  </div>
-                  <ChevronRight size={14} className="text-gray-300" />
-                </Link>
-              ))}
             </CardContent>
           </Card>
         </div>

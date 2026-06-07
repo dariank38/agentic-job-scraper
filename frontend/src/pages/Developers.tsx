@@ -40,29 +40,21 @@ const Developers = () => {
   const [searchParams, setSearchParams] = useSearchParams();
   const [searchQuery, setSearchQuery] = useState('');
   const [total, setTotal] = useState(0);
+  const [developerNotes, setDeveloperNotes] = useState('');
   const lookingFilter = searchParams.get('looking_for_work');
   const limit = 10;
   const offset = parseInt(searchParams.get('offset') || '0');
   const { showToast } = useToast();
 
-  const filteredDevelopers = developers.filter(dev => {
-    if (!searchQuery) return true;
-    const query = searchQuery.toLowerCase();
-    const senderName = getSenderName(dev).toLowerCase();
-    const devName = (dev.name || '').toLowerCase();
-    const channelName = (dev.channel?.username || '').toLowerCase();
-    const skillsStr = dev.skills ? dev.skills.join(' ').toLowerCase() : '';
-    return senderName.includes(query) || devName.includes(query) || channelName.includes(query) || skillsStr.includes(query);
-  });
-
   useEffect(() => {
     loadDevelopers();
-  }, [lookingFilter, offset]);
+  }, [lookingFilter, offset, searchQuery]);
 
   const loadDevelopers = async () => {
     try {
       const params: any = { limit, offset };
       if (lookingFilter) params.looking_for_work = lookingFilter;
+      if (searchQuery) params.search = searchQuery;
       const data = await api.getDevelopers(params);
       setDevelopers(data.developers);
       setTotal(data.total || 0);
@@ -94,6 +86,29 @@ const Developers = () => {
   const clearFilters = () => {
     setSearchParams({});
     setSearchQuery('');
+  };
+
+  const toggleContacted = async (id: number) => {
+    const developer = developers.find(d => d.id === id);
+    if (developer?.is_contacted) {
+      showToast('warning', 'Developer is already marked as contacted');
+      return;
+    }
+    // Optimistic update
+    setDevelopers(prevDevs => prevDevs.map(d => d.id === id ? { ...d, is_contacted: true } : d));
+    if (selectedDeveloper?.id === id) {
+      setSelectedDeveloper(prev => prev ? { ...prev, is_contacted: true } : null);
+    }
+    try {
+      await api.toggleDeveloperContacted(id, developerNotes);
+      loadDevelopers();
+      setDeveloperNotes('');
+      showToast('success', 'Developer marked as contacted');
+    } catch (error) {
+      console.error('Failed to toggle contacted status:', error);
+      // Revert on error
+      loadDevelopers();
+    }
   };
 
   const exportDevelopers = () => {
@@ -191,10 +206,10 @@ const Developers = () => {
             </CardHeader>
             <CardContent className="p-0">
               <div className="px-4 pb-4 space-y-1">
-                {filteredDevelopers.length === 0 ? (
+                {developers.length === 0 ? (
                   <p className="text-sm text-gray-500 text-center py-8">No developers match your search.</p>
                 ) : (
-                  filteredDevelopers.map((dev) => {
+                  developers.map((dev) => {
                     const isSelected = selectedDeveloper?.id === dev.id;
                     const senderName = getSenderName(dev);
                     const skills = getSkills(dev);
@@ -219,20 +234,20 @@ const Developers = () => {
                         {/* Info */}
                         <div className="flex-1 min-w-0">
                           <div className="flex items-center gap-2 mb-0.5">
-                            <span className={`font-medium text-sm truncate ${isSelected ? 'text-primary' : ''}`}>
+                            <span className={`font-medium text-base truncate ${isSelected ? 'text-primary' : ''}`}>
                               {senderName}
                             </span>
                             {dev.looking_for_work && (
-                              <Badge variant="default" className="text-[10px] h-5 px-1.5">Looking</Badge>
+                              <Badge variant="default" className="text-xs h-5 px-1.5">Looking</Badge>
                             )}
                           </div>
-                          <p className="text-xs text-gray-500 truncate">
+                          <p className="text-sm text-gray-500 truncate">
                             {dev.name || 'Unnamed Developer'}
                           </p>
                           {skills.length > 0 && (
                             <div className="flex gap-1 mt-1.5 flex-wrap">
                               {skills.slice(0, 3).map((skill, idx) => (
-                                <span key={idx} className="text-[10px] px-1.5 py-0.5 bg-gray-100 text-gray-600 rounded-md">
+                                <span key={idx} className="text-xs px-1.5 py-0.5 bg-gray-100 text-gray-600 rounded-md">
                                   {skill}
                                 </span>
                               ))}
@@ -324,6 +339,25 @@ const Developers = () => {
                           </span>
                         </p>
                       </div>
+                    </div>
+
+                    {/* Action Buttons */}
+                    <div className="flex gap-2 pt-2">
+                      {!selectedDeveloper.is_contacted && (
+                        <Input
+                          placeholder="Add notes (optional)"
+                          value={developerNotes}
+                          onChange={(e) => setDeveloperNotes(e.target.value)}
+                          className="flex-1"
+                        />
+                      )}
+                      <Button
+                        size="sm"
+                        variant={selectedDeveloper.is_contacted ? 'default' : 'outline'}
+                        onClick={() => toggleContacted(selectedDeveloper.id)}
+                      >
+                        {selectedDeveloper.is_contacted ? 'Contacted ✓' : 'Mark Contacted'}
+                      </Button>
                     </div>
 
                     <Separator />

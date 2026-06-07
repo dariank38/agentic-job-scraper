@@ -68,8 +68,8 @@ def register_action_routes(app):
         except Exception as e:
             raise HTTPException(status_code=500, detail=f"Failed to analyze: {str(e)}")
 
-    @app.post("/api/search/{channel_id}")
-    async def search_channel(channel_id: int, db: AsyncSession = Depends(get_db)):
+    @app.post("/api/fetch-analyze/{channel_id}")
+    async def fetch_analyze_channel(channel_id: int, db: AsyncSession = Depends(get_db)):
         """Fetch and analyze messages in one operation."""
         try:
             result = await db.execute(select(Channel).filter(Channel.id == channel_id))
@@ -169,8 +169,8 @@ def register_action_routes(app):
         except Exception as e:
             raise HTTPException(status_code=500, detail=f"Failed to analyze all: {str(e)}")
 
-    @app.post("/api/search-all")
-    async def search_all(db: AsyncSession = Depends(get_db)):
+    @app.post("/api/fetch-analyze-all")
+    async def fetch_analyze_all(db: AsyncSession = Depends(get_db)):
         """Fetch and analyze messages from all active channels."""
         try:
             result = await db.execute(select(Channel).filter(Channel.is_active == True))
@@ -308,6 +308,217 @@ def register_action_routes(app):
             return {"success": True, "reanalyzed": reanalyzed}
         except Exception as e:
             raise HTTPException(status_code=500, detail=f"Failed to reanalyze: {str(e)}")
+
+    @app.post("/api/reanalyze-skipped")
+    async def reanalyze_skipped_messages(db: AsyncSession = Depends(get_db)):
+        """Re-analyze all messages that were skipped."""
+        try:
+            from app.models import Message
+            from app.tasks import analyze_messages
+
+            # Find all skipped messages
+            result = await db.execute(
+                select(Message).filter(Message.analysis_status == "skipped")
+            )
+            skipped_messages = result.scalars().all()
+
+            if not skipped_messages:
+                return {"success": True, "message": "No skipped messages to re-analyze"}
+
+            # Reset status to pending
+            for msg in skipped_messages:
+                msg.analysis_status = "pending"
+            await db.commit()
+
+            # Analyze all channels that have skipped messages
+            channel_ids = set(msg.channel_id for msg in skipped_messages)
+            results = []
+
+            for channel_id in channel_ids:
+                channel_result = await db.execute(select(Channel).filter(Channel.id == channel_id))
+                channel = channel_result.scalar_one_or_none()
+                if channel:
+                    result = await analyze_messages(db, channel)
+                    results.append({
+                        "channel_id": channel_id,
+                        "channel_username": channel.username,
+                        "result": result
+                    })
+
+            return {"success": True, "results": results}
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=f"Failed to re-analyze skipped messages: {str(e)}")
+
+    @app.post("/api/reanalyze-message/{message_id}")
+    async def reanalyze_single_message(message_id: int, db: AsyncSession = Depends(get_db)):
+        """Re-analyze a single skipped message."""
+        try:
+            from app.models import Message
+            from app.tasks import _analyze_single
+            from services.ollama_service import get_analyzer, is_ollama_available
+
+            if not await is_ollama_available():
+                raise HTTPException(status_code=500, detail="Ollama not available")
+
+            result = await db.execute(select(Message).filter(Message.id == message_id))
+            message = result.scalar_one_or_none()
+            if not message:
+                raise HTTPException(status_code=404, detail="Message not found")
+
+            # Reset status to pending
+            message.analysis_status = "pending"
+            await db.commit()
+
+            # Analyze the message
+            analyzer = get_analyzer()
+            message, result, error = await _analyze_single(analyzer, message)
+
+            if error:
+                message.analysis_status = "skipped"
+                await db.commit()
+                raise HTTPException(status_code=500, detail=f"Analysis failed: {str(error)}")
+
+            if not result or result.get("category") == "other":
+                message.analysis_status = "skipped"
+                await db.commit()
+                return {"success": True, "analyzed": False, "reason": "No relevant content found"}
+
+            # Process the result
+            category = result.get("category", "other")
+            confidence = result.get("confidence")
+            translated_text = result.get("translated_text")
+
+            if category == "job_posting" and result.get("job_posting"):
+                job_data = result.get("job_posting", {})
+                is_remote = job_data.get("is_remote")
+                if is_remote is False:
+                    message.analysis_status = "skipped"
+                    await db.commit()
+                    return {"success": True, "analyzed": False, "reason": "On-site job filtered"}
+
+                location = job_data.get("location")
+                if isinstance(location, list):
+                    location = ", ".join(location)
+
+                contact = job_data.get("contact")
+                if isinstance(contact, list):
+                    contact = ", ".join(contact)
+
+                contact_type = job_data.get("contact_type")
+                if isinstance(contact_type, list):
+                    contact_type = ", ".join(contact_type)
+
+                title = job_data.get("title")
+                company = job_data.get("company")
+                if title and company:
+                    existing_job_result = await db.execute(
+                        select(Job).filter(
+                            Job.title == title,
+                            Job.company == company,
+                        )
+                    )
+                    existing_job = existing_job_result.scalar_one_or_none()
+                    if existing_job:
+                        message.analysis_status = "skipped"
+                        await db.commit()
+                        return {"success": True, "analyzed": False, "reason": "Duplicate job"}
+
+                from app.models import Job
+                job = Job(
+                    message_id=message.id,
+                    channel_id=message.channel_id,
+                    confidence=confidence,
+                    translated_text=translated_text,
+                    title=title,
+                    company=company,
+                    company_link=job_data.get("company_link"),
+                    location=location,
+                    is_remote=is_remote,
+                    role_type=job_data.get("role_type"),
+                    skills=job_data.get("skills", []),
+                    contact=contact,
+                    contact_type=contact_type,
+                    summary=job_data.get("summary"),
+                )
+                db.add(job)
+                message.analysis_status = "analyzed"
+                await db.commit()
+                return {"success": True, "analyzed": True, "type": "job"}
+
+            elif category == "personal_info" and result.get("personal_info"):
+                pi_data = result.get("personal_info", {})
+
+                contact = pi_data.get("contact")
+                if isinstance(contact, list):
+                    contact = ", ".join(contact)
+
+                contact_type = pi_data.get("contact_type")
+                if isinstance(contact_type, list):
+                    contact_type = ", ".join(contact_type)
+
+                portfolio = pi_data.get("portfolio")
+                if isinstance(portfolio, list):
+                    portfolio = ", ".join(portfolio)
+
+                github = pi_data.get("github")
+                if isinstance(github, list):
+                    github = ", ".join(github)
+
+                linkedin = pi_data.get("linkedin")
+                if isinstance(linkedin, list):
+                    linkedin = ", ".join(linkedin)
+
+                name = pi_data.get("name")
+                if name:
+                    conditions = [Developer.name == name]
+                    if contact:
+                        conditions.append(Developer.contact == contact)
+                    if github:
+                        conditions.append(Developer.github == github)
+                    if linkedin:
+                        conditions.append(Developer.linkedin == linkedin)
+
+                    if len(conditions) >= 2:
+                        existing_dev_result = await db.execute(
+                            select(Developer).filter(*conditions)
+                        )
+                        existing_dev = existing_dev_result.scalar_one_or_none()
+                        if existing_dev:
+                            message.analysis_status = "skipped"
+                            await db.commit()
+                            return {"success": True, "analyzed": False, "reason": "Duplicate developer"}
+
+                from app.models import Developer
+                developer = Developer(
+                    message_id=message.id,
+                    channel_id=message.channel_id,
+                    confidence=confidence,
+                    translated_text=translated_text,
+                    name=name,
+                    skills=pi_data.get("skills", []),
+                    experience=pi_data.get("experience"),
+                    portfolio=portfolio,
+                    github=github,
+                    linkedin=linkedin,
+                    contact=contact,
+                    contact_type=contact_type,
+                    looking_for_work=pi_data.get("looking_for_work"),
+                    summary=pi_data.get("summary"),
+                )
+                db.add(developer)
+                message.analysis_status = "analyzed"
+                await db.commit()
+                return {"success": True, "analyzed": True, "type": "developer"}
+            else:
+                message.analysis_status = "skipped"
+                await db.commit()
+                return {"success": True, "analyzed": False, "reason": "No relevant category"}
+
+        except HTTPException:
+            raise
+        except Exception as e:
+            await db.rollback()
+            raise HTTPException(status_code=500, detail=f"Failed to re-analyze message: {str(e)}")
 
     @app.post("/api/stop-analyze")
     async def stop_analyze():

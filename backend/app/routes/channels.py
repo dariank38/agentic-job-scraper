@@ -94,15 +94,40 @@ def register_channel_routes(app):
     async def api_channels(
         limit: int = 10,
         offset: int = 0,
+        search: Optional[str] = None,
+        is_active: Optional[bool] = None,
         db: AsyncSession = Depends(get_db),
     ):
-        """Get channels as JSON with pagination."""
+        """Get channels as JSON with pagination, search, and filters."""
+        # Build base query
+        query = select(Channel)
+        count_query = select(func.count()).select_from(Channel)
+
+        # Apply search filter
+        if search:
+            search_pattern = f"%{search}%"
+            query = query.where(
+                (Channel.username.ilike(search_pattern)) |
+                (Channel.name.ilike(search_pattern)) |
+                (Channel.description.ilike(search_pattern))
+            )
+            count_query = count_query.where(
+                (Channel.username.ilike(search_pattern)) |
+                (Channel.name.ilike(search_pattern)) |
+                (Channel.description.ilike(search_pattern))
+            )
+
+        # Apply active filter
+        if is_active is not None:
+            query = query.where(Channel.is_active == is_active)
+            count_query = count_query.where(Channel.is_active == is_active)
+
         # Get total count
-        count_result = await db.execute(select(func.count()).select_from(Channel))
+        count_result = await db.execute(count_query)
         total = count_result.scalar() or 0
 
         # Get channels with pagination
-        channels_result = await db.execute(select(Channel).order_by(Channel.id).offset(offset).limit(limit))
+        channels_result = await db.execute(query.order_by(Channel.id).offset(offset).limit(limit))
         channels = channels_result.scalars().all()
 
         # Get counts for each channel using subqueries to avoid join multiplication
