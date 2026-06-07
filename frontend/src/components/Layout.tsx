@@ -3,6 +3,7 @@ import { useState, createContext, useContext, useEffect, useRef } from 'react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from '@/components/ui/sheet';
+import type { ProgressUpdate } from '@/hooks/useWebSocket';
 import {
   LayoutDashboard,
   Radio,
@@ -33,26 +34,11 @@ export const useToast = () => {
   return context;
 };
 
-export interface ProgressUpdate {
-  type: 'fetch_start' | 'fetch_progress' | 'analyze_start' | 'analyze_progress' | 'analyze_complete' | 'error';
-  channel?: string;
-  channel_id?: number;
-  status?: string;
-  count?: number;
-  total?: number;
-  analyzed?: number;
-  processed?: number;
-  jobs?: number;
-  jobs_found?: number;
-  developers?: number;
-  developers_found?: number;
-  error?: string;
-}
-
 interface WebSocketProgressContextType {
   progress: ProgressUpdate | null;
   isConnected: boolean;
   channelProgress: Record<string, { current: number; total: number }>;
+  operations: Record<string, { type: string; status: string }>;
 }
 
 const WebSocketProgressContext = createContext<WebSocketProgressContextType | null>(null);
@@ -100,7 +86,54 @@ const WebSocketProgressProvider = ({ children }: { children: React.ReactNode }) 
   const [isConnected, setIsConnected] = useState(false);
   const [progress, setProgress] = useState<ProgressUpdate | null>(null);
   const [channelProgress, setChannelProgress] = useState<Record<string, { current: number; total: number }>>({});
+  const [operations, setOperations] = useState<Record<string, { type: string; status: string }>>({});
   const wsRef = useRef<WebSocket | null>(null);
+  const pollIntervalRef = useRef<number | null>(null);
+
+  // Poll operations API as fallback when WebSocket is disconnected
+  useEffect(() => {
+    const pollOperations = async () => {
+      try {
+        const api = (await import('../services/api')).default;
+        const data = await api.getOperations();
+        if (data.operations && data.operations.length > 0) {
+          // Update operations state
+          const newOperations: Record<string, { type: string; status: string }> = {};
+          data.operations.forEach((op: any) => {
+            if (op.status === 'running' && op.channel_username) {
+              newOperations[op.channel_username] = {
+                type: op.operation_type,
+                status: op.status,
+              };
+              // Also update channel progress
+              setChannelProgress(prev => ({
+                ...prev,
+                [op.channel_username]: {
+                  current: op.current,
+                  total: op.total,
+                }
+              }));
+            }
+          });
+          setOperations(newOperations);
+        }
+      } catch (e) {
+        // Silently ignore polling errors
+      }
+    };
+
+    // Initial poll
+    pollOperations();
+
+    // Set up polling interval (every 5 seconds)
+    pollIntervalRef.current = window.setInterval(pollOperations, 5000);
+
+    return () => {
+      if (pollIntervalRef.current) {
+        clearInterval(pollIntervalRef.current);
+      }
+    };
+  }, []);
 
   // Restore progress from localStorage on mount
   useEffect(() => {
@@ -155,26 +188,37 @@ const WebSocketProgressProvider = ({ children }: { children: React.ReactNode }) 
         ws.onmessage = (event) => {
           try {
             const data = JSON.parse(event.data) as ProgressUpdate;
+            console.log('[WebSocket] Received:', data);
             setProgress(data);
-            
-            // Update channel progress
+
+            // Update channel progress and operations
             const channel = data.channel;
-            if (channel && (data.type === 'analyze_start' || data.type === 'analyze_progress')) {
-              if (data.type === 'analyze_start') {
-                setChannelProgress(prev => ({
-                  ...prev,
-                  [channel]: { current: 0, total: 0 }
-                }));
-              } else if (data.type === 'analyze_progress') {
-                setChannelProgress(prev => ({
-                  ...prev,
-                  [channel]: {
-                    current: data.current || 0,
-                    total: data.total || 0,
-                  }
-                }));
-              }
-            } else if (channel && (data.type === 'analyze_complete' || data.type === 'error')) {
+            if (channel && (data.type === 'analyze_start' || data.type === 'fetch_start')) {
+              // Start operation
+              const opType = data.type === 'analyze_start' ? 'analyze' : 'fetch';
+              setOperations(prev => ({
+                ...prev,
+                [channel]: { type: opType, status: 'running' }
+              }));
+              setChannelProgress(prev => ({
+                ...prev,
+                [channel]: { current: 0, total: 0 }
+              }));
+            } else if (channel && data.type === 'analyze_progress') {
+              setChannelProgress(prev => ({
+                ...prev,
+                [channel]: {
+                  current: data.current || 0,
+                  total: data.total || 0,
+                }
+              }));
+            } else if (channel && (data.type === 'analyze_complete' || data.type === 'fetch_complete' || data.type === 'error')) {
+              // End operation
+              setOperations(prev => {
+                const newOps = { ...prev };
+                delete newOps[channel];
+                return newOps;
+              });
               setChannelProgress(prev => {
                 const newProgress = { ...prev };
                 delete newProgress[channel];
@@ -182,7 +226,7 @@ const WebSocketProgressProvider = ({ children }: { children: React.ReactNode }) 
               });
             }
           } catch (e) {
-            // Silently ignore parse errors
+            console.error('[WebSocket] Parse error:', e);
           }
         };
 
@@ -210,7 +254,7 @@ const WebSocketProgressProvider = ({ children }: { children: React.ReactNode }) 
   }, []);
 
   return (
-    <WebSocketProgressContext.Provider value={{ progress, isConnected, channelProgress }}>
+    <WebSocketProgressContext.Provider value={{ progress, isConnected, channelProgress, operations }}>
       {children}
     </WebSocketProgressContext.Provider>
   );

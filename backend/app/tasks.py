@@ -73,9 +73,67 @@ def stop_cron_task() -> bool:
 async def broadcast_progress(event_type: str, data: dict):
     """Broadcast progress update to all WebSocket clients."""
     try:
-        await manager.broadcast({"type": event_type, **data})
+        message = {"type": event_type, **data}
+        print(f"[Broadcast] Sending: {message}")
+        await manager.broadcast(message)
     except Exception as e:
         print(f"[Broadcast] Error sending progress: {e}")
+
+
+async def create_operation(
+    db: AsyncSession,
+    operation_type: str,
+    channel: Channel,
+) -> int:
+    """Create a new operation record and return its ID."""
+    from app.models import Operation
+
+    operation = Operation(
+        operation_type=operation_type,
+        channel_id=channel.id,
+        channel_username=channel.username,
+        status="running",
+    )
+    db.add(operation)
+    await db.commit()
+    await db.refresh(operation)
+    return operation.id
+
+
+async def update_operation(
+    db: AsyncSession,
+    operation_id: int,
+    status: Optional[str] = None,
+    current: Optional[int] = None,
+    total: Optional[int] = None,
+    analyzed: Optional[int] = None,
+    jobs_found: Optional[int] = None,
+    developers_found: Optional[int] = None,
+    error_message: Optional[str] = None,
+):
+    """Update an operation record."""
+    from app.models import Operation
+
+    result = await db.execute(select(Operation).filter(Operation.id == operation_id))
+    operation = result.scalar_one_or_none()
+    if operation:
+        if status is not None:
+            operation.status = status
+        if current is not None:
+            operation.current = current
+        if total is not None:
+            operation.total = total
+        if analyzed is not None:
+            operation.analyzed = analyzed
+        if jobs_found is not None:
+            operation.jobs_found = jobs_found
+        if developers_found is not None:
+            operation.developers_found = developers_found
+        if error_message is not None:
+            operation.error_message = error_message
+        if status in ("completed", "stopped", "error"):
+            operation.completed_at = datetime.utcnow()
+        await db.commit()
 
 
 async def fetch_and_store_messages(
@@ -88,20 +146,23 @@ async def fetch_and_store_messages(
     # BUG FIX #1: Renamed to telegram_manager to avoid shadowing the global WebSocket `manager`
     telegram_manager = TelegramClientManager()
 
+    # Create operation record for tracking
+    operation_id = await create_operation(db, "fetch", channel)
+
     try:
         print(f"[Fetch] Starting fetch for {channel.username} (days_back={days_back})")
-        await broadcast_progress("fetch_start", {"channel": channel.username, "days_back": days_back})
+        await broadcast_progress("fetch_start", {"channel": channel.username, "days_back": days_back, "operation_id": operation_id})
         await telegram_manager.connect()
 
         print(f"[Fetch] Fetching messages from {channel.username}...")
-        await broadcast_progress("fetch_progress", {"channel": channel.username, "status": "fetching"})
+        await broadcast_progress("fetch_progress", {"channel": channel.username, "status": "fetching", "operation_id": operation_id})
         messages = await fetch_messages(
             telegram_manager.client,
             channel.username,
             days_back=days_back,
         )
         print(f"[Fetch] Fetched {len(messages)} messages from {channel.username}")
-        await broadcast_progress("fetch_progress", {"channel": channel.username, "status": "fetched", "count": len(messages)})
+        await broadcast_progress("fetch_progress", {"channel": channel.username, "status": "fetched", "count": len(messages), "operation_id": operation_id})
 
         new_count = 0
         for i, msg_data in enumerate(messages):
@@ -135,7 +196,8 @@ async def fetch_and_store_messages(
 
                 if (i + 1) % 10 == 0:
                     print(f"[Fetch] Processed {i + 1}/{len(messages)} messages for {channel.username}, {new_count} new")
-                    await broadcast_progress("fetch_progress", {"channel": channel.username, "processed": i + 1, "total": len(messages), "new": new_count})
+                    await broadcast_progress("fetch_progress", {"channel": channel.username, "processed": i + 1, "total": len(messages), "new": new_count, "operation_id": operation_id})
+                    await update_operation(db, operation_id, current=i + 1, total=len(messages))
 
             except Exception as e:
                 print(f"[Fetch] Error storing message {msg_data.get('id')}: {e}")
@@ -146,13 +208,14 @@ async def fetch_and_store_messages(
 
         await db.commit()
         print(f"[Fetch] Stored {new_count} new messages for {channel.username}")
-        
+
         # Update channel with last fetch info
         channel.last_fetch_new_count = new_count
         channel.last_fetch_at = datetime.utcnow()
         await db.commit()
-        
-        await broadcast_progress("fetch_complete", {"channel": channel.username, "new_messages": new_count})
+
+        await broadcast_progress("fetch_complete", {"channel": channel.username, "new_messages": new_count, "operation_id": operation_id})
+        await update_operation(db, operation_id, status="completed")
 
         if run_id:
             try:
@@ -173,6 +236,7 @@ async def fetch_and_store_messages(
 
     except Exception as e:
         await db.rollback()
+        await update_operation(db, operation_id, status="error", error_message=str(e))
         error_msg = str(e).lower()
         invalid_channel_errors = [
             "channel not found",
@@ -288,8 +352,12 @@ def should_analyze_message(text: str) -> bool:
 async def _analyze_single(analyzer, message):
     """Analyze a single message, returning (message, result, error)."""
     try:
-        result = await analyzer.analyze_message(message.text)
+        # Add 60 second timeout to prevent hanging
+        result = await asyncio.wait_for(analyzer.analyze_message(message.text), timeout=60)
         return message, result, None
+    except asyncio.TimeoutError:
+        print(f"[Analyze] Timeout analyzing message {message.id}")
+        return message, None, Exception("Analysis timeout")
     except Exception as e:
         print(f"[Analyze] Error analyzing message {message.id}: {e}")
         return message, None, e
@@ -308,10 +376,13 @@ async def analyze_messages(
             "error": "Ollama not available",
         }
 
+    # Create operation record for tracking
+    operation_id = await create_operation(db, "analyze", channel)
+
     try:
         print(f"[Analyze] Starting concurrent analysis for {channel.username}")
         reset_stop_event(channel.id)
-        await broadcast_progress("analyze_start", {"channel": channel.username, "channel_id": channel.id})
+        await broadcast_progress("analyze_start", {"channel": channel.username, "channel_id": channel.id, "operation_id": operation_id})
 
         messages_result = await db.execute(
             select(Message).filter(
@@ -322,9 +393,11 @@ async def analyze_messages(
         )
         messages = messages_result.scalars().all()
         print(f"[Analyze] Found {len(messages)} unanalyzed messages for {channel.username}")
-        await broadcast_progress("analyze_progress", {"channel": channel.username, "status": "found", "total": len(messages)})
+        await broadcast_progress("analyze_progress", {"channel": channel.username, "status": "found", "total": len(messages), "operation_id": operation_id})
+        await update_operation(db, operation_id, total=len(messages))
 
         if len(messages) == 0:
+            await update_operation(db, operation_id, status="completed")
             return {"success": True, "analyzed": 0, "jobs_found": 0, "developers_found": 0, "skipped": 0}
 
         analyzer = get_analyzer()
@@ -335,8 +408,8 @@ async def analyze_messages(
         analyzed_count = 0
         stopped_count = 0
         total_messages = len(messages)
-        # batch_size aligned with analyzer semaphore max_concurrent=3
-        batch_size = 3
+        # Reduced batch size to 1 to avoid hanging on multiple messages
+        batch_size = 1
         total_batches = (total_messages + batch_size - 1) // batch_size  # Ceiling division
 
         logger.info(f"Analyzing {total_messages} messages in {total_batches} batches of {batch_size} with stop support")
@@ -361,12 +434,15 @@ async def analyze_messages(
             if not filtered_messages:
                 print(f"[Analyze] Batch {batch_num}/{total_batches}: all messages filtered out")
                 # Still broadcast progress even if filtered out
-                await broadcast_progress("analyze_progress", {"channel": channel.username, "current": batch_num, "total": total_batches})
+                await broadcast_progress("analyze_progress", {"channel": channel.username, "current": batch_num, "total": total_batches, "operation_id": operation_id})
+                await update_operation(db, operation_id, current=batch_num)
                 continue
 
             # BUG FIX #5: Use module-level _analyze_single instead of inner closure
+            print(f"[Analyze] Starting analysis for {len(filtered_messages)} messages in batch {batch_num}")
             tasks = [_analyze_single(analyzer, msg) for msg in filtered_messages]
             completed = await asyncio.gather(*tasks)
+            print(f"[Analyze] Completed analysis for batch {batch_num}, got {len(completed)} results")
 
             for message, result, error in completed:
                 if error:
@@ -533,7 +609,9 @@ async def analyze_messages(
                 "analyzed": analyzed_count,
                 "jobs": jobs_added,
                 "developers": devs_added,
+                "operation_id": operation_id,
             })
+            await update_operation(db, operation_id, current=batch_num, analyzed=analyzed_count, jobs_found=jobs_added, developers_found=devs_added)
 
         try:
             await db.commit()
@@ -557,6 +635,7 @@ async def analyze_messages(
 
         stop_note = f" (stopped {stopped_count} remaining)" if stopped_count > 0 else ""
         print(f"[Analyze] Completed analysis for {channel.username}{stop_note}: {analyzed_count} analyzed, {jobs_added} jobs, {devs_added} developers, {skipped_count} skipped")
+        status = "stopped" if stopped_count > 0 else "completed"
         await broadcast_progress("analyze_complete", {
             "channel": channel.username,
             "channel_id": channel.id,
@@ -565,7 +644,9 @@ async def analyze_messages(
             "developers": devs_added,
             "stopped": stopped_count > 0,
             "remaining": stopped_count,
+            "operation_id": operation_id,
         })
+        await update_operation(db, operation_id, status=status, analyzed=analyzed_count, jobs_found=jobs_added, developers_found=devs_added)
 
         return {
             "success": True,
@@ -578,6 +659,7 @@ async def analyze_messages(
         }
     except Exception as e:
         await db.rollback()
+        await update_operation(db, operation_id, status="error", error_message=str(e))
         print(f"[Analyze] Error in analyze_messages for {channel.username}: {e}")
         return {
             "success": False,

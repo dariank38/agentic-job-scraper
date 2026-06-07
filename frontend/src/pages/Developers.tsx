@@ -39,7 +39,10 @@ const Developers = () => {
   const [selectedDeveloper, setSelectedDeveloper] = useState<Developer | null>(null);
   const [searchParams, setSearchParams] = useSearchParams();
   const [searchQuery, setSearchQuery] = useState('');
+  const [total, setTotal] = useState(0);
   const lookingFilter = searchParams.get('looking_for_work');
+  const limit = 10;
+  const offset = parseInt(searchParams.get('offset') || '0');
   const { showToast } = useToast();
 
   const filteredDevelopers = developers.filter(dev => {
@@ -54,19 +57,31 @@ const Developers = () => {
 
   useEffect(() => {
     loadDevelopers();
-  }, [lookingFilter]);
+  }, [lookingFilter, offset]);
 
   const loadDevelopers = async () => {
     try {
-      const params = lookingFilter ? { looking_for_work: lookingFilter } : undefined;
+      const params: any = { limit, offset };
+      if (lookingFilter) params.looking_for_work = lookingFilter;
       const data = await api.getDevelopers(params);
       setDevelopers(data.developers);
+      setTotal(data.total || 0);
       if (data.developers.length > 0 && !selectedDeveloper) {
         setSelectedDeveloper(data.developers[0]);
       }
     } catch (error) {
       console.error('Failed to load developers:', error);
     }
+  };
+
+  const handleNext = () => {
+    const newOffset = offset + limit;
+    setSearchParams({ offset: newOffset.toString() });
+  };
+
+  const handlePrevious = () => {
+    const newOffset = Math.max(0, offset - limit);
+    setSearchParams({ offset: newOffset.toString() });
   };
 
   const applyFilters = () => {
@@ -127,7 +142,7 @@ const Developers = () => {
         <div>
           <h1 className="text-2xl font-bold tracking-tight">Developers</h1>
           <p className="text-sm text-muted-foreground mt-0.5">
-            {developers.length} developer{developers.length !== 1 ? 's' : ''} found
+            {total} developer{total !== 1 ? 's' : ''} found
           </p>
         </div>
         <div className="flex gap-2 items-center">
@@ -175,7 +190,7 @@ const Developers = () => {
               </div>
             </CardHeader>
             <CardContent className="p-0">
-              <div className="px-4 pb-4 space-y-1 max-h-[60vh] overflow-y-auto">
+              <div className="px-4 pb-4 space-y-1">
                 {filteredDevelopers.length === 0 ? (
                   <p className="text-sm text-gray-500 text-center py-8">No developers match your search.</p>
                 ) : (
@@ -236,6 +251,32 @@ const Developers = () => {
                   })
                 )}
               </div>
+              {/* Pagination */}
+              {developers.length > 0 && (
+                <div className="px-4 pb-4 pt-0">
+                  <div className="flex items-center justify-between pt-3 border-t">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={handlePrevious}
+                      disabled={offset === 0}
+                    >
+                      Previous
+                    </Button>
+                    <span className="text-sm text-muted-foreground">
+                      Page {Math.floor(offset / limit) + 1} of {Math.ceil(total / limit)} ({offset + 1}-{Math.min(offset + limit, total)} of {total})
+                    </span>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={handleNext}
+                      disabled={offset + limit >= total}
+                    >
+                      Next
+                    </Button>
+                  </div>
+                </div>
+              )}
             </CardContent>
           </Card>
 

@@ -1,9 +1,10 @@
 import { useEffect, useRef, useState } from 'react';
 
 export interface ProgressUpdate {
-  type: 'fetch_start' | 'fetch_progress' | 'analyze_start' | 'analyze_progress' | 'analyze_complete' | 'error';
+  type: 'fetch_start' | 'fetch_progress' | 'fetch_complete' | 'analyze_start' | 'analyze_progress' | 'analyze_complete' | 'error';
   channel?: string;
   channel_id?: number;
+  operation_id?: number;
   status?: string;
   count?: number;
   total?: number;

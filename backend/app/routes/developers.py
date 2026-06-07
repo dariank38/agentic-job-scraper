@@ -16,7 +16,7 @@ def register_developer_routes(app):
     @app.get("/api/developers")
     async def api_developers(
         looking_for_work: Optional[bool] = None,
-        limit: int = 50,
+        limit: int = 10,
         offset: int = 0,
         db: AsyncSession = Depends(get_db),
     ):

@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
+import { useSearchParams } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -32,11 +33,15 @@ const Dashboard = () => {
   const [loadingActions, setLoadingActions] = useState<Set<string>>(new Set());
   const [cronRunning, setCronRunning] = useState(false);
   const [initialLoading, setInitialLoading] = useState(true);
+  const [total, setTotal] = useState(0);
+  const [searchParams, setSearchParams] = useSearchParams();
+  const limit = 10;
+  const offset = parseInt(searchParams.get('offset') || '0');
 
-  const { progress: wsProgress, channelProgress } = useWebSocketProgress();
+  const { progress: wsProgress, channelProgress, operations } = useWebSocketProgress();
 
   useEffect(() => {
-    if (wsProgress && (wsProgress.type === 'analyze_complete' || wsProgress.type === 'error')) {
+    if (wsProgress && (wsProgress.type === 'analyze_complete' || wsProgress.type === 'error' || wsProgress.type === 'fetch_complete')) {
       loadData();
     }
   }, [wsProgress]);
@@ -49,21 +54,32 @@ const Dashboard = () => {
       checkCronStatus();
     }, 10000);
     return () => clearInterval(interval);
-  }, []);
+  }, [offset]);
 
   const loadData = async () => {
     try {
       const [statsData, channelsData] = await Promise.all([
         api.getStats(),
-        api.getChannels(),
+        api.getChannels({ limit, offset }),
       ]);
       setStats(statsData);
       setChannels(channelsData.channels);
+      setTotal(channelsData.total || 0);
       setInitialLoading(false);
     } catch (error) {
       console.error('Failed to load data:', error);
       setInitialLoading(false);
     }
+  };
+
+  const handleNext = () => {
+    const newOffset = offset + limit;
+    setSearchParams({ offset: newOffset.toString() });
+  };
+
+  const handlePrevious = () => {
+    const newOffset = Math.max(0, offset - limit);
+    setSearchParams({ offset: newOffset.toString() });
   };
 
   const showStatus = (message: string, isError = false) => {
@@ -303,28 +319,28 @@ const Dashboard = () => {
                   <Button
                     className="w-full justify-start"
                     onClick={() => fetchAll()}
-                    disabled={loadingActions.has('fetch-all')}
+                    disabled={loadingActions.has('fetch-all') || Object.keys(operations).length > 0}
                   >
                     <RefreshCw size={14} className="mr-2" />
-                    {loadingActions.has('fetch-all') ? 'Fetching...' : 'Fetch All'}
+                    {loadingActions.has('fetch-all') ? 'Fetching...' : Object.keys(operations).length > 0 ? 'Channel(s) processing...' : 'Fetch All'}
                   </Button>
                   <Button
                     className="w-full justify-start"
                     variant="outline"
                     onClick={() => analyzeAll()}
-                    disabled={loadingActions.has('analyze-all')}
+                    disabled={loadingActions.has('analyze-all') || Object.keys(operations).length > 0}
                   >
                     <Bot size={14} className="mr-2" />
-                    {loadingActions.has('analyze-all') ? 'Analyzing...' : 'Analyze All'}
+                    {loadingActions.has('analyze-all') ? 'Analyzing...' : Object.keys(operations).length > 0 ? 'Channel(s) processing...' : 'Analyze All'}
                   </Button>
                   <Button
                     className="w-full justify-start"
                     variant="outline"
                     onClick={() => searchAll()}
-                    disabled={loadingActions.has('search-all')}
+                    disabled={loadingActions.has('search-all') || Object.keys(operations).length > 0}
                   >
                     <Zap size={14} className="mr-2" />
-                    {loadingActions.has('search-all') ? 'Processing...' : 'Fetch + Analyze All'}
+                    {loadingActions.has('search-all') ? 'Processing...' : Object.keys(operations).length > 0 ? 'Channel(s) processing...' : 'Fetch + Analyze All'}
                   </Button>
                 </div>
               </div>
@@ -415,7 +431,7 @@ const Dashboard = () => {
               <div className="flex justify-between items-center">
                 <CardTitle className="flex items-center gap-1.5 text-sm">
                   <Radio size={14} className="text-blue-500" />
-                  Channels
+                  Channels ({total})
                 </CardTitle>
                 <Button asChild variant="ghost" size="sm">
                   <Link to="/channels" className="text-xs">Manage <ChevronRight size={12} className="inline" /></Link>
@@ -429,76 +445,100 @@ const Dashboard = () => {
                   <p className="text-sm text-gray-500">Loading channels...</p>
                 </div>
               ) : channels.length > 0 ? (
-                channels.map((channel) => (
-                  <div key={channel.id} className="px-4 py-3 border-b last:border-b-0 hover:bg-gray-50 transition-colors">
-                    <div className="flex justify-between items-center gap-3">
-                      <div className="min-w-0">
-                        <div className="flex items-center gap-2 mb-0.5">
-                          <p className="font-semibold text-gray-900 truncate">{channel.username}</p>
-                          <Badge variant={channel.is_active ? 'default' : 'secondary'} className="text-xs">
-                            {channel.is_active ? 'Active' : 'Inactive'}
-                          </Badge>
-                        </div>
-                        {channel.name && <p className="text-xs text-gray-500 truncate">{channel.name}</p>}
-                        <p className="text-xs text-gray-400 mt-0.5">
-                          {(channel.message_count || 0).toLocaleString()} msgs &bull; {(channel.job_count || 0).toLocaleString()} jobs
-                          {(channel.last_fetch_new_count || 0) > 0 && (
-                            <span className="ml-2 inline-flex items-center px-1.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
-                              +{channel.last_fetch_new_count} fetched
-                            </span>
-                          )}
-                          {(channel.pending_count || 0) > 0 && (
-                            <span className="ml-2 inline-flex items-center px-1.5 py-0.5 rounded-full text-xs font-medium bg-orange-100 text-orange-800">
-                              {channel.pending_count} pending
-                            </span>
-                          )}
-                        </p>
-                        {channelProgress[channel.username] && (
-                          <div className="mt-2">
-                            <div className="flex justify-between text-xs mb-1">
-                              <span>Analyzing...</span>
-                              <span>{channelProgress[channel.username].current}/{channelProgress[channel.username].total}</span>
-                            </div>
-                            <div className="w-full bg-gray-200 rounded-full h-2">
-                              <div
-                                className="bg-blue-600 h-2 rounded-full transition-all"
-                                style={{ width: `${(channelProgress[channel.username].current / channelProgress[channel.username].total) * 100}%` }}
-                              />
-                            </div>
+                <>
+                  {channels.map((channel) => (
+                    <div key={channel.id} className="px-4 py-3 border-b last:border-b-0 hover:bg-gray-50 transition-colors">
+                      <div className="flex justify-between items-center gap-3">
+                        <div className="min-w-0">
+                          <div className="flex items-center gap-2 mb-0.5">
+                            <p className="font-semibold text-gray-900 truncate">{channel.username}</p>
+                            <Badge variant={channel.is_active ? 'default' : 'secondary'} className="text-xs">
+                              {channel.is_active ? 'Active' : 'Inactive'}
+                            </Badge>
                           </div>
-                        )}
-                      </div>
-                      <div className="flex gap-2 flex-shrink-0">
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          onClick={() => fetchChannel(channel.id)}
-                          disabled={loadingActions.has(`fetch-${channel.id}`)}
-                        >
-                          <RefreshCw size={12} className="mr-1" />
-                          {loadingActions.has(`fetch-${channel.id}`) ? 'Fetching...' : 'Fetch'}
-                        </Button>
-                        <Button
-                          size="sm"
-                          onClick={() => analyzeChannel(channel.id)}
-                          disabled={loadingActions.has(`analyze-${channel.id}`)}
-                        >
-                          <Bot size={12} className="mr-1" />
-                          {loadingActions.has(`analyze-${channel.id}`) ? 'Analyzing...' : 'Analyze'}
-                        </Button>
-                        {loadingActions.has(`analyze-${channel.id}`) && (
+                          {channel.name && <p className="text-xs text-gray-500 truncate">{channel.name}</p>}
+                          <p className="text-xs text-gray-400 mt-0.5">
+                            {(channel.message_count || 0).toLocaleString()} msgs &bull; {(channel.job_count || 0).toLocaleString()} jobs
+                            {(channel.last_fetch_new_count || 0) > 0 && (
+                              <span className="ml-2 inline-flex items-center px-1.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
+                                +{channel.last_fetch_new_count} fetched
+                              </span>
+                            )}
+                            {(channel.pending_count || 0) > 0 && (
+                              <span className="ml-2 inline-flex items-center px-1.5 py-0.5 rounded-full text-xs font-medium bg-orange-100 text-orange-800">
+                                {channel.pending_count} pending
+                              </span>
+                            )}
+                          </p>
+                          {channelProgress[channel.username] && (
+                            <div className="mt-2">
+                              <div className="flex justify-between text-xs mb-1">
+                                <span>Analyzing...</span>
+                                <span>{channelProgress[channel.username].current}/{channelProgress[channel.username].total}</span>
+                              </div>
+                              <div className="w-full bg-gray-200 rounded-full h-2">
+                                <div
+                                  className="bg-blue-600 h-2 rounded-full transition-all"
+                                  style={{ width: `${(channelProgress[channel.username].current / channelProgress[channel.username].total) * 100}%` }}
+                                />
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                        <div className="flex gap-2 flex-shrink-0">
                           <Button
                             size="sm"
-                            variant="destructive"
-                            onClick={() => stopAnalyzeChannel()}
+                            variant="outline"
+                            onClick={() => fetchChannel(channel.id)}
+                            disabled={loadingActions.has(`fetch-${channel.id}`)}
                           >
-                            <Square size={12} />
+                            <RefreshCw size={12} className="mr-1" />
+                            {loadingActions.has(`fetch-${channel.id}`) ? 'Fetching...' : 'Fetch'}
                           </Button>
-                        )}
+                          <Button
+                            size="sm"
+                            onClick={() => analyzeChannel(channel.id)}
+                            disabled={loadingActions.has(`analyze-${channel.id}`)}
+                          >
+                            <Bot size={12} className="mr-1" />
+                            {loadingActions.has(`analyze-${channel.id}`) ? 'Analyzing...' : 'Analyze'}
+                          </Button>
+                          {loadingActions.has(`analyze-${channel.id}`) && (
+                            <Button
+                              size="sm"
+                              variant="destructive"
+                              onClick={() => stopAnalyzeChannel()}
+                            >
+                              <Square size={12} />
+                            </Button>
+                          )}
+                        </div>
                       </div>
                     </div>
+                  ))}
+                  {/* Pagination */}
+                  <div className="px-4 py-3 border-t flex items-center justify-between">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={handlePrevious}
+                      disabled={offset === 0}
+                    >
+                      Previous
+                    </Button>
+                    <span className="text-sm text-muted-foreground">
+                      Page {Math.floor(offset / limit) + 1} of {Math.ceil(total / limit)} ({offset + 1}-{Math.min(offset + limit, total)} of {total})
+                    </span>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={handleNext}
+                      disabled={offset + limit >= total}
+                    >
+                      Next
+                    </Button>
                   </div>
-                ))
+                </>
               ) : (
                 <div className="px-4 py-8 text-center">
                   <Radio size={32} className="text-gray-200 mx-auto mb-3" />

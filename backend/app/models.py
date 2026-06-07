@@ -9,6 +9,32 @@ from sqlalchemy.orm import declarative_base, relationship
 Base = declarative_base()
 
 
+class Operation(Base):
+    """Track ongoing operations (fetch, analyze) for state management."""
+
+    __tablename__ = "operations"
+
+    id = Column(Integer, primary_key=True)
+    operation_type = Column(String, nullable=False)  # 'fetch', 'analyze', 'search'
+    channel_id = Column(Integer, ForeignKey("channels.id"), nullable=True)
+    channel_username = Column(String, nullable=True)
+    status = Column(String, default="running")  # 'running', 'completed', 'stopped', 'error'
+    current = Column(Integer, default=0)  # Current progress (batch number)
+    total = Column(Integer, default=0)  # Total progress (total batches)
+    analyzed = Column(Integer, default=0)  # Number of messages analyzed
+    jobs_found = Column(Integer, default=0)
+    developers_found = Column(Integer, default=0)
+    error_message = Column(Text, nullable=True)
+    started_at = Column(DateTime, default=datetime.utcnow)
+    completed_at = Column(DateTime, nullable=True)
+
+    # Relationships
+    channel = relationship("Channel")
+
+    def __repr__(self) -> str:
+        return f"<Operation {self.operation_type} for {self.channel_username}>"
+
+
 class Channel(Base):
     """Telegram channel configuration."""
 

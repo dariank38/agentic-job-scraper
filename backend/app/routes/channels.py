@@ -91,12 +91,20 @@ def register_channel_routes(app):
             raise HTTPException(status_code=500, detail=f"Failed to toggle channel: {str(e)}")
 
     @app.get("/api/channels")
-    async def api_channels(db: AsyncSession = Depends(get_db)):
-        """Get all channels as JSON."""
-        # Get channels
-        channels_result = await db.execute(select(Channel))
+    async def api_channels(
+        limit: int = 10,
+        offset: int = 0,
+        db: AsyncSession = Depends(get_db),
+    ):
+        """Get channels as JSON with pagination."""
+        # Get total count
+        count_result = await db.execute(select(func.count()).select_from(Channel))
+        total = count_result.scalar() or 0
+
+        # Get channels with pagination
+        channels_result = await db.execute(select(Channel).order_by(Channel.id).offset(offset).limit(limit))
         channels = channels_result.scalars().all()
-        
+
         # Get counts for each channel using subqueries to avoid join multiplication
         channels_data = []
         for channel in channels:
@@ -105,7 +113,7 @@ def register_channel_routes(app):
                 select(func.count()).select_from(Message).filter(Message.channel_id == channel.id)
             )
             message_count = msg_count_result.scalar() or 0
-            
+
             # Count pending messages (not yet analyzed)
             pending_count_result = await db.execute(
                 select(func.count()).select_from(Message).filter(
@@ -114,13 +122,13 @@ def register_channel_routes(app):
                 )
             )
             pending_count = pending_count_result.scalar() or 0
-            
+
             # Count jobs
             job_count_result = await db.execute(
                 select(func.count()).select_from(Job).filter(Job.channel_id == channel.id)
             )
             job_count = job_count_result.scalar() or 0
-            
+
             channels_data.append({
                 "id": channel.id,
                 "username": channel.username,
@@ -133,5 +141,10 @@ def register_channel_routes(app):
                 "last_fetch_new_count": channel.last_fetch_new_count,
                 "last_fetch_at": channel.last_fetch_at.isoformat() if channel.last_fetch_at else None,
             })
-        
-        return {"channels": channels_data}
+
+        return {
+            "channels": channels_data,
+            "total": total,
+            "limit": limit,
+            "offset": offset,
+        }
