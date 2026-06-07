@@ -414,9 +414,11 @@ async def analyze_messages(
         reset_stop_event(channel.id)
         await broadcast_progress("analyze_start", {"channel": channel.username, "channel_id": channel.id, "operation_id": operation_id})
 
+        # BUG FIX: Add analysis_status == "pending" filter to avoid re-analyzing skipped messages
         messages_result = await db.execute(
             select(Message).filter(
                 Message.channel_id == channel.id,
+                Message.analysis_status == "pending",
             ).outerjoin(Job).outerjoin(Developer).filter(
                 (Job.id == None) & (Developer.id == None),
             )
@@ -732,7 +734,16 @@ async def continuous_scanner(
                     if due:
                         print(f"[Cron] Fetching {channel.username}...")
                         try:
-                            fetch_result = await fetch_and_store_messages(db, channel, days_back=1)
+                            # Run fetch in thread pool to avoid async context conflicts with Telethon
+                            from app.connection import AsyncSessionLocal
+
+                            def _fetch_in_thread():
+                                async def _do_fetch():
+                                    async with AsyncSessionLocal() as new_db:
+                                        return await fetch_and_store_messages(new_db, channel, days_back=1)
+                                return asyncio.run(_do_fetch())
+
+                            fetch_result = await asyncio.to_thread(_fetch_in_thread)
                             if fetch_result["success"]:
                                 last_fetch_time[channel.id] = now
                                 print(f"[Cron] {channel.username}: fetched {fetch_result['fetched']}, new {fetch_result['new_stored']}")
@@ -771,10 +782,10 @@ async def continuous_scanner(
 @asynccontextmanager
 async def lifespan(app):
     """Startup and shutdown events."""
-    start_cron_task()  # ← 앱 시작 시 cron 자동 시작
-    print("[Lifespan] Cron started")
+    # Cron job no longer starts automatically - must be started manually via API
+    print("[Lifespan] App started (cron job disabled)")
     try:
         yield
     finally:
-        stop_cron_task()  # ← 앱 종료 시 정리
+        stop_cron_task()  # Clean up on app shutdown
         print("[Lifespan] Cron stopped")

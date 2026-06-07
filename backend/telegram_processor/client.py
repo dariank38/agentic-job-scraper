@@ -1,5 +1,6 @@
 """Telegram client manager using Telethon."""
 
+import asyncio
 from pathlib import Path
 from telethon import TelegramClient
 
@@ -43,14 +44,17 @@ class TelegramClientManager:
         """Connect to Telegram and return the client.
 
         Args:
-            auto_start: If True, automatically start the client with phone authentication.
-                       If False, just connect without authentication (for interactive auth).
+            auto_start: If True, verify the session is already authorized and resume it.
+                       Raises RuntimeError if the account has not been authenticated yet.
+                       If False, just connect without any authentication check
+                       (use this for the interactive first-time auth flow).
 
         Returns:
             TelegramClient: The connected Telegram client.
 
         Raises:
             ValueError: If required credentials are missing.
+            RuntimeError: If auto_start=True but the session is not yet authorized.
         """
         if not self.api_id or not self.api_hash:
             raise ValueError("API ID and API Hash must be provided")
@@ -66,7 +70,19 @@ class TelegramClientManager:
         await self._client.connect()
 
         if auto_start:
-            await self._client.start(phone=self.phone)
+            # BUG FIX: Old code always called client.start(), which would block waiting for
+            # phone/code input in terminal if session file doesn't exist or not authenticated.
+            # Fix: Check is_user_authorized() first, only call start() if already authenticated.
+            # If not authenticated, raise clear error for caller to handle.
+            if not await self._client.is_user_authorized():
+                await self._client.disconnect()
+                self._client = None
+                raise RuntimeError(
+                    f"Telegram account '{self.session_name}' is not authenticated. "
+                    "Please complete the authentication flow before using this account."
+                )
+            # Valid session exists, so start() returns immediately without blocking input
+            await asyncio.to_thread(self._client.start, phone=self.phone)
 
         return self._client
 

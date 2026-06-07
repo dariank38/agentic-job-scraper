@@ -38,7 +38,6 @@ const TelegramAccounts = () => {
       const data = await api.getTelegramAccounts();
       setAccounts(data);
     } catch (error) {
-      console.error('Failed to load accounts:', error);
       showToast('error', 'Failed to load Telegram accounts');
     } finally {
       setLoading(false);
@@ -62,7 +61,6 @@ const TelegramAccounts = () => {
       setShowAddForm(false);
       loadAccounts();
     } catch (error) {
-      console.error('Failed to add account:', error);
       showToast('error', 'Failed to add Telegram account');
     }
   };
@@ -74,7 +72,6 @@ const TelegramAccounts = () => {
       showToast('success', 'Telegram account deleted');
       loadAccounts();
     } catch (error) {
-      console.error('Failed to delete account:', error);
       showToast('error', 'Failed to delete Telegram account');
     }
   };
@@ -85,7 +82,6 @@ const TelegramAccounts = () => {
       showToast('success', 'Account status updated');
       loadAccounts();
     } catch (error) {
-      console.error('Failed to toggle account:', error);
       showToast('error', 'Failed to update account status');
     }
   };
