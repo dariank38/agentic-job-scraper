@@ -5,6 +5,7 @@ import Channels from '@/pages/Channels';
 import Jobs from '@/pages/Jobs';
 import Developers from '@/pages/Developers';
 import Messages from '@/pages/Messages';
+import TelegramAccounts from '@/pages/TelegramAccounts';
 
 function App() {
   return (
@@ -18,6 +19,7 @@ function App() {
               <Route path="/jobs" element={<Jobs />} />
               <Route path="/developers" element={<Developers />} />
               <Route path="/messages" element={<Messages />} />
+              <Route path="/telegram-accounts" element={<TelegramAccounts />} />
             </Routes>
           </Layout>
         </ToastProvider>

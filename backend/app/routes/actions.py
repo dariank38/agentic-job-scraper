@@ -15,7 +15,7 @@ def register_action_routes(app):
     """Register action-related routes."""
 
     @app.post("/api/fetch/{channel_id}")
-    async def fetch_channel(channel_id: int, db: AsyncSession = Depends(get_db)):
+    async def fetch_channel(channel_id: int, account_id: Optional[int] = None, db: AsyncSession = Depends(get_db)):
         """Fetch messages from a Telegram channel."""
         try:
             result = await db.execute(select(Channel).filter(Channel.id == channel_id))
@@ -30,7 +30,8 @@ def register_action_routes(app):
             result = await fetch_and_store_messages(
                 db,
                 channel,
-                days_back=days_back
+                days_back=days_back,
+                account_id=account_id
             )
 
             return {
@@ -69,7 +70,7 @@ def register_action_routes(app):
             raise HTTPException(status_code=500, detail=f"Failed to analyze: {str(e)}")
 
     @app.post("/api/fetch-analyze/{channel_id}")
-    async def fetch_analyze_channel(channel_id: int, db: AsyncSession = Depends(get_db)):
+    async def fetch_analyze_channel(channel_id: int, account_id: Optional[int] = None, db: AsyncSession = Depends(get_db)):
         """Fetch and analyze messages in one operation."""
         try:
             result = await db.execute(select(Channel).filter(Channel.id == channel_id))
@@ -84,7 +85,8 @@ def register_action_routes(app):
             fetch_result = await fetch_and_store_messages(
                 db,
                 channel,
-                days_back=days_back
+                days_back=days_back,
+                account_id=account_id
             )
 
             # Analyze
@@ -567,17 +569,48 @@ def register_action_routes(app):
             raise HTTPException(status_code=500, detail=f"Failed to get cron status: {str(e)}")
 
     @app.get("/api/telegram-dialogs")
-    async def get_telegram_dialogs(db: AsyncSession = Depends(get_db)):
+    async def get_telegram_dialogs(account_id: Optional[int] = None, db: AsyncSession = Depends(get_db)):
         """Get available Telegram dialogs (channels/groups), excluding those already in database."""
         try:
-            from telegram_processor import get_dialogs
+            from telegram_processor import TelegramClientManager, get_dialogs
+            from app.models import TelegramAccount
+
+            # Get Telegram account from database
+            if account_id:
+                result = await db.execute(select(TelegramAccount).filter(TelegramAccount.id == account_id))
+                account = result.scalar_one_or_none()
+                if not account:
+                    raise HTTPException(status_code=404, detail="Telegram account not found")
+            else:
+                # Get first active account
+                result = await db.execute(
+                    select(TelegramAccount).filter(TelegramAccount.is_active == True, TelegramAccount.is_authenticated == True)
+                )
+                account = result.scalar_one_or_none()
+                if not account:
+                    raise HTTPException(
+                        status_code=400, 
+                        detail="No active authenticated Telegram account found. Please add a Telegram account in Settings > Telegram Accounts and authenticate it first."
+                    )
+
+            # Create Telegram client with account credentials
+            telegram_manager = TelegramClientManager(
+                api_id=account.api_id,
+                api_hash=account.api_hash,
+                phone_number=account.phone_number,
+                session_name=account.session_name,
+            )
 
             # Get existing channel usernames from database
             result = await db.execute(select(Channel.username))
             existing_usernames = set(row[0].lower() for row in result.all() if row[0])
 
             # Get dialogs from Telegram
-            dialogs = await get_dialogs()
+            await telegram_manager.connect()
+            try:
+                dialogs = await get_dialogs(telegram_manager.client)
+            finally:
+                await telegram_manager.disconnect()
 
             # Filter out existing channels
             filtered_dialogs = []
@@ -588,5 +621,7 @@ def register_action_routes(app):
                     filtered_dialogs.append(dialog)
 
             return {"success": True, "dialogs": filtered_dialogs}
+        except HTTPException:
+            raise
         except Exception as e:
             raise HTTPException(status_code=500, detail=f"Failed to get dialogs: {str(e)}")

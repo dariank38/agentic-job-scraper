@@ -144,39 +144,25 @@ async def fetch_messages(
     return messages
 
 
-async def get_dialogs() -> list[dict[str, Any]]:
-    """Get available Telegram dialogs (channels/groups)."""
-    from telegram_processor.client import TelegramClientManager
-
-    mgr = TelegramClientManager()
+async def get_dialogs(client: TelegramClient) -> list[dict[str, Any]]:
+    """Get available Telegram dialogs (channels/groups).
+    
+    Args:
+        client: Connected TelegramClient instance.
+    
+    Returns:
+        List of dialog dictionaries with channel/group information.
+    """
     dialogs = []
-
-    try:
-        print("[get_dialogs] Connecting to Telegram...")
-        await mgr.connect()
-        print("[get_dialogs] Connected, fetching dialogs...")
-
-        async for dialog in mgr.client.iter_dialogs():
-            if dialog.is_channel or dialog.is_group:
-                username = dialog.entity.username if hasattr(dialog.entity, 'username') else None
-                print(f"Dialog: {dialog.entity.title} (@{username or 'no username'})")
-                dialogs.append({
-                    "id": dialog.id,
-                    "username": username,
-                    "name": dialog.entity.title,
-                    "type": "channel" if dialog.is_channel else "group",
-                })
-
-        print(f"[get_dialogs] Found {len(dialogs)} dialogs")
-        return dialogs
-    except ValueError as e:
-        print(f"[get_dialogs] Configuration error: {e}")
-        raise
-    except Exception as e:
-        print(f"[get_dialogs] Error: {e}")
-        raise
-    finally:
-        try:
-            await mgr.disconnect()
-        except Exception:
-            pass
+    
+    async for dialog in client.iter_dialogs():
+        if dialog.is_channel or dialog.is_group:
+            entity = dialog.entity
+            dialogs.append({
+                "id": entity.id,
+                "username": getattr(entity, "username", None),
+                "title": getattr(entity, "title", None),
+                "type": "channel" if dialog.is_channel else "group",
+            })
+    
+    return dialogs

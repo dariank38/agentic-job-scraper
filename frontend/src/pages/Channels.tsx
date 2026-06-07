@@ -8,7 +8,7 @@ import { Badge } from '@/components/ui/badge';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Search } from 'lucide-react';
 import api from '@/services/api';
-import type { Channel } from '@/services/api';
+import type { Channel, TelegramAccount } from '@/services/api';
 import { useWebSocketProgress } from '@/components/Layout';
 
 const Channels = () => {
@@ -28,6 +28,8 @@ const Channels = () => {
   const [searchParams, setSearchParams] = useSearchParams();
   const [searchQuery, setSearchQuery] = useState('');
   const [activeFilter, setActiveFilter] = useState('all');
+  const [telegramAccounts, setTelegramAccounts] = useState<TelegramAccount[]>([]);
+  const [selectedAccountId, setSelectedAccountId] = useState<number | null>(null);
   const limit = 10;
   const offset = parseInt(searchParams.get('offset') || '0');
   const { progress: wsProgress, channelProgress, operations } = useWebSocketProgress();
@@ -42,14 +44,43 @@ const Channels = () => {
   useEffect(() => {
     loadChannels();
     loadStats();
+    loadTelegramAccounts();
   }, [offset, searchQuery, activeFilter]);
+
+  const loadTelegramAccounts = async () => {
+    try {
+      const accounts = await api.getTelegramAccounts();
+      setTelegramAccounts(accounts);
+      // Auto-select first active authenticated account
+      const activeAccount = accounts.find(acc => acc.is_active && acc.is_authenticated);
+      if (activeAccount) {
+        setSelectedAccountId(activeAccount.id);
+      }
+    } catch (e: any) {
+      let errorMessage = 'Failed to load Telegram accounts';
+      if (e.response) {
+        const errorData = await e.response.json().catch(() => ({}));
+        errorMessage = errorData.detail || errorMessage;
+      } else if (e.message) {
+        errorMessage = e.message;
+      }
+      showStatus('Error: ' + errorMessage, true);
+    }
+  };
 
   const loadStats = async () => {
     try {
       const data = await api.getStats();
       setStats(data);
-    } catch (error) {
-      console.error('Failed to load stats:', error);
+    } catch (e: any) {
+      let errorMessage = 'Failed to load stats';
+      if (e.response) {
+        const errorData = await e.response.json().catch(() => ({}));
+        errorMessage = errorData.detail || errorMessage;
+      } else if (e.message) {
+        errorMessage = e.message;
+      }
+      showStatus('Error: ' + errorMessage, true);
     }
   };
 
@@ -62,8 +93,15 @@ const Channels = () => {
       const data = await api.getChannels(params);
       setChannels(data.channels);
       setTotal(data.total || 0);
-    } catch (error) {
-      console.error('Failed to load channels:', error);
+    } catch (e: any) {
+      let errorMessage = 'Failed to load channels';
+      if (e.response) {
+        const errorData = await e.response.json().catch(() => ({}));
+        errorMessage = errorData.detail || errorMessage;
+      } else if (e.message) {
+        errorMessage = e.message;
+      }
+      showStatus('Error: ' + errorMessage, true);
     }
   };
 
@@ -100,7 +138,7 @@ const Channels = () => {
 
   const loadTelegramDialogs = async () => {
     try {
-      const data = await withLoading('load-dialogs', () => api.getTelegramDialogs());
+      const data = await withLoading('load-dialogs', () => api.getTelegramDialogs(selectedAccountId || undefined));
       if (data.success) {
         setAllDialogs(data.dialogs);
         setShowDialogs(true);
@@ -109,7 +147,15 @@ const Channels = () => {
         showStatus('Error: ' + (data.error || 'Failed to load dialogs'), true);
       }
     } catch (e: any) {
-      showStatus('Error: ' + e.message, true);
+      // Try to extract error message from response
+      let errorMessage = 'Failed to load dialogs';
+      if (e.response) {
+        const errorData = await e.response.json().catch(() => ({}));
+        errorMessage = errorData.detail || errorMessage;
+      } else if (e.message) {
+        errorMessage = e.message;
+      }
+      showStatus('Error: ' + errorMessage, true);
     }
   };
 
@@ -141,7 +187,14 @@ const Channels = () => {
         filterDialogsLocally();
       }, 100);
     } catch (e: any) {
-      showStatus('Error: ' + e.message, true);
+      let errorMessage = 'Failed to add channel';
+      if (e.response) {
+        const errorData = await e.response.json().catch(() => ({}));
+        errorMessage = errorData.detail || errorMessage;
+      } else if (e.message) {
+        errorMessage = e.message;
+      }
+      showStatus('Error: ' + errorMessage, true);
     }
   };
 
@@ -163,7 +216,14 @@ const Channels = () => {
         filterDialogsLocally();
       }, 100);
     } catch (e: any) {
-      showStatus('Error: ' + e.message, true);
+      let errorMessage = 'Failed to add channel';
+      if (e.response) {
+        const errorData = await e.response.json().catch(() => ({}));
+        errorMessage = errorData.detail || errorMessage;
+      } else if (e.message) {
+        errorMessage = e.message;
+      }
+      showStatus('Error: ' + errorMessage, true);
     }
   };
 
@@ -175,7 +235,7 @@ const Channels = () => {
         return;
       }
 
-      const data = await withLoading(`fetch-analyze-${channelId}`, () => api.fetchAnalyzeChannel(channelId));
+      const data = await withLoading(`fetch-analyze-${channelId}`, () => api.fetchAnalyzeChannel(channelId, selectedAccountId || undefined));
       if (data.success) {
         showStatus(`Fetched ${data.total_new_messages} new messages, found ${data.total_jobs} jobs (${data.days_back_used}d window)`);
         setTimeout(() => loadChannels(), 1500);
@@ -183,7 +243,14 @@ const Channels = () => {
         showStatus('Error: ' + (data.error || 'Unknown error'), true);
       }
     } catch (e: any) {
-      showStatus('Error: ' + e.message, true);
+      let errorMessage = 'Failed to fetch and analyze channel';
+      if (e.response) {
+        const errorData = await e.response.json().catch(() => ({}));
+        errorMessage = errorData.detail || errorMessage;
+      } else if (e.message) {
+        errorMessage = e.message;
+      }
+      showStatus('Error: ' + errorMessage, true);
     }
   };
 
@@ -192,7 +259,14 @@ const Channels = () => {
       await withLoading(`toggle-${channelId}`, () => api.toggleChannel(channelId));
       loadChannels();
     } catch (e: any) {
-      showStatus('Error: ' + e.message, true);
+      let errorMessage = 'Failed to toggle channel';
+      if (e.response) {
+        const errorData = await e.response.json().catch(() => ({}));
+        errorMessage = errorData.detail || errorMessage;
+      } else if (e.message) {
+        errorMessage = e.message;
+      }
+      showStatus('Error: ' + errorMessage, true);
     }
   };
 
@@ -202,7 +276,14 @@ const Channels = () => {
       loadChannels();
       setDeleteDialogOpen(false);
     } catch (e: any) {
-      showStatus('Error: ' + e.message, true);
+      let errorMessage = 'Failed to delete channel';
+      if (e.response) {
+        const errorData = await e.response.json().catch(() => ({}));
+        errorMessage = errorData.detail || errorMessage;
+      } else if (e.message) {
+        errorMessage = e.message;
+      }
+      showStatus('Error: ' + errorMessage, true);
     }
   };
 
@@ -227,6 +308,20 @@ const Channels = () => {
         <CardHeader>
           <div className="flex justify-between items-center">
             <CardTitle>Configured Channels ({total})</CardTitle>
+            {telegramAccounts.length > 0 && (
+              <select
+                value={selectedAccountId || ''}
+                onChange={(e) => setSelectedAccountId(e.target.value ? parseInt(e.target.value) : null)}
+                className="px-3 py-2 rounded-md border border-gray-200 text-sm bg-white"
+              >
+                <option value="">Select Account</option>
+                {telegramAccounts.map(acc => (
+                  <option key={acc.id} value={acc.id}>
+                    {acc.phone_number} {acc.is_authenticated ? '✓' : '(not authenticated)'}
+                  </option>
+                ))}
+              </select>
+            )}
           </div>
           <div className="flex gap-2 mt-3">
             <div className="relative flex-1">

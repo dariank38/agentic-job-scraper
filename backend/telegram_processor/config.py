@@ -19,19 +19,10 @@ DATABASE_URL = os.getenv("DATABASE_URL")
 if not DATABASE_URL:
     raise ValueError("DATABASE_URL environment variable is required")
 
-# Telegram settings (required)
+# Telegram settings (optional - now stored in database for multi-account support)
 TELEGRAM_API_ID = int(os.getenv("TELEGRAM_API_ID", "0"))
-if TELEGRAM_API_ID == 0:
-    raise ValueError("TELEGRAM_API_ID environment variable is required")
-
 TELEGRAM_API_HASH = os.getenv("TELEGRAM_API_HASH", "")
-if not TELEGRAM_API_HASH:
-    raise ValueError("TELEGRAM_API_HASH environment variable is required")
-
 TELEGRAM_PHONE = os.getenv("TELEGRAM_PHONE", "")
-if not TELEGRAM_PHONE:
-    raise ValueError("TELEGRAM_PHONE environment variable is required")
-
 TELEGRAM_SESSION_PATH = SESSION_DIR / "telegram.session"
 
 # Ollama settings (optional - will be checked at runtime)
