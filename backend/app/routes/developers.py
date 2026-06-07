@@ -16,17 +16,25 @@ def register_developer_routes(app):
     @app.get("/api/developers")
     async def api_developers(
         looking_for_work: Optional[bool] = None,
+        search: Optional[str] = None,
         limit: int = 10,
         offset: int = 0,
         db: AsyncSession = Depends(get_db),
     ):
-        """Get developers as JSON."""
+        """Get developers as JSON with search and filters."""
         from app.models import Channel
-        
+
         query = select(Developer).join(Channel).filter(Channel.is_active == True)
 
         if looking_for_work is not None:
             query = query.filter(Developer.looking_for_work == looking_for_work)
+
+        # Apply search filter
+        if search:
+            search_pattern = f"%{search}%"
+            query = query.where(
+                (Developer.name.ilike(search_pattern))
+            )
 
         # Get total count
         count_query = select(func.count()).select_from(query.subquery())
@@ -90,8 +98,12 @@ def register_developer_routes(app):
             raise HTTPException(status_code=500, detail=f"Failed to review developer: {str(e)}")
 
     @app.post("/api/developers/{developer_id}/toggle-contacted")
-    async def api_toggle_developer_contacted(developer_id: int, db: AsyncSession = Depends(get_db)):
-        """Toggle developer contacted status."""
+    async def api_toggle_developer_contacted(
+        developer_id: int,
+        notes: Optional[str] = Form(None),
+        db: AsyncSession = Depends(get_db),
+    ):
+        """Toggle developer contacted status with optional notes."""
         try:
             result = await db.execute(select(Developer).filter(Developer.id == developer_id))
             developer = result.scalar_one_or_none()
@@ -102,6 +114,8 @@ def register_developer_routes(app):
             if developer.is_contacted:
                 from datetime import datetime
                 developer.contacted_at = datetime.utcnow()
+                if notes:
+                    developer.notes = notes
             else:
                 developer.contacted_at = None
             await db.commit()

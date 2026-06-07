@@ -6,6 +6,7 @@ import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Badge } from '@/components/ui/badge';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { Search } from 'lucide-react';
 import api from '@/services/api';
 import type { Channel } from '@/services/api';
 import { useWebSocketProgress } from '@/components/Layout';
@@ -25,6 +26,8 @@ const Channels = () => {
   const [stats, setStats] = useState<any>(null);
   const [total, setTotal] = useState(0);
   const [searchParams, setSearchParams] = useSearchParams();
+  const [searchQuery, setSearchQuery] = useState('');
+  const [activeFilter, setActiveFilter] = useState('all');
   const limit = 10;
   const offset = parseInt(searchParams.get('offset') || '0');
   const { progress: wsProgress, channelProgress, operations } = useWebSocketProgress();
@@ -39,7 +42,7 @@ const Channels = () => {
   useEffect(() => {
     loadChannels();
     loadStats();
-  }, [offset]);
+  }, [offset, searchQuery, activeFilter]);
 
   const loadStats = async () => {
     try {
@@ -52,7 +55,11 @@ const Channels = () => {
 
   const loadChannels = async () => {
     try {
-      const data = await api.getChannels({ limit, offset });
+      const params: any = { limit, offset };
+      if (searchQuery) params.search = searchQuery;
+      if (activeFilter === 'active') params.is_active = true;
+      if (activeFilter === 'inactive') params.is_active = false;
+      const data = await api.getChannels(params);
       setChannels(data.channels);
       setTotal(data.total || 0);
     } catch (error) {
@@ -160,15 +167,15 @@ const Channels = () => {
     }
   };
 
-  const searchChannel = async (channelId: number) => {
+  const fetchAnalyzeChannel = async (channelId: number) => {
     try {
-      // Check if Ollama is available before attempting analysis (search includes analysis)
+      // Check if Ollama is available before attempting analysis (fetch-analyze includes analysis)
       if (!stats?.ollama_available) {
         showStatus('Error: Ollama is not available. Please check if Ollama is running.', true);
         return;
       }
 
-      const data = await withLoading(`search-${channelId}`, () => api.searchChannel(channelId));
+      const data = await withLoading(`fetch-analyze-${channelId}`, () => api.fetchAnalyzeChannel(channelId));
       if (data.success) {
         showStatus(`Fetched ${data.total_new_messages} new messages, found ${data.total_jobs} jobs (${data.days_back_used}d window)`);
         setTimeout(() => loadChannels(), 1500);
@@ -218,7 +225,34 @@ const Channels = () => {
 
       <Card>
         <CardHeader>
-          <CardTitle>Configured Channels ({total})</CardTitle>
+          <div className="flex justify-between items-center">
+            <CardTitle>Configured Channels ({total})</CardTitle>
+          </div>
+          <div className="flex gap-2 mt-3">
+            <div className="relative flex-1">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+              <Input
+                placeholder="Search channels..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="pl-9"
+              />
+            </div>
+            <select
+              value={activeFilter}
+              onChange={(e) => setActiveFilter(e.target.value)}
+              className="px-3 py-2 rounded-md border border-gray-200 text-sm bg-white"
+            >
+              <option value="all">All Status</option>
+              <option value="active">Active</option>
+              <option value="inactive">Inactive</option>
+            </select>
+            {(searchQuery || activeFilter !== 'all') && (
+              <Button variant="ghost" size="sm" onClick={() => { setSearchQuery(''); setActiveFilter('all'); }}>
+                Clear
+              </Button>
+            )}
+          </div>
         </CardHeader>
         <CardContent>
           {channels.length > 0 ? (
@@ -266,10 +300,10 @@ const Channels = () => {
                     <div className="flex gap-2">
                       <Button
                         variant="outline"
-                        onClick={() => searchChannel(channel.id)}
-                        disabled={loadingActions.has(`search-${channel.id}`) || !!operations[channel.username]}
+                        onClick={() => fetchAnalyzeChannel(channel.id)}
+                        disabled={loadingActions.has(`fetch-analyze-${channel.id}`) || !!operations[channel.username]}
                       >
-                        {loadingActions.has(`search-${channel.id}`) ? 'Fetching...' : operations[channel.username] ? 'Processing...' : 'Fetch'}
+                        {loadingActions.has(`fetch-analyze-${channel.id}`) ? 'Fetching...' : operations[channel.username] ? 'Processing...' : 'Fetch'}
                       </Button>
                       <Button
                         variant="outline"

@@ -16,17 +16,27 @@ def register_job_routes(app):
     @app.get("/api/jobs")
     async def api_jobs(
         remote: Optional[bool] = None,
+        search: Optional[str] = None,
         limit: int = 10,
         offset: int = 0,
         db: AsyncSession = Depends(get_db),
     ):
-        """Get jobs as JSON."""
+        """Get jobs as JSON with search and filters."""
         from app.models import Channel
-        
+
         query = select(Job).join(Channel).filter(Channel.is_active == True)
 
         if remote is not None:
             query = query.filter(Job.is_remote == remote)
+
+        # Apply search filter
+        if search:
+            search_pattern = f"%{search}%"
+            query = query.where(
+                (Job.title.ilike(search_pattern)) |
+                (Job.company.ilike(search_pattern)) |
+                (Job.location.ilike(search_pattern))
+            )
 
         # Get total count
         count_query = select(func.count()).select_from(query.subquery())
@@ -90,8 +100,12 @@ def register_job_routes(app):
             raise HTTPException(status_code=500, detail=f"Failed to review job: {str(e)}")
 
     @app.post("/api/jobs/{job_id}/toggle-applied")
-    async def api_toggle_job_applied(job_id: int, db: AsyncSession = Depends(get_db)):
-        """Toggle job applied status."""
+    async def api_toggle_job_applied(
+        job_id: int,
+        notes: Optional[str] = Form(None),
+        db: AsyncSession = Depends(get_db),
+    ):
+        """Toggle job applied status with optional notes."""
         try:
             result = await db.execute(select(Job).filter(Job.id == job_id))
             job = result.scalar_one_or_none()
@@ -102,6 +116,8 @@ def register_job_routes(app):
             if job.is_applied:
                 from datetime import datetime
                 job.applied_at = datetime.utcnow()
+                if notes:
+                    job.notes = notes
             else:
                 job.applied_at = None
             await db.commit()

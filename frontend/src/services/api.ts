@@ -100,7 +100,7 @@ const api = {
   },
 
   // Channels
-  getChannels: async (params?: { limit?: number; offset?: number }): Promise<{ channels: Channel[]; total: number; limit: number; offset: number }> => {
+  getChannels: async (params?: { limit?: number; offset?: number; search?: string; is_active?: boolean }): Promise<{ channels: Channel[]; total: number; limit: number; offset: number }> => {
     const query = new URLSearchParams(params as any).toString();
     const response = await fetch(`${API_BASE}/api/channels${query ? `?${query}` : ''}`);
     return response.json();
@@ -127,7 +127,7 @@ const api = {
   },
 
   // Jobs
-  getJobs: async (params?: { remote?: string; limit?: number; offset?: number }): Promise<{ jobs: Job[]; total: number; limit: number; offset: number }> => {
+  getJobs: async (params?: { remote?: string; search?: string; limit?: number; offset?: number }): Promise<{ jobs: Job[]; total: number; limit: number; offset: number }> => {
     const query = new URLSearchParams(params as any).toString();
     const response = await fetch(`${API_BASE}/api/jobs${query ? `?${query}` : ''}`);
     return response.json();
@@ -138,8 +138,13 @@ const api = {
     return response.json();
   },
 
-  toggleJobApplied: async (id: number): Promise<{ success: boolean }> => {
-    const response = await fetch(`${API_BASE}/api/jobs/${id}/toggle-applied`, { method: 'POST' });
+  toggleJobApplied: async (id: number, notes?: string): Promise<{ success: boolean }> => {
+    const formData = new FormData();
+    if (notes) formData.append('notes', notes);
+    const response = await fetch(`${API_BASE}/api/jobs/${id}/toggle-applied`, {
+      method: 'POST',
+      body: formData,
+    });
     return response.json();
   },
 
@@ -151,7 +156,7 @@ const api = {
   },
 
   // Developers
-  getDevelopers: async (params?: { looking_for_work?: string; limit?: number; offset?: number }): Promise<{ developers: Developer[]; total: number; limit: number; offset: number }> => {
+  getDevelopers: async (params?: { looking_for_work?: string; search?: string; limit?: number; offset?: number }): Promise<{ developers: Developer[]; total: number; limit: number; offset: number }> => {
     const query = new URLSearchParams(params as any).toString();
     const response = await fetch(`${API_BASE}/api/developers${query ? `?${query}` : ''}`);
     return response.json();
@@ -162,8 +167,13 @@ const api = {
     return response.json();
   },
 
-  toggleDeveloperContacted: async (id: number): Promise<{ success: boolean }> => {
-    const response = await fetch(`${API_BASE}/api/developers/${id}/toggle-contacted`, { method: 'POST' });
+  toggleDeveloperContacted: async (id: number, notes?: string): Promise<{ success: boolean }> => {
+    const formData = new FormData();
+    if (notes) formData.append('notes', notes);
+    const response = await fetch(`${API_BASE}/api/developers/${id}/toggle-contacted`, {
+      method: 'POST',
+      body: formData,
+    });
     return response.json();
   },
 
@@ -175,9 +185,11 @@ const api = {
   },
 
   // Messages
-  getMessages: async (params?: { channel_id?: number; limit?: number; offset?: number }): Promise<any> => {
+  getMessages: async (params?: { channel_id?: number; search?: string; analysis_status?: string; limit?: number; offset?: number }): Promise<any> => {
     const queryParams = new URLSearchParams();
     if (params?.channel_id) queryParams.append('channel_id', params.channel_id.toString());
+    if (params?.search) queryParams.append('search', params.search);
+    if (params?.analysis_status) queryParams.append('analysis_status', params.analysis_status);
     if (params?.limit) queryParams.append('limit', params.limit.toString());
     if (params?.offset) queryParams.append('offset', params.offset.toString());
     const response = await fetch(`${API_BASE}/api/messages?${queryParams.toString()}`);
@@ -195,8 +207,8 @@ const api = {
     return response.json();
   },
 
-  searchChannel: async (id: number): Promise<any> => {
-    const response = await fetch(`${API_BASE}/api/search/${id}`, { method: 'POST' });
+  fetchAnalyzeChannel: async (id: number): Promise<any> => {
+    const response = await fetch(`${API_BASE}/api/fetch-analyze/${id}`, { method: 'POST' });
     return response.json();
   },
 
@@ -210,13 +222,23 @@ const api = {
     return response.json();
   },
 
-  searchAll: async (): Promise<any> => {
-    const response = await fetch(`${API_BASE}/api/search-all`, { method: 'POST' });
+  fetchAnalyzeAll: async (): Promise<any> => {
+    const response = await fetch(`${API_BASE}/api/fetch-analyze-all`, { method: 'POST' });
     return response.json();
   },
 
   reanalyzeMessages: async (): Promise<any> => {
     const response = await fetch(`${API_BASE}/api/reanalyze`, { method: 'POST' });
+    return response.json();
+  },
+
+  reanalyzeSkipped: async (): Promise<any> => {
+    const response = await fetch(`${API_BASE}/api/reanalyze-skipped`, { method: 'POST' });
+    return response.json();
+  },
+
+  reanalyzeMessage: async (messageId: number): Promise<any> => {
+    const response = await fetch(`${API_BASE}/api/reanalyze-message/${messageId}`, { method: 'POST' });
     return response.json();
   },
 

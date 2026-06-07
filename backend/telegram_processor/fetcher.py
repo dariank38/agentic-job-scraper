@@ -76,8 +76,6 @@ async def fetch_messages(
     today_midnight = datetime.now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0)
     cutoff_date = today_midnight - timedelta(days=days_back)
 
-    # BUG FIX #4: Use _offset_id to resume from where we left off after FloodWait,
-    # instead of restarting from the beginning (which caused duplicate fetches)
     last_id: int | None = _offset_id
     reached_cutoff = False
 
@@ -138,8 +136,6 @@ async def fetch_messages(
         wait_time = e.seconds
         print(f"FloodWaitError: waiting {wait_time} seconds before resuming from id={last_id}...")
         await asyncio.sleep(wait_time)
-        # BUG FIX #4: Pass last_id as _offset_id so retry resumes from where we left off,
-        # not from the beginning. Avoids duplicate messages in the result.
         return messages + await fetch_messages(
             client, channel_username, days_back, batch_size, batch_delay,
             _offset_id=last_id,

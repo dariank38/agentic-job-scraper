@@ -36,30 +36,21 @@ const Jobs = () => {
   const [searchQuery, setSearchQuery] = useState('');
   const [loadingActions, setLoadingActions] = useState<Set<string>>(new Set());
   const [total, setTotal] = useState(0);
+  const [jobNotes, setJobNotes] = useState('');
   const remoteFilter = searchParams.get('remote');
   const limit = 10;
   const offset = parseInt(searchParams.get('offset') || '0');
   const { showToast } = useToast();
 
-  const filteredJobs = jobs.filter(job => {
-    if (!searchQuery) return true;
-    const query = searchQuery.toLowerCase();
-    const title = (job.title || '').toLowerCase();
-    const company = (job.company || '').toLowerCase();
-    const location = (job.location || '').toLowerCase();
-    const skillsStr = job.skills ? job.skills.join(' ').toLowerCase() : '';
-    const channelName = (job.channel?.username || '').toLowerCase();
-    return title.includes(query) || company.includes(query) || location.includes(query) || skillsStr.includes(query) || channelName.includes(query);
-  });
-
   useEffect(() => {
     loadJobs();
-  }, [remoteFilter, offset]);
+  }, [remoteFilter, offset, searchQuery]);
 
   const loadJobs = async () => {
     try {
       const params: any = { limit, offset };
       if (remoteFilter) params.remote = remoteFilter;
+      if (searchQuery) params.search = searchQuery;
       const data = await api.getJobs(params);
       setJobs(data.jobs);
       setTotal(data.total || 0);
@@ -110,11 +101,25 @@ const Jobs = () => {
   };
 
   const toggleApplied = async (id: number) => {
+    const job = jobs.find(j => j.id === id);
+    if (job?.is_applied) {
+      showToast('warning', 'Job is already marked as applied');
+      return;
+    }
+    // Optimistic update
+    setJobs(prevJobs => prevJobs.map(j => j.id === id ? { ...j, is_applied: true } : j));
+    if (selectedJob?.id === id) {
+      setSelectedJob(prev => prev ? { ...prev, is_applied: true } : null);
+    }
     try {
-      await withLoading(`toggle-${id}`, () => api.toggleJobApplied(id));
+      await withLoading(`toggle-${id}`, () => api.toggleJobApplied(id, jobNotes));
       loadJobs();
+      setJobNotes('');
+      showToast('success', 'Job marked as applied');
     } catch (error) {
       console.error('Failed to toggle applied status:', error);
+      // Revert on error
+      loadJobs();
     }
   };
 
@@ -216,10 +221,10 @@ const Jobs = () => {
             </CardHeader>
             <CardContent className="p-0">
               <div className="px-4 pb-4 space-y-1">
-                {filteredJobs.length === 0 ? (
+                {jobs.length === 0 ? (
                   <p className="text-sm text-gray-500 text-center py-8">No jobs match your search.</p>
                 ) : (
-                  filteredJobs.map((job) => {
+                  jobs.map((job) => {
                     const isSelected = selectedJob?.id === job.id;
                     const skills = getSkills(job);
                     return (
@@ -243,20 +248,20 @@ const Jobs = () => {
                         {/* Info */}
                         <div className="flex-1 min-w-0">
                           <div className="flex items-center gap-2 mb-0.5">
-                            <span className={`font-medium text-sm truncate ${isSelected ? 'text-primary' : ''}`}>
+                            <span className={`font-medium text-base truncate ${isSelected ? 'text-primary' : ''}`}>
                               {job.title || 'Untitled Job'}
                             </span>
                             {job.is_applied && (
-                              <Badge variant="default" className="text-[10px] h-5 px-1.5">Applied</Badge>
+                              <Badge variant="default" className="text-xs h-5 px-1.5">Applied</Badge>
                             )}
                           </div>
-                          <p className="text-xs text-gray-500 truncate">
+                          <p className="text-sm text-gray-500 truncate">
                             {job.company || 'Unknown Company'}
                           </p>
                           {skills.length > 0 && (
                             <div className="flex gap-1 mt-1.5 flex-wrap">
                               {skills.slice(0, 3).map((skill, idx) => (
-                                <span key={idx} className="text-[10px] px-1.5 py-0.5 bg-gray-100 text-gray-600 rounded-md">
+                                <span key={idx} className="text-xs px-1.5 py-0.5 bg-gray-100 text-gray-600 rounded-md">
                                   {skill}
                                 </span>
                               ))}
@@ -461,6 +466,14 @@ const Jobs = () => {
 
                   {/* Action Buttons */}
                   <div className="flex gap-2 pt-2">
+                    {!selectedJob.is_applied && (
+                      <Input
+                        placeholder="Add notes (optional)"
+                        value={jobNotes}
+                        onChange={(e) => setJobNotes(e.target.value)}
+                        className="flex-1"
+                      />
+                    )}
                     <Button
                       size="sm"
                       variant={selectedJob.is_applied ? 'default' : 'outline'}

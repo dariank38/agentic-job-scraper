@@ -143,7 +143,6 @@ async def fetch_and_store_messages(
     run_id: Optional[int] = None,
 ) -> dict:
     """Fetch messages from Telegram and store in database."""
-    # BUG FIX #1: Renamed to telegram_manager to avoid shadowing the global WebSocket `manager`
     telegram_manager = TelegramClientManager()
 
     # Create operation record for tracking
@@ -202,8 +201,6 @@ async def fetch_and_store_messages(
             except Exception as e:
                 print(f"[Fetch] Error storing message {msg_data.get('id')}: {e}")
                 await db.rollback()
-                # BUG FIX #2: Removed manual begin() — SQLAlchemy async uses autobegin,
-                # calling begin() after rollback raises InvalidRequestError
                 continue
 
         await db.commit()
@@ -273,82 +270,103 @@ async def fetch_and_store_messages(
         except Exception:
             pass
 
-
 def should_analyze_message(text: str) -> bool:
-    """Quick keyword pre-filter to avoid sending irrelevant messages to Ollama."""
     text_lower = text.lower()
 
-    inclusion_keywords = [
-        # English
-        "software", "developer", "programmer", "engineer",
-        "backend", "frontend", "fullstack", "full-stack", "full stack",
-        "devops", "mobile", "blockchain", "smart contract",
-        "qa", "tester", "testing", "automation",
-        "data", "machine learning", "ml engineer", "ai engineer",
-        "python", "javascript", "typescript", "react", "node",
-        "golang", "rust", "java", "kotlin", "swift",
-        "hiring", "we are looking", "job opening", "vacancy",
-        "cv", "resume", "portfolio", "github",
-        "looking for work", "open to work", "available for", "remote work",
-        "php", "laravel", "django", "flask",
-        "docker", "kubernetes", "aws", "cloud",
-        "sql", "database", "api", "microservices",
-        "web3", "solidity", "defi", "dapp",
-        "flutter", "react native", "ios", "android",
-        "team lead", "tech lead", "architect", "cto",
-        "junior", "senior", "mid-level", "lead",
-        "scala", "elixir", "ruby", "rails",
-        # Chinese
-        "软件", "开发", "程序员", "工程师",
-        "后端", "前端", "全栈", "运维", "测试",
-        "移动", "区块链", "智能合约",
-        "数据", "机器学习", "人工智能",
-        "招聘", "急聘", "诚聘", "招", " hiring ",
-        "求职", "找工作", "简历", "portfolio", "github",
-        "远程", "居家办公", "在家办公",
-        "php", "laravel", "python", "java",
-        "docker", "kubernetes", "云", "数据库",
-        "web3", "solidity",
-        "flutter", "react native", "安卓", "ios",
-        "技术负责人", "架构师", "总监",
-        "初级", "中级", "高级", "资深",
-    ]
-
-    for keyword in inclusion_keywords:
-        if keyword in text_lower:
-            return True
-
     exclusion_keywords = [
-        "marketing", "seo", "digital marketing", "promotion",
+        "marketing", "seo", "digital marketing", "growth hacker",
         "advertising", "sales", "affiliate", "dropshipping",
-        "mlm", "crypto investment", "forex", "trading signals",
+        "mlm", "crypto investment", "forex", "trading signal",
         "airdrop", "casino", "gambling", "betting",
-        "medical", "healthcare", "nursing", "doctor",
-        "accountant", "accounting", "finance manager",
-        "hr manager", "human resources", "recruiter",
-        "teacher", "tutor", "content writer", "copywriter",
-        "graphic designer", "ui/ux designer", "designer only",
-        "community manager", "social media manager",
-        "real estate", "property", "construction",
-        "driver", "delivery", "cleaning",
-        # Chinese exclusion
+        "medical", "healthcare", "nursing", "doctor", "pharmacist",
+        "accountant", "accounting", "finance manager", "auditor",
+        "graphic designer", "visual designer", "ui designer", "ux designer",
+        "content writer", "copywriter", "editor", "journalist",
+        "community manager", "social media manager", "social media",
+        "community moderator", "moderator", " mod ",
+        "real estate", "property agent", "construction",
+        "driver", "delivery", "cleaning", "logistics",
+        "customer service", "customer support", "call center",
+        "recruiter", "recruitment", "talent acquisition", "hr manager",
+        "human resources", "headhunter", "staffing",
+        "product manager", "project manager", "scrum master",
+        "operations manager", "business analyst", "business development",
+        "teacher", "tutor", "instructor", "professor",
         "营销", "推广", "广告", "销售", "微商",
         "投资", "外汇", "赌博", "博彩",
-        "医疗", "护士", "医生", "会计",
-        "财务", "人力资源", "人事", "招聘专员",
-        "新媒体运营", "内容运营", "运营专员", "社群运营",
-        "文案", "编辑", "设计", "客服",
+        "医疗", "护士", "医生", "会计", "财务",
+        "人力资源", "人事", "招聘专员", "猎头",
+        "社群运营", "新媒体运营", "内容运营", "运营专员", "运营经理",
+        "文案", "编辑", "平面设计", "客服",
+        "产品经理", "项目经理", "商务",
         "房产", "建筑", "司机", "快递",
+        "ui设计", "ux设计", "视觉设计",
     ]
 
     for keyword in exclusion_keywords:
         if keyword in text_lower:
             return False
 
-    return True
+    remote_keywords = [
+        "remote", "work from home", "wfh", "fully remote", "100% remote",
+        "anywhere", "distributed team", "globally",
+        "远程", "居家办公", "在家办公", "全球",
+    ]
+    has_remote_signal = any(kw in text_lower for kw in remote_keywords)
 
+    role_keywords = [
+        "software engineer", "software developer", "software programmer",
+        "backend engineer", "backend developer",
+        "frontend engineer", "frontend developer",
+        "fullstack", "full-stack", "full stack",
+        "devops engineer", "platform engineer", "site reliability", "sre",
+        "mobile developer", "ios developer", "android developer",
+        "ml engineer", "ai engineer", "data engineer", "data scientist",
+        "blockchain developer", "smart contract developer", "web3 developer",
+        "qa engineer", "test engineer", "automation engineer",
+        "security engineer", "cloud engineer", "infrastructure engineer",
+        "tech lead", "team lead", "staff engineer", "principal engineer",
+        "solutions architect", "software architect", "cto",
+        "junior developer", "senior developer", "mid-level developer",
+        "junior engineer", "senior engineer",
+        "前端", "后端", "全栈", "运维", "测试工程",
+        "移动开发", "安卓", "鸿蒙", "区块链", "智能合约",
+        "数据工程", "算法", "机器学习", "人工智能", "大模型",
+        "爬虫", "研发", "架构师", "技术负责人", "小程序",
+    ]
 
-# BUG FIX #5: Moved analyze_single out of the loop to avoid per-batch redefinition
+    stack_keywords = [
+        "python", "javascript", "typescript", "golang", " go ",
+        "rust", "java", "kotlin", "swift", "scala", "elixir",
+        "php", "ruby", "c++", "c#",
+        "react", "vue", "angular", "next.js", "nuxt", "svelte",
+        "h5", "uni-app", "uniapp", "taro",
+        "antd", "ant design", "element ui", "element plus",
+        "webpack", "vite",
+        "django", "flask", "fastapi", "laravel", "rails", "spring boot",
+        "springboot", "spring cloud", "mybatis", "dubbo", "nacos",
+        "node.js", "nodejs", "express", "nestjs",
+        "flutter", "react native",
+        "docker", "kubernetes", "k8s", "terraform", "jenkins", "ci/cd", "cicd",
+        "aws", "gcp", "azure", "阿里云", "腾讯云", "华为云",
+        "linux",
+        "postgresql", "mongodb", "redis", "mysql", "elasticsearch",
+        "flink", "spark", "hadoop", "kafka",
+        "graphql", "rest api", "microservices",
+        "分布式", "高并发", "中间件",
+        "solidity", "web3.js", "ethers.js",
+    ]
+
+    has_role = any(kw in text_lower for kw in role_keywords)
+    has_stack = any(kw in text_lower for kw in stack_keywords)
+
+    if has_role:
+        return True
+    if has_stack and has_remote_signal:
+        return True
+
+    return False
+
 async def _analyze_single(analyzer, message):
     """Analyze a single message, returning (message, result, error)."""
     try:
@@ -438,7 +456,6 @@ async def analyze_messages(
                 await update_operation(db, operation_id, current=batch_num)
                 continue
 
-            # BUG FIX #5: Use module-level _analyze_single instead of inner closure
             print(f"[Analyze] Starting analysis for {len(filtered_messages)} messages in batch {batch_num}")
             tasks = [_analyze_single(analyzer, msg) for msg in filtered_messages]
             completed = await asyncio.gather(*tasks)
@@ -511,8 +528,6 @@ async def analyze_messages(
                         location=location,
                         is_remote=is_remote,
                         role_type=job_data.get("role_type"),
-                        # BUG FIX #6: JSON column must receive list directly, not json.dumps()
-                        # Storing json.dumps() causes double-serialization: "[\"python\"]" instead of ["python"]
                         skills=job_data.get("skills", []),
                         contact=contact,
                         contact_type=contact_type,
@@ -580,7 +595,6 @@ async def analyze_messages(
                         confidence=confidence,
                         translated_text=translated_text,
                         name=name,
-                        # BUG FIX #6: Same double-serialization fix for Developer.skills
                         skills=pi_data.get("skills", []),
                         experience=pi_data.get("experience"),
                         portfolio=portfolio,

@@ -17,6 +17,7 @@ import {
   Clock,
   SkipForward,
   Search,
+  RotateCcw,
 } from 'lucide-react';
 import api from '@/services/api';
 import { useWebSocketProgress } from '@/components/Layout';
@@ -47,6 +48,7 @@ const Messages = () => {
   const [analysisProgress, setAnalysisProgress] = useState<{ processed: number; total: number } | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState('all');
+  const [reanalyzingId, setReanalyzingId] = useState<number | null>(null);
   const limit = 8;
   const offset = parseInt(searchParams.get('offset') || '0');
 
@@ -54,7 +56,7 @@ const Messages = () => {
 
   useEffect(() => {
     loadMessages();
-  }, [searchParams]);
+  }, [searchParams, searchQuery, statusFilter]);
 
   useEffect(() => {
     if (wsProgress) {
@@ -77,7 +79,10 @@ const Messages = () => {
   const loadMessages = async () => {
     setLoading(true);
     try {
-      const data = await api.getMessages({ limit, offset });
+      const params: any = { limit, offset };
+      if (searchQuery) params.search = searchQuery;
+      if (statusFilter !== 'all') params.analysis_status = statusFilter;
+      const data = await api.getMessages(params);
       setMessages(data.messages);
       setTotal(data.total);
     } catch (error) {
@@ -97,17 +102,19 @@ const Messages = () => {
     setSearchParams({ offset: newOffset.toString() });
   };
 
-  const filteredMessages = messages.filter(msg => {
-    if (!searchQuery) return true;
-    const query = searchQuery.toLowerCase();
-    const text = (msg.text || '').toLowerCase();
-    const channel = (msg.channel?.username || '').toLowerCase();
-    const sender = ((msg.sender_username || msg.sender_first_name) || '').toLowerCase();
-    return text.includes(query) || channel.includes(query) || sender.includes(query);
-  }).filter(msg => {
-    if (statusFilter === 'all') return true;
-    return msg.analysis_status === statusFilter;
-  });
+  const reanalyzeSingle = async (messageId: number) => {
+    setReanalyzingId(messageId);
+    try {
+      const data = await api.reanalyzeMessage(messageId);
+      if (data.success) {
+        loadMessages();
+      }
+    } catch (error) {
+      console.error('Failed to re-analyze message:', error);
+    } finally {
+      setReanalyzingId(null);
+    }
+  };
 
   const getStatusInfo = (status: string) => {
     switch (status) {
@@ -225,10 +232,10 @@ const Messages = () => {
             </Card>
           ))}
         </div>
-      ) : filteredMessages.length > 0 ? (
+      ) : messages.length > 0 ? (
         <>
           <div className="space-y-3">
-            {filteredMessages.map((msg) => {
+            {messages.map((msg) => {
               const statusInfo = getStatusInfo(msg.analysis_status);
               const StatusIcon = statusInfo.icon;
               return (
@@ -257,6 +264,22 @@ const Messages = () => {
                                   <ImageIcon className="w-3 h-3 mr-1" />
                                   Image
                                 </Badge>
+                              )}
+                              {msg.analysis_status === 'skipped' && (
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  onClick={(e) => { e.stopPropagation(); reanalyzeSingle(msg.id); }}
+                                  disabled={reanalyzingId === msg.id}
+                                  className="text-xs h-6 px-2"
+                                >
+                                  {reanalyzingId === msg.id ? (
+                                    <Loader2 className="w-3 h-3 mr-1 animate-spin" />
+                                  ) : (
+                                    <RotateCcw className="w-3 h-3 mr-1" />
+                                  )}
+                                  Re-analyze
+                                </Button>
                               )}
                             </div>
                             
