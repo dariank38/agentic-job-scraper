@@ -15,7 +15,6 @@ def register_job_routes(app):
 
     @app.get("/api/jobs")
     async def api_jobs(
-        remote: Optional[bool] = None,
         search: Optional[str] = None,
         limit: int = 10,
         offset: int = 0,
@@ -25,9 +24,6 @@ def register_job_routes(app):
         from app.models import Channel
 
         query = select(Job).join(Channel).filter(Channel.is_active == True)
-
-        if remote is not None:
-            query = query.filter(Job.is_remote == remote)
 
         # Apply search filter
         if search:
@@ -116,10 +112,10 @@ def register_job_routes(app):
             if job.is_applied:
                 from datetime import datetime
                 job.applied_at = datetime.utcnow()
-                if notes:
-                    job.notes = notes
+                job.notes = notes
             else:
                 job.applied_at = None
+                job.notes = None
             await db.commit()
 
             return {"success": True, "is_applied": job.is_applied}

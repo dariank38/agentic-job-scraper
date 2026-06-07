@@ -237,8 +237,8 @@ const Developers = () => {
                             <span className={`font-medium text-base truncate ${isSelected ? 'text-primary' : ''}`}>
                               {senderName}
                             </span>
-                            {dev.looking_for_work && (
-                              <Badge variant="default" className="text-xs h-5 px-1.5">Looking</Badge>
+                            {dev.is_contacted && (
+                              <Badge variant="default" className="text-xs h-5 px-1.5">Contacted</Badge>
                             )}
                           </div>
                           <p className="text-sm text-gray-500 truncate">
@@ -487,6 +487,17 @@ const Developers = () => {
                         </span>
                       </div>
                     </div>
+
+                    {/* Notes */}
+                    {selectedDeveloper.notes && (
+                      <div className="bg-yellow-50/50 border border-yellow-100 rounded-xl p-4">
+                        <div className="flex items-center gap-2 mb-2">
+                          <FileText className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-yellow-600" />
+                          <h3 className="text-xs sm:text-sm font-semibold text-yellow-900">Notes</h3>
+                        </div>
+                        <p className="text-sm text-gray-700 leading-relaxed break-words">{selectedDeveloper.notes}</p>
+                      </div>
+                    )}
                   </div>
                 ) : (
                   <div className="flex flex-col items-center justify-center h-64 text-gray-400">

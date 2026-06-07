@@ -37,19 +37,17 @@ const Jobs = () => {
   const [loadingActions, setLoadingActions] = useState<Set<string>>(new Set());
   const [total, setTotal] = useState(0);
   const [jobNotes, setJobNotes] = useState('');
-  const remoteFilter = searchParams.get('remote');
   const limit = 10;
   const offset = parseInt(searchParams.get('offset') || '0');
   const { showToast } = useToast();
 
   useEffect(() => {
     loadJobs();
-  }, [remoteFilter, offset, searchQuery]);
+  }, [offset, searchQuery]);
 
   const loadJobs = async () => {
     try {
       const params: any = { limit, offset };
-      if (remoteFilter) params.remote = remoteFilter;
       if (searchQuery) params.search = searchQuery;
       const data = await api.getJobs(params);
       setJobs(data.jobs);
@@ -88,13 +86,6 @@ const Jobs = () => {
     }
   };
 
-  const applyFilters = () => {
-    const remote = (document.getElementById('remote-filter') as HTMLSelectElement)?.value;
-    const params = new URLSearchParams();
-    if (remote) params.set('remote', remote);
-    setSearchParams(params);
-  };
-
   const clearFilters = () => {
     setSearchParams({});
     setSearchQuery('');
@@ -124,7 +115,7 @@ const Jobs = () => {
   };
 
   const exportJobs = () => {
-    const headers = ['Title', 'Company', 'Location', 'Role Type', 'Skills', 'Contact', 'Remote', 'Applied', 'Reviewed', 'Approved', 'Channel', 'Posted Date'];
+    const headers = ['Title', 'Company', 'Location', 'Role Type', 'Skills', 'Contact', 'Remote', 'Applied', 'Channel', 'Posted Date'];
     const rows = jobs.map(job => {
       const skillsStr = Array.isArray(job.skills) ? job.skills.join(', ') : '';
       return [
@@ -136,8 +127,6 @@ const Jobs = () => {
         job.contact || '',
         job.is_remote ? 'Yes' : 'No',
         job.is_applied ? 'Yes' : 'No',
-        job.is_reviewed ? 'Yes' : 'No',
-        job.is_approved ? 'Yes' : 'No',
         job.channel?.username || 'Unknown',
         job.message.date ? new Date(job.message.date).toLocaleDateString() : ''
       ];
@@ -199,24 +188,11 @@ const Jobs = () => {
                     className="pl-9"
                   />
                 </div>
-                {/* Filters */}
-                <div className="flex gap-2">
-                  <select
-                    id="remote-filter"
-                    defaultValue={remoteFilter || ''}
-                    onChange={applyFilters}
-                    className="flex-1 px-3 py-2 rounded-md border border-gray-200 text-sm bg-white"
-                  >
-                    <option value="">All Locations</option>
-                    <option value="true">Remote Only</option>
-                    <option value="false">Non-Remote</option>
-                  </select>
-                  {(remoteFilter || searchQuery) && (
-                    <Button variant="ghost" size="sm" onClick={clearFilters}>
-                      Clear
-                    </Button>
-                  )}
-                </div>
+                {searchQuery && (
+                  <Button variant="ghost" size="sm" onClick={clearFilters}>
+                    Clear
+                  </Button>
+                )}
               </div>
             </CardHeader>
             <CardContent className="p-0">
@@ -332,15 +308,6 @@ const Jobs = () => {
                             <CheckCircle2 className="w-3.5 h-3.5 mr-1.5" />
                             {selectedJob.confidence}
                           </Badge>
-                        )}
-                        {!selectedJob.is_reviewed && (
-                          <Badge variant="outline" className="border-yellow-300 text-yellow-700 text-xs sm:text-sm px-2.5 py-0.5 sm:px-3 sm:py-1 shrink-0">Needs Review</Badge>
-                        )}
-                        {selectedJob.is_reviewed && selectedJob.is_approved && (
-                          <Badge className="bg-green-100 text-green-700 hover:bg-green-100 text-sm px-3 py-1 shrink-0">Approved</Badge>
-                        )}
-                        {selectedJob.is_reviewed && !selectedJob.is_approved && (
-                          <Badge variant="secondary" className="text-sm px-3 py-1 shrink-0">Rejected</Badge>
                         )}
                       </div>
                       <h2 className="text-lg sm:text-xl font-bold truncate">
@@ -483,6 +450,17 @@ const Jobs = () => {
                       {selectedJob.is_applied ? 'Applied ✓' : 'Mark Applied'}
                     </Button>
                   </div>
+
+                  {/* Notes */}
+                  {selectedJob.notes && (
+                    <div className="bg-yellow-50/50 border border-yellow-100 rounded-xl p-4">
+                      <div className="flex items-center gap-2 mb-2">
+                        <FileText className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-yellow-600" />
+                        <h3 className="text-xs sm:text-sm font-semibold text-yellow-900">Notes</h3>
+                      </div>
+                      <p className="text-sm text-gray-700 leading-relaxed break-words">{selectedJob.notes}</p>
+                    </div>
+                  )}
                 </div>
               ) : (
                 <div className="flex flex-col items-center justify-center h-64 text-gray-400">

@@ -114,10 +114,10 @@ def register_developer_routes(app):
             if developer.is_contacted:
                 from datetime import datetime
                 developer.contacted_at = datetime.utcnow()
-                if notes:
-                    developer.notes = notes
+                developer.notes = notes
             else:
                 developer.contacted_at = None
+                developer.notes = None
             await db.commit()
 
             return {"success": True, "is_contacted": developer.is_contacted}
