@@ -90,6 +90,17 @@ export interface Stats {
   ollama_available: boolean;
 }
 
+export interface TelegramAccount {
+  id: number;
+  api_id: number;
+  phone_number: string;
+  session_name: string;
+  is_active: boolean;
+  is_authenticated: boolean;
+  created_at: string;
+  last_used_at: string | null;
+}
+
 const api = {
   // Stats
   getStats: async (): Promise<Stats> => {
@@ -119,8 +130,34 @@ const api = {
     await fetch(`${API_BASE}/api/channels/${id}`, { method: 'DELETE' });
   },
 
-  getTelegramDialogs: async (): Promise<{ success: boolean; dialogs: any[]; error?: string }> => {
-    const response = await fetch(`${API_BASE}/api/telegram-dialogs`);
+  getTelegramDialogs: async (account_id?: number): Promise<{ success: boolean; dialogs: any[]; error?: string }> => {
+    const query = account_id ? `?account_id=${account_id}` : '';
+    const response = await fetch(`${API_BASE}/api/telegram-dialogs${query}`);
+    return response.json();
+  },
+
+  // Telegram Accounts
+  getTelegramAccounts: async (): Promise<TelegramAccount[]> => {
+    const response = await fetch(`${API_BASE}/api/telegram-accounts`);
+    return response.json();
+  },
+
+  createTelegramAccount: async (data: { api_id: number; api_hash: string; phone_number: string }): Promise<TelegramAccount> => {
+    const response = await fetch(`${API_BASE}/api/telegram-accounts`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data),
+    });
+    return response.json();
+  },
+
+  deleteTelegramAccount: async (id: number): Promise<{ success: boolean }> => {
+    const response = await fetch(`${API_BASE}/api/telegram-accounts/${id}`, { method: 'DELETE' });
+    return response.json();
+  },
+
+  toggleTelegramAccountActive: async (id: number): Promise<{ success: boolean; is_active: boolean }> => {
+    const response = await fetch(`${API_BASE}/api/telegram-accounts/${id}/toggle-active`, { method: 'PATCH' });
     return response.json();
   },
 
@@ -195,8 +232,9 @@ const api = {
   },
 
   // Actions
-  fetchChannel: async (id: number): Promise<any> => {
-    const response = await fetch(`${API_BASE}/api/fetch/${id}`, { method: 'POST' });
+  fetchChannel: async (id: number, account_id?: number): Promise<any> => {
+    const query = account_id ? `?account_id=${account_id}` : '';
+    const response = await fetch(`${API_BASE}/api/fetch/${id}${query}`, { method: 'POST' });
     return response.json();
   },
 
@@ -205,8 +243,9 @@ const api = {
     return response.json();
   },
 
-  fetchAnalyzeChannel: async (id: number): Promise<any> => {
-    const response = await fetch(`${API_BASE}/api/fetch-analyze/${id}`, { method: 'POST' });
+  fetchAnalyzeChannel: async (id: number, account_id?: number): Promise<any> => {
+    const query = account_id ? `?account_id=${account_id}` : '';
+    const response = await fetch(`${API_BASE}/api/fetch-analyze/${id}${query}`, { method: 'POST' });
     return response.json();
   },
 

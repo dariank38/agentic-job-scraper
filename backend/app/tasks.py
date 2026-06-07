@@ -10,7 +10,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.connection import AsyncSessionLocal, get_db, manager
-from app.models import AnalysisRun, Channel, Developer, Job, Message
+from app.models import AnalysisRun, Channel, Developer, Job, Message, TelegramAccount
 from telegram_processor import TelegramClientManager, fetch_messages
 from services.ollama_service import get_analyzer, is_ollama_available
 
@@ -141,9 +141,36 @@ async def fetch_and_store_messages(
     channel: Channel,
     days_back: int = 10,
     run_id: Optional[int] = None,
+    account_id: Optional[int] = None,
 ) -> dict:
     """Fetch messages from Telegram and store in database."""
-    telegram_manager = TelegramClientManager()
+    # Get Telegram account from database
+    if account_id:
+        result = await db.execute(select(TelegramAccount).filter(TelegramAccount.id == account_id))
+        account = result.scalar_one_or_none()
+        if not account:
+            return {
+                "success": False,
+                "error": "Telegram account not found",
+            }
+    else:
+        # Get first active account
+        result = await db.execute(
+            select(TelegramAccount).filter(TelegramAccount.is_active == True, TelegramAccount.is_authenticated == True)
+        )
+        account = result.scalar_one_or_none()
+        if not account:
+            return {
+                "success": False,
+                "error": "No active authenticated Telegram account found. Please add and authenticate an account in settings.",
+            }
+
+    telegram_manager = TelegramClientManager(
+        api_id=account.api_id,
+        api_hash=account.api_hash,
+        phone_number=account.phone_number,
+        session_name=account.session_name,
+    )
 
     # Create operation record for tracking
     operation_id = await create_operation(db, "fetch", channel)

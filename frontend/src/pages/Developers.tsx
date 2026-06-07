@@ -61,8 +61,15 @@ const Developers = () => {
       if (data.developers.length > 0 && !selectedDeveloper) {
         setSelectedDeveloper(data.developers[0]);
       }
-    } catch (error) {
-      console.error('Failed to load developers:', error);
+    } catch (e: any) {
+      let errorMessage = 'Failed to load developers';
+      if (e.response) {
+        const errorData = await e.response.json().catch(() => ({}));
+        errorMessage = errorData.detail || errorMessage;
+      } else if (e.message) {
+        errorMessage = e.message;
+      }
+      showToast('error', errorMessage);
     }
   };
 
@@ -104,8 +111,15 @@ const Developers = () => {
       loadDevelopers();
       setDeveloperNotes('');
       showToast('success', 'Developer marked as contacted');
-    } catch (error) {
-      console.error('Failed to toggle contacted status:', error);
+    } catch (e: any) {
+      let errorMessage = 'Failed to toggle contacted status';
+      if (e.response) {
+        const errorData = await e.response.json().catch(() => ({}));
+        errorMessage = errorData.detail || errorMessage;
+      } else if (e.message) {
+        errorMessage = e.message;
+      }
+      showToast('error', errorMessage);
       // Revert on error
       loadDevelopers();
     }

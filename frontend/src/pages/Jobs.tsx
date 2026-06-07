@@ -55,8 +55,15 @@ const Jobs = () => {
       if (data.jobs.length > 0 && !selectedJob) {
         setSelectedJob(data.jobs[0]);
       }
-    } catch (error) {
-      console.error('Failed to load jobs:', error);
+    } catch (e: any) {
+      let errorMessage = 'Failed to load jobs';
+      if (e.response) {
+        const errorData = await e.response.json().catch(() => ({}));
+        errorMessage = errorData.detail || errorMessage;
+      } else if (e.message) {
+        errorMessage = e.message;
+      }
+      showToast('error', errorMessage);
     }
   };
 
@@ -107,8 +114,15 @@ const Jobs = () => {
       loadJobs();
       setJobNotes('');
       showToast('success', 'Job marked as applied');
-    } catch (error) {
-      console.error('Failed to toggle applied status:', error);
+    } catch (e: any) {
+      let errorMessage = 'Failed to toggle applied status';
+      if (e.response) {
+        const errorData = await e.response.json().catch(() => ({}));
+        errorMessage = errorData.detail || errorMessage;
+      } else if (e.message) {
+        errorMessage = e.message;
+      }
+      showToast('error', errorMessage);
       // Revert on error
       loadJobs();
     }

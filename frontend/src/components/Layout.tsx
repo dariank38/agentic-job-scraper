@@ -267,6 +267,7 @@ const navLinks = [
   { path: '/messages', label: 'Messages', icon: MessageSquare },
   { path: '/jobs', label: 'Jobs', icon: Briefcase },
   { path: '/developers', label: 'Developers', icon: Code2 },
+  { path: '/telegram-accounts', label: 'Telegram Accounts', icon: Radio },
 ];
 
 const Layout = ({ children }: { children: React.ReactNode }) => {

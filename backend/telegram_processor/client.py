@@ -1,24 +1,28 @@
 """Telegram client manager using Telethon."""
 
+from pathlib import Path
 from telethon import TelegramClient
 
-from telegram_processor.config import (
-    TELEGRAM_API_ID,
-    TELEGRAM_API_HASH,
-    TELEGRAM_PHONE,
-    TELEGRAM_SESSION_PATH,
-)
+from telegram_processor.config import TELEGRAM_SESSION_PATH
 
 
 class TelegramClientManager:
-    """Manages Telegram client connection and session."""
+    """Manages Telegram client connection and session for multiple accounts."""
 
-    def __init__(self) -> None:
-        """Initialize the client manager with credentials from environment."""
-        self.api_id = TELEGRAM_API_ID
-        self.api_hash = TELEGRAM_API_HASH
-        self.phone = TELEGRAM_PHONE
-        self.session_path = TELEGRAM_SESSION_PATH
+    def __init__(self, api_id: int, api_hash: str, phone_number: str, session_name: str) -> None:
+        """Initialize the client manager with account credentials.
+
+        Args:
+            api_id: Telegram API ID
+            api_hash: Telegram API Hash
+            phone_number: Phone number for the account
+            session_name: Unique session name for this account
+        """
+        self.api_id = api_id
+        self.api_hash = api_hash
+        self.phone = phone_number
+        self.session_name = session_name
+        self.session_path = TELEGRAM_SESSION_PATH.parent / f"{session_name}.session"
         self._client: TelegramClient | None = None
 
     @property
@@ -45,9 +49,7 @@ class TelegramClientManager:
             ValueError: If required credentials are missing.
         """
         if not self.api_id or not self.api_hash:
-            raise ValueError(
-                "TELEGRAM_API_ID and TELEGRAM_API_HASH must be set in .env"
-            )
+            raise ValueError("API ID and API Hash must be provided")
 
         self.session_path.parent.mkdir(parents=True, exist_ok=True)
 

@@ -20,7 +20,7 @@ import {
   RotateCcw,
 } from 'lucide-react';
 import api from '@/services/api';
-import { useWebSocketProgress } from '@/components/Layout';
+import { useWebSocketProgress, useToast } from '@/components/Layout';
 
 interface Message {
   id: number;
@@ -51,6 +51,7 @@ const Messages = () => {
   const [reanalyzingId, setReanalyzingId] = useState<number | null>(null);
   const limit = 8;
   const offset = parseInt(searchParams.get('offset') || '0');
+  const { showToast } = useToast();
 
   const { progress: wsProgress } = useWebSocketProgress();
 
@@ -85,8 +86,15 @@ const Messages = () => {
       const data = await api.getMessages(params);
       setMessages(data.messages);
       setTotal(data.total);
-    } catch (error) {
-      console.error('Failed to load messages:', error);
+    } catch (e: any) {
+      let errorMessage = 'Failed to load messages';
+      if (e.response) {
+        const errorData = await e.response.json().catch(() => ({}));
+        errorMessage = errorData.detail || errorMessage;
+      } else if (e.message) {
+        errorMessage = e.message;
+      }
+      showToast('error', errorMessage);
     } finally {
       setLoading(false);
     }
@@ -109,8 +117,15 @@ const Messages = () => {
       if (data.success) {
         loadMessages();
       }
-    } catch (error) {
-      console.error('Failed to re-analyze message:', error);
+    } catch (e: any) {
+      let errorMessage = 'Failed to re-analyze message';
+      if (e.response) {
+        const errorData = await e.response.json().catch(() => ({}));
+        errorMessage = errorData.detail || errorMessage;
+      } else if (e.message) {
+        errorMessage = e.message;
+      }
+      showToast('error', errorMessage);
     } finally {
       setReanalyzingId(null);
     }
