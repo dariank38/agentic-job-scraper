@@ -67,7 +67,6 @@ Return ONLY a raw JSON object. No markdown, no explanation, no code blocks. Exac
     "linkedin": "",
     "contact": "",
     "contact_type": "telegram | email | linkedin | twitter | discord | other",
-    "looking_for_work": true/false,
     "summary": ""
   }
 }"""

@@ -29,8 +29,7 @@ export interface Job {
   translated_text?: string;
   confidence?: string;
   is_applied: boolean;
-  is_reviewed: boolean;
-  is_approved: boolean;
+  applied_at?: string;
   notes?: string;
   analyzed_at?: string;
   channel: Channel;
@@ -60,8 +59,7 @@ export interface Developer {
   confidence?: string;
   looking_for_work?: boolean;
   is_contacted: boolean;
-  is_reviewed: boolean;
-  is_approved: boolean;
+  contacted_at?: string;
   notes?: string;
   analyzed_at?: string;
   channel: Channel;

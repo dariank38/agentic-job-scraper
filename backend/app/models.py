@@ -132,8 +132,6 @@ class Job(Base):
     contact_type = Column(String, nullable=True)
     summary = Column(Text, nullable=True)
 
-    is_reviewed = Column(Boolean, default=False)
-    is_approved = Column(Boolean, default=False)
     is_applied = Column(Boolean, default=False)
     applied_at = Column(DateTime, nullable=True)
     notes = Column(Text, nullable=True)
@@ -166,9 +164,9 @@ class Job(Base):
             "contact": self.contact,
             "contact_type": self.contact_type,
             "summary": self.summary,
-            "is_reviewed": self.is_reviewed,
-            "is_approved": self.is_approved,
             "is_applied": self.is_applied,
+            "applied_at": self.applied_at.isoformat() if self.applied_at else None,
+            "notes": self.notes,
             "analyzed_at": self.analyzed_at.isoformat() if self.analyzed_at else None,
             "message": self.message.to_dict() if self.message else None,
         }
@@ -199,8 +197,6 @@ class Developer(Base):
     looking_for_work = Column(Boolean, nullable=True)
     summary = Column(Text, nullable=True)
 
-    is_reviewed = Column(Boolean, default=False)
-    is_approved = Column(Boolean, default=False)
     is_contacted = Column(Boolean, default=False)
     contacted_at = Column(DateTime, nullable=True)
     notes = Column(Text, nullable=True)
@@ -233,9 +229,9 @@ class Developer(Base):
             "contact_type": self.contact_type,
             "looking_for_work": self.looking_for_work,
             "summary": self.summary,
-            "is_reviewed": self.is_reviewed,
-            "is_approved": self.is_approved,
             "is_contacted": self.is_contacted,
+            "contacted_at": self.contacted_at.isoformat() if self.contacted_at else None,
+            "notes": self.notes,
             "analyzed_at": self.analyzed_at.isoformat() if self.analyzed_at else None,
             "message": self.message.to_dict() if self.message else None,
         }
