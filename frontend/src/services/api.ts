@@ -161,6 +161,33 @@ const api = {
     return response.json();
   },
 
+  startAuthentication: async (account_id: number): Promise<{ success: boolean; message: string }> => {
+    const response = await fetch(`${API_BASE}/api/telegram-accounts/authenticate`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ account_id }),
+    });
+    return response.json();
+  },
+
+  verifyCode: async (account_id: number, code: string): Promise<{ success: boolean; message: string; needs_password?: boolean }> => {
+    const response = await fetch(`${API_BASE}/api/telegram-accounts/verify-code`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ account_id, code }),
+    });
+    return response.json();
+  },
+
+  verifyPassword: async (account_id: number, password: string): Promise<{ success: boolean; message: string }> => {
+    const response = await fetch(`${API_BASE}/api/telegram-accounts/verify-password`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ account_id, password }),
+    });
+    return response.json();
+  },
+
   // Jobs
   getJobs: async (params?: { remote?: string; search?: string; limit?: number; offset?: number }): Promise<{ jobs: Job[]; total: number; limit: number; offset: number }> => {
     const query = new URLSearchParams(params as any).toString();

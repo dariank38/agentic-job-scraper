@@ -3,7 +3,8 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
-import { Plus, Trash2, RefreshCw, CheckCircle, XCircle } from 'lucide-react';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
+import { Plus, Trash2, RefreshCw, CheckCircle, XCircle, Key } from 'lucide-react';
 import api from '@/services/api';
 import { useToast } from '@/components/Layout';
 
@@ -23,6 +24,12 @@ const TelegramAccounts = () => {
   const [loading, setLoading] = useState(false);
   const [showAddForm, setShowAddForm] = useState(false);
   const [newAccount, setNewAccount] = useState({ api_id: '', api_hash: '', phone_number: '' });
+  const [authDialogOpen, setAuthDialogOpen] = useState(false);
+  const [authAccountId, setAuthAccountId] = useState<number | null>(null);
+  const [authStep, setAuthStep] = useState<'code' | 'password'>('code');
+  const [authCode, setAuthCode] = useState('');
+  const [authPassword, setAuthPassword] = useState('');
+  const [authLoading, setAuthLoading] = useState(false);
   const { showToast } = useToast();
 
   const loadAccounts = async () => {
@@ -80,6 +87,87 @@ const TelegramAccounts = () => {
     } catch (error) {
       console.error('Failed to toggle account:', error);
       showToast('error', 'Failed to update account status');
+    }
+  };
+
+  const handleStartAuth = (accountId: number) => {
+    setAuthAccountId(accountId);
+    setAuthStep('code');
+    setAuthCode('');
+    setAuthPassword('');
+    setAuthDialogOpen(true);
+  };
+
+  const handleSendCode = async () => {
+    if (!authAccountId) return;
+    try {
+      setAuthLoading(true);
+      const result = await api.startAuthentication(authAccountId);
+      if (result.success) {
+        showToast('success', result.message);
+      }
+    } catch (e: any) {
+      let errorMessage = 'Failed to send code';
+      if (e.response) {
+        const errorData = await e.response.json().catch(() => ({}));
+        errorMessage = errorData.detail || errorMessage;
+      } else if (e.message) {
+        errorMessage = e.message;
+      }
+      showToast('error', errorMessage);
+    } finally {
+      setAuthLoading(false);
+    }
+  };
+
+  const handleVerifyCode = async () => {
+    if (!authAccountId || !authCode) return;
+    try {
+      setAuthLoading(true);
+      const result = await api.verifyCode(authAccountId, authCode);
+      if (result.success) {
+        showToast('success', result.message);
+        setAuthDialogOpen(false);
+        loadAccounts();
+      } else if (result.needs_password) {
+        setAuthStep('password');
+        showToast('info', result.message);
+      }
+    } catch (e: any) {
+      let errorMessage = 'Failed to verify code';
+      if (e.response) {
+        const errorData = await e.response.json().catch(() => ({}));
+        errorMessage = errorData.detail || errorMessage;
+      } else if (e.message) {
+        errorMessage = e.message;
+      }
+      showToast('error', errorMessage);
+    } finally {
+      setAuthLoading(false);
+    }
+  };
+
+  const handleVerifyPassword = async () => {
+    if (!authAccountId || !authPassword) return;
+    try {
+      setAuthLoading(true);
+      const result = await api.verifyPassword(authAccountId, authPassword);
+      if (result.success) {
+        showToast('success', result.message);
+        setAuthDialogOpen(false);
+        loadAccounts();
+      }
+    } catch (e: any) {
+      let errorMessage = 'Failed to verify password';
+      if (e.response) {
+        const errorData = await e.response.json().catch(() => ({}));
+        errorMessage = errorData.detail || errorMessage;
+      } else if (e.message) {
+        errorMessage = e.message;
+      }
+      showToast('error', errorMessage);
+    } finally {
+      setAuthLoading(false);
     }
   };
 
@@ -188,6 +276,16 @@ const TelegramAccounts = () => {
                     </div>
                   </div>
                   <div className="flex gap-2">
+                    {!account.is_authenticated && (
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => handleStartAuth(account.id)}
+                      >
+                        <Key className="w-4 h-4 mr-1" />
+                        Authenticate
+                      </Button>
+                    )}
                     <Button
                       variant="outline"
                       size="sm"
@@ -209,6 +307,57 @@ const TelegramAccounts = () => {
           ))}
         </div>
       )}
+
+      <Dialog open={authDialogOpen} onOpenChange={setAuthDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>
+              {authStep === 'code' ? 'Enter Verification Code' : 'Enter 2FA Password'}
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            {authStep === 'code' ? (
+              <>
+                <p className="text-sm text-muted-foreground">
+                  A verification code has been sent to your phone. Enter it below to authenticate your account.
+                </p>
+                <div className="flex gap-2">
+                  <Input
+                    placeholder="Enter code"
+                    value={authCode}
+                    onChange={(e) => setAuthCode(e.target.value)}
+                    onKeyDown={(e) => e.key === 'Enter' && handleVerifyCode()}
+                  />
+                  <Button onClick={handleSendCode} disabled={authLoading}>
+                    Resend Code
+                  </Button>
+                </div>
+              </>
+            ) : (
+              <>
+                <p className="text-sm text-muted-foreground">
+                  Your account has two-factor authentication enabled. Enter your 2FA password below.
+                </p>
+                <Input
+                  type="password"
+                  placeholder="Enter 2FA password"
+                  value={authPassword}
+                  onChange={(e) => setAuthPassword(e.target.value)}
+                  onKeyDown={(e) => e.key === 'Enter' && handleVerifyPassword()}
+                />
+              </>
+            )}
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setAuthDialogOpen(false)}>
+              Cancel
+            </Button>
+            <Button onClick={authStep === 'code' ? handleVerifyCode : handleVerifyPassword} disabled={authLoading}>
+              {authLoading ? 'Verifying...' : authStep === 'code' ? 'Verify Code' : 'Verify Password'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 };

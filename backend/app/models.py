@@ -269,6 +269,7 @@ class TelegramAccount(Base):
     session_name = Column(String, nullable=False, unique=True)  # e.g., session_+1234567890
     is_active = Column(Boolean, default=True)
     is_authenticated = Column(Boolean, default=False)
+    phone_code_hash = Column(String, nullable=True)  # Temporary hash for authentication flow
     created_at = Column(DateTime, default=datetime.utcnow)
     last_used_at = Column(DateTime, nullable=True)
 

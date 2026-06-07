@@ -39,8 +39,12 @@ class TelegramClientManager:
             raise RuntimeError("Not connected. Call connect() first.")
         return self._client
 
-    async def connect(self) -> TelegramClient:
+    async def connect(self, auto_start: bool = True) -> TelegramClient:
         """Connect to Telegram and return the client.
+
+        Args:
+            auto_start: If True, automatically start the client with phone authentication.
+                       If False, just connect without authentication (for interactive auth).
 
         Returns:
             TelegramClient: The connected Telegram client.
@@ -59,7 +63,11 @@ class TelegramClientManager:
             self.api_hash,
         )
 
-        await self._client.start(phone=self.phone)
+        await self._client.connect()
+
+        if auto_start:
+            await self._client.start(phone=self.phone)
+
         return self._client
 
     async def disconnect(self) -> None:

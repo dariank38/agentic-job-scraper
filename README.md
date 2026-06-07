@@ -11,6 +11,7 @@ An automated job scraping system that fetches software development job postings 
 - **Multi-language Support**: Analyzes job postings in multiple languages (English, Chinese, etc.)
 - **Smart Filtering**: Automatically filters out non-software-development content
 - **Remote Jobs Focus**: Prioritizes remote/work-from-home opportunities
+- **Multi-Account Support**: Manage multiple Telegram accounts dynamically through the UI with interactive authentication
 
 ## Planned Features
 
@@ -91,7 +92,7 @@ However, the project is fully functional and can be used effectively for persona
 - Node.js 18+
 - PostgreSQL 14+
 - Ollama (with Mistral model installed)
-- Telegram API credentials
+- Telegram API credentials (optional - can be added via UI)
 
 ## Installation
 
@@ -121,18 +122,25 @@ cp .env.example .env
 
 Edit `.env` with your credentials:
 ```env
-TELEGRAM_API_ID=your_api_id_here
-TELEGRAM_API_HASH=your_api_hash_here
-TELEGRAM_PHONE=+1234567890
+# Telegram API credentials (optional - can be added via UI in Telegram Accounts page)
+# Get from https://my.telegram.org/apps
+# TELEGRAM_API_ID=your_api_id_here
+# TELEGRAM_API_HASH=your_api_hash_here
+# TELEGRAM_PHONE=+1234567890
+
 OLLAMA_BASE_URL=http://localhost:11434
 OLLAMA_MODEL=mistral
 DATABASE_URL=postgresql+asyncpg://user:password@localhost/job_scraper
 ```
 
+**Note:** Telegram credentials are now optional. You can add and manage multiple Telegram accounts entirely through the web UI at "Telegram Accounts" in the sidebar. The UI supports interactive authentication (entering verification code and 2FA password directly in the browser). If you prefer to use environment variables, uncomment and fill in the Telegram credentials above.
+
 5. Initialize the database:
 ```bash
 python reset_db.py
 ```
+
+This will create all necessary tables including the new `telegram_accounts` table for multi-account support.
 
 ### Frontend Setup
 
@@ -292,11 +300,37 @@ Now the frontend will connect to your backend through the ngrok tunnel.
 
 ## Usage
 
+### Setting Up Telegram Accounts
+
+1. **Get API Credentials**: Visit [my.telegram.org/apps](https://my.telegram.org/apps) to create a new application and obtain your `api_id` and `api_hash`
+
+2. **Add Account via UI**:
+   - Navigate to "Telegram Accounts" in the sidebar
+   - Click "Add Account"
+   - Enter your API ID, API Hash, and phone number
+   - Click "Add Account"
+
+3. **Authenticate Your Account**:
+   - Click the "Authenticate" button next to your unauthenticated account
+   - A dialog will appear - enter the verification code sent to your phone
+   - If you have 2FA enabled, enter your 2FA password when prompted
+   - Once authenticated, the account will show an "Authenticated" badge
+
+4. **Manage Multiple Accounts**:
+   - Add as many Telegram accounts as you need
+   - Toggle accounts as active/inactive
+   - Delete accounts you no longer need
+   - Select which account to use when fetching channels
+
+### Using the Application
+
 1. **Add Channels**: Go to the Channels page and add Telegram channels to monitor
-2. **Fetch Messages**: Click "Fetch" to retrieve recent messages from channels
-3. **Analyze**: Click "Analyze" to process messages with AI and extract job/developer info
-4. **View Results**: Browse Jobs and Developers pages to see extracted information
-5. **Continuous Scanning**: Enable the cron job for automatic periodic fetching
+2. **Select Account**: When fetching channels, select which Telegram account to use (if you have multiple)
+3. **Fetch Messages**: Click "Fetch" to retrieve recent messages from channels
+4. **Analyze**: Click "Analyze" to process messages with AI and extract job/developer info
+5. **View Results**: Browse Jobs and Developers pages to see extracted information
+6. **Track Progress**: Use the status indicators to mark jobs as applied or developers as contacted
+7. **Continuous Scanning**: Enable the cron job for automatic periodic fetching
 
 ## API Endpoints
 
@@ -304,6 +338,15 @@ Now the frontend will connect to your backend through the ngrok tunnel.
 - `GET /api/channels` - List all channels
 - `POST /api/channels` - Add a new channel
 - `DELETE /api/channels/{id}` - Delete a channel
+
+### Telegram Accounts
+- `GET /api/telegram-accounts` - List all Telegram accounts
+- `POST /api/telegram-accounts` - Add a new Telegram account
+- `DELETE /api/telegram-accounts/{id}` - Delete a Telegram account
+- `PATCH /api/telegram-accounts/{id}/toggle-active` - Toggle account active status
+- `POST /api/telegram-accounts/authenticate` - Start authentication process (sends code to phone)
+- `POST /api/telegram-accounts/verify-code` - Verify authentication code
+- `POST /api/telegram-accounts/verify-password` - Verify 2FA password
 
 ### Messages
 - `GET /api/messages` - List messages with pagination
@@ -354,35 +397,125 @@ agentic-job-scraper/
 
 ## Configuration
 
+### Telegram Account Management
+
+The application supports managing multiple Telegram accounts through the web UI without requiring environment variables. Each account is stored in the database with the following information:
+
+- **API ID & API Hash**: Credentials from my.telegram.org
+- **Phone Number**: The phone number associated with the account
+- **Session Name**: Unique identifier for the session file
+- **Authentication Status**: Whether the account has been authenticated
+- **Active Status**: Whether the account is currently active for use
+
+**Authentication Flow:**
+1. Add account credentials via UI
+2. Click "Authenticate" to start the process
+3. Enter verification code sent to your phone
+4. If 2FA is enabled, enter your 2FA password
+5. Account is marked as authenticated and ready to use
+
+**Session Management:**
+- Session files are stored in `backend/session/`
+- Each account has its own session file
+- Sessions persist across server restarts
+- Re-authentication is only needed if session is deleted or expires
+
 ### Telegram API
-Get your API credentials from [my.telegram.org/apps](https://my.telegram.org/apps)
+
+Get your API credentials from [my.telegram.org/apps](https://my.telegram.org/apps). You can create multiple applications if needed for different accounts.
 
 ### Ollama Configuration
 - Default model: `mistral`
 - Can be configured to use remote Ollama instance
 - Supports GPU acceleration for faster processing
+- Configure via `OLLAMA_BASE_URL` and `OLLAMA_MODEL` in `.env`
 
 ### Database
 - PostgreSQL with async support
 - Connection pooling configured for performance
 - Automatic table creation on startup
+- Session files stored in `backend/session/` directory
+
+### Database Migrations
+
+When updating the application, you may need to run database migrations:
+
+**Add Telegram Accounts Table:**
+```bash
+psql -U your_username -d job_scraper -f backend/migrations/add_telegram_accounts.sql
+```
+
+**Add Phone Code Hash Column:**
+```bash
+psql -U your_username -d job_scraper -f backend/migrations/add_phone_code_hash.sql
+```
+
+Or run all migrations at once:
+```bash
+cd backend/migrations
+for f in *.sql; do psql -U your_username -d job_scraper -f "$f"; done
+```
 
 ## Troubleshooting
+
+### Telegram Authentication Issues
+
+**Code not received:**
+- Check that the phone number is correct and includes the country code (e.g., +1234567890)
+- Ensure you're not already logged in to Telegram on another device with the same number
+- Try clicking "Resend Code" in the authentication dialog
+- Check if Telegram is blocking verification requests (wait a few minutes and try again)
+
+**Authentication session expired:**
+- This happens if too much time passes between requesting the code and entering it
+- Click "Authenticate" again to request a new code
+- The old session will be automatically cleaned up
+
+**2FA password incorrect:**
+- Ensure you're entering your Telegram 2FA password (not your phone's passcode)
+- Check for typos and try again
+- If you've forgotten your 2FA password, you'll need to reset it through Telegram
+
+**Account shows as not authenticated after successful auth:**
+- Refresh the page to see the updated status
+- Check the backend logs for any errors during authentication
+- Try authenticating again if the session was interrupted
 
 ### Ollama Connection Issues
 - Ensure Ollama server is running: `ollama serve`
 - Check OLLAMA_BASE_URL in `.env`
 - Verify model is installed: `ollama list`
+- If using a remote Ollama instance, ensure it's accessible from your network
 
 ### Telegram Flood Errors
 - The system automatically handles FloodWaitError
 - It will retry after the required wait time
 - No manual intervention needed
+- If errors persist, reduce the frequency of fetch operations
 
 ### Database Connection
 - Verify PostgreSQL is running
 - Check DATABASE_URL in `.env`
 - Ensure database exists: `createdb job_scraper`
+- Check database credentials are correct
+
+### Session File Issues
+- If authentication fails with "Two-steps verification is enabled", delete the session file in `backend/session/`
+- Session files are named like `session_+1234567890.session`
+- The authentication flow automatically cleans up old sessions, but manual deletion may be needed in some cases
+
+### Channel Fetching Issues
+- Ensure you have at least one authenticated and active Telegram account
+- Check that the selected account is active in the dropdown
+- Verify the channel username is correct (without @ symbol)
+- Check backend logs for specific error messages
+- Ensure the selected Telegram account has access to the channel
+
+### Frontend API Connection Issues
+- Check that the backend is running on the expected port (default: 8000)
+- Verify VITE_API_BASE_URL in frontend `.env`
+- Check browser console for CORS errors
+- Ensure WebSocket URL is correct (VITE_WS_BASE_URL)
 
 ## License
 
