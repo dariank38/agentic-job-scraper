@@ -146,23 +146,23 @@ async def fetch_messages(
 
 async def get_dialogs(client: TelegramClient) -> list[dict[str, Any]]:
     """Get available Telegram dialogs (channels/groups).
-    
+
     Args:
         client: Connected TelegramClient instance.
-    
+
     Returns:
         List of dialog dictionaries with channel/group information.
     """
     dialogs = []
-    
+
     async for dialog in client.iter_dialogs():
         if dialog.is_channel or dialog.is_group:
             entity = dialog.entity
             dialogs.append({
                 "id": entity.id,
                 "username": getattr(entity, "username", None),
-                "title": getattr(entity, "title", None),
+                "name": getattr(entity, "title", None),
                 "type": "channel" if dialog.is_channel else "group",
             })
-    
+
     return dialogs
