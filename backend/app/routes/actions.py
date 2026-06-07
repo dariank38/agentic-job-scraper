@@ -356,11 +356,26 @@ def register_action_routes(app):
             raise HTTPException(status_code=500, detail=f"Failed to get cron status: {str(e)}")
 
     @app.get("/api/telegram-dialogs")
-    async def get_telegram_dialogs():
-        """Get available Telegram dialogs (channels/groups)."""
+    async def get_telegram_dialogs(db: AsyncSession = Depends(get_db)):
+        """Get available Telegram dialogs (channels/groups), excluding those already in database."""
         try:
             from telegram_processor import get_dialogs
+
+            # Get existing channel usernames from database
+            result = await db.execute(select(Channel.username))
+            existing_usernames = set(row[0].lower() for row in result.all() if row[0])
+
+            # Get dialogs from Telegram
             dialogs = await get_dialogs()
-            return {"success": True, "dialogs": dialogs}
+
+            # Filter out existing channels
+            filtered_dialogs = []
+            for dialog in dialogs:
+                username = (dialog.get('username') or '').lower()
+                username_with_at = username if username.startswith('@') else f'@{username}'
+                if username and (username not in existing_usernames and username_with_at not in existing_usernames):
+                    filtered_dialogs.append(dialog)
+
+            return {"success": True, "dialogs": filtered_dialogs}
         except Exception as e:
             raise HTTPException(status_code=500, detail=f"Failed to get dialogs: {str(e)}")

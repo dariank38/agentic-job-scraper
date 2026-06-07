@@ -35,7 +35,10 @@ const Jobs = () => {
   const [searchParams, setSearchParams] = useSearchParams();
   const [searchQuery, setSearchQuery] = useState('');
   const [loadingActions, setLoadingActions] = useState<Set<string>>(new Set());
+  const [total, setTotal] = useState(0);
   const remoteFilter = searchParams.get('remote');
+  const limit = 10;
+  const offset = parseInt(searchParams.get('offset') || '0');
   const { showToast } = useToast();
 
   const filteredJobs = jobs.filter(job => {
@@ -51,19 +54,31 @@ const Jobs = () => {
 
   useEffect(() => {
     loadJobs();
-  }, [remoteFilter]);
+  }, [remoteFilter, offset]);
 
   const loadJobs = async () => {
     try {
-      const params = remoteFilter ? { remote: remoteFilter } : undefined;
+      const params: any = { limit, offset };
+      if (remoteFilter) params.remote = remoteFilter;
       const data = await api.getJobs(params);
       setJobs(data.jobs);
+      setTotal(data.total || 0);
       if (data.jobs.length > 0 && !selectedJob) {
         setSelectedJob(data.jobs[0]);
       }
     } catch (error) {
       console.error('Failed to load jobs:', error);
     }
+  };
+
+  const handleNext = () => {
+    const newOffset = offset + limit;
+    setSearchParams({ offset: newOffset.toString() });
+  };
+
+  const handlePrevious = () => {
+    const newOffset = Math.max(0, offset - limit);
+    setSearchParams({ offset: newOffset.toString() });
   };
 
   const withLoading = async <T,>(
@@ -152,7 +167,7 @@ const Jobs = () => {
         <div>
           <h1 className="text-2xl font-bold tracking-tight">Jobs</h1>
           <p className="text-sm text-muted-foreground mt-0.5">
-            {jobs.length} job{jobs.length !== 1 ? 's' : ''} found
+            {total} job{total !== 1 ? 's' : ''} found
           </p>
         </div>
         <div className="flex gap-2 items-center">
@@ -200,7 +215,7 @@ const Jobs = () => {
               </div>
             </CardHeader>
             <CardContent className="p-0">
-              <div className="px-4 pb-4 space-y-1 max-h-[60vh] overflow-y-auto">
+              <div className="px-4 pb-4 space-y-1">
                 {filteredJobs.length === 0 ? (
                   <p className="text-sm text-gray-500 text-center py-8">No jobs match your search.</p>
                 ) : (
@@ -260,6 +275,32 @@ const Jobs = () => {
                   })
                 )}
               </div>
+              {/* Pagination */}
+              {jobs.length > 0 && (
+                <div className="px-4 pb-4 pt-0">
+                  <div className="flex items-center justify-between pt-3 border-t">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={handlePrevious}
+                      disabled={offset === 0}
+                    >
+                      Previous
+                    </Button>
+                    <span className="text-sm text-muted-foreground">
+                      Page {Math.floor(offset / limit) + 1} of {Math.ceil(total / limit)} ({offset + 1}-{Math.min(offset + limit, total)} of {total})
+                    </span>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={handleNext}
+                      disabled={offset + limit >= total}
+                    >
+                      Next
+                    </Button>
+                  </div>
+                </div>
+              )}
             </CardContent>
           </Card>
 

@@ -16,7 +16,7 @@ def register_job_routes(app):
     @app.get("/api/jobs")
     async def api_jobs(
         remote: Optional[bool] = None,
-        limit: int = 50,
+        limit: int = 10,
         offset: int = 0,
         db: AsyncSession = Depends(get_db),
     ):

@@ -1,10 +1,11 @@
 import { useEffect, useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Badge } from '@/components/ui/badge';
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import api from '@/services/api';
 import type { Channel } from '@/services/api';
 import { useWebSocketProgress } from '@/components/Layout';
@@ -20,11 +21,17 @@ const Channels = () => {
   const [addedUsernames, setAddedUsernames] = useState<Set<string>>(new Set());
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [channelToDelete, setChannelToDelete] = useState<number | null>(null);
+  const [addDialogOpen, setAddDialogOpen] = useState(false);
   const [stats, setStats] = useState<any>(null);
-  const { progress: wsProgress, channelProgress } = useWebSocketProgress();
+  const [total, setTotal] = useState(0);
+  const [searchParams, setSearchParams] = useSearchParams();
+  const limit = 10;
+  const offset = parseInt(searchParams.get('offset') || '0');
+  const { progress: wsProgress, channelProgress, operations } = useWebSocketProgress();
 
   useEffect(() => {
-    if (wsProgress && (wsProgress.type === 'analyze_complete' || wsProgress.type === 'error')) {
+    if (wsProgress && (wsProgress.type === 'analyze_complete' || wsProgress.type === 'error' || wsProgress.type === 'fetch_complete')) {
+      // Reload channels but maintain current pagination
       loadChannels();
     }
   }, [wsProgress]);
@@ -32,7 +39,7 @@ const Channels = () => {
   useEffect(() => {
     loadChannels();
     loadStats();
-  }, []);
+  }, [offset]);
 
   const loadStats = async () => {
     try {
@@ -45,11 +52,22 @@ const Channels = () => {
 
   const loadChannels = async () => {
     try {
-      const data = await api.getChannels();
+      const data = await api.getChannels({ limit, offset });
       setChannels(data.channels);
+      setTotal(data.total || 0);
     } catch (error) {
       console.error('Failed to load channels:', error);
     }
+  };
+
+  const handleNext = () => {
+    const newOffset = offset + limit;
+    setSearchParams({ offset: newOffset.toString() });
+  };
+
+  const handlePrevious = () => {
+    const newOffset = Math.max(0, offset - limit);
+    setSearchParams({ offset: newOffset.toString() });
   };
 
   const showStatus = (message: string, isError = false) => {
@@ -78,8 +96,8 @@ const Channels = () => {
       const data = await withLoading('load-dialogs', () => api.getTelegramDialogs());
       if (data.success) {
         setAllDialogs(data.dialogs);
-        filterDialogsLocally(data.dialogs);
         setShowDialogs(true);
+        filterDialogsLocally(data.dialogs);
       } else {
         showStatus('Error: ' + (data.error || 'Failed to load dialogs'), true);
       }
@@ -89,11 +107,12 @@ const Channels = () => {
   };
 
   const filterDialogsLocally = (dialogsList = allDialogs) => {
-    const existingUsernames = new Set(channels.map(c => c.username));
+    // Backend now handles primary filtering, this is just a safety layer
+    // Also filter out channels added during this session
     const filteredDialogs = dialogsList.filter(
       (dialog: any) => {
-        const username = (dialog.username || '');
-        return !existingUsernames.has(username) && !addedUsernames.has(username) && !channels.some(c => c.username === ("@"+ username));
+        const username = (dialog.username || '').toLowerCase();
+        return !addedUsernames.has(username);
       }
     );
     setDialogs(filteredDialogs);
@@ -187,13 +206,150 @@ const Channels = () => {
 
   return (
     <>
-      <Card className="mb-4">
+      <div className="mb-4 flex justify-between items-center">
+        <h1 className="text-2xl font-bold">Channels</h1>
+        <Button onClick={() => {
+          setAddDialogOpen(true);
+          filterDialogsLocally();
+        }}>
+          Add Channel
+        </Button>
+      </div>
+
+      <Card>
         <CardHeader>
-          <CardTitle>Add New Channel</CardTitle>
+          <CardTitle>Configured Channels ({total})</CardTitle>
         </CardHeader>
         <CardContent>
-          <Button 
-            className="mb-4" 
+          {channels.length > 0 ? (
+            <>
+              {channels.map((channel) => (
+                <div key={channel.id} className="p-4 border-b border-gray-200">
+                  <div className="flex justify-between items-center">
+                    <div>
+                      <h3 className="font-semibold flex items-center gap-2">
+                        {channel.username}
+                        <Badge variant={channel.is_active ? 'default' : 'secondary'}>
+                          {channel.is_active ? 'Active' : 'Inactive'}
+                        </Badge>
+                      </h3>
+                      {channel.name && <p className="font-bold">{channel.name}</p>}
+                      {channel.description && <p>{channel.description}</p>}
+                      <p className="text-sm text-gray-500">
+                        {channel.message_count || 0} messages | {channel.job_count || 0} jobs
+                        {(channel.last_fetch_new_count || 0) > 0 && (
+                          <span className="ml-2 inline-flex items-center px-1.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
+                            +{channel.last_fetch_new_count} fetched
+                          </span>
+                        )}
+                        {(channel.pending_count || 0) > 0 && (
+                          <span className="ml-2 inline-flex items-center px-1.5 py-0.5 rounded-full text-xs font-medium bg-orange-100 text-orange-800">
+                            {channel.pending_count} pending
+                          </span>
+                        )}
+                      </p>
+                      {channelProgress[channel.username] && (
+                        <div className="mt-2">
+                          <div className="flex justify-between text-xs mb-1">
+                            <span>Analyzing...</span>
+                            <span>{channelProgress[channel.username].current}/{channelProgress[channel.username].total}</span>
+                          </div>
+                          <div className="w-full bg-gray-200 rounded-full h-2">
+                            <div
+                              className="bg-blue-600 h-2 rounded-full transition-all"
+                              style={{ width: `${(channelProgress[channel.username].current / channelProgress[channel.username].total) * 100}%` }}
+                            />
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                    <div className="flex gap-2">
+                      <Button
+                        variant="outline"
+                        onClick={() => searchChannel(channel.id)}
+                        disabled={loadingActions.has(`search-${channel.id}`) || !!operations[channel.username]}
+                      >
+                        {loadingActions.has(`search-${channel.id}`) ? 'Fetching...' : operations[channel.username] ? 'Processing...' : 'Fetch'}
+                      </Button>
+                      <Button
+                        variant="outline"
+                        onClick={() => toggleChannel(channel.id)}
+                        disabled={loadingActions.has(`toggle-${channel.id}`)}
+                      >
+                        {loadingActions.has(`toggle-${channel.id}`) ? 'Toggling...' : (channel.is_active ? 'Disable' : 'Enable')}
+                      </Button>
+                      <Button
+                        variant="destructive"
+                        onClick={() => confirmDelete(channel.id)}
+                        disabled={loadingActions.has(`delete-${channel.id}`)}
+                      >
+                        {loadingActions.has(`delete-${channel.id}`) ? 'Deleting...' : 'Delete'}
+                      </Button>
+                    </div>
+                  </div>
+                </div>
+              ))}
+              {/* Pagination */}
+              <div className="flex items-center justify-between pt-3 border-t">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={handlePrevious}
+                  disabled={offset === 0}
+                >
+                  Previous
+                </Button>
+                <span className="text-sm text-muted-foreground">
+                  Page {Math.floor(offset / limit) + 1} of {Math.ceil(total / limit)} ({offset + 1}-{Math.min(offset + limit, total)} of {total})
+                </span>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={handleNext}
+                  disabled={offset + limit >= total}
+                >
+                  Next
+                </Button>
+              </div>
+            </>
+          ) : (
+            <p>No channels configured yet. Add your first channel above.</p>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* Delete Confirmation Dialog */}
+      <Dialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Confirm Delete</DialogTitle>
+          </DialogHeader>
+          <p className="text-sm text-gray-600">
+            Are you sure you want to delete this channel? This will also delete all associated messages and jobs.
+          </p>
+          <div className="flex gap-2 justify-end mt-4">
+            <Button variant="outline" onClick={() => setDeleteDialogOpen(false)}>
+              Cancel
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={() => channelToDelete && deleteChannel(channelToDelete)}
+              disabled={loadingActions.has(`delete-${channelToDelete || 0}`)}
+            >
+              {loadingActions.has(`delete-${channelToDelete || 0}`) ? 'Deleting...' : 'Delete'}
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Add Channel Dialog */}
+      <Dialog open={addDialogOpen} onOpenChange={setAddDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Add New Channel</DialogTitle>
+          </DialogHeader>
+          <Button
+            className="mb-4 w-full"
             onClick={loadTelegramDialogs}
             disabled={loadingActions.has('load-dialogs')}
           >
@@ -214,8 +370,8 @@ const Channels = () => {
                             <p>{dialog.name}</p>
                             <p className="text-sm text-gray-500">{dialog.username || '(no username)'}</p>
                           </div>
-                          <Button 
-                            size="sm" 
+                          <Button
+                            size="sm"
                             onClick={() => addChannelDirect(dialog.username || '', dialog.name)}
                             disabled={loadingActions.has(`add-${dialog.username}`)}
                           >
@@ -258,122 +414,29 @@ const Channels = () => {
                 rows={2}
               />
             </div>
-            <Button 
-              type="submit" 
-              disabled={loadingActions.has('add-channel')}
-            >
-              {loadingActions.has('add-channel') ? 'Adding...' : 'Add Channel'}
-            </Button>
+            <div className="flex gap-2 justify-end">
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => setAddDialogOpen(false)}
+              >
+                Cancel
+              </Button>
+              <Button
+                type="submit"
+                disabled={loadingActions.has('add-channel')}
+              >
+                {loadingActions.has('add-channel') ? 'Adding...' : 'Add Channel'}
+              </Button>
+            </div>
           </form>
           {status && (
             <div className={`mt-4 p-3 rounded-md ${status.isError ? 'bg-red-50 text-red-700' : 'bg-green-50 text-green-700'}`}>
               {status.message}
             </div>
           )}
-        </CardContent>
-      </Card>
-
-      <Card>
-        <CardHeader>
-          <CardTitle>Configured Channels</CardTitle>
-        </CardHeader>
-        <CardContent>
-          {channels.length > 0 ? (
-            channels.map((channel) => (
-              <div key={channel.id} className="p-4 border-b border-gray-200">
-                <div className="flex justify-between items-center">
-                  <div>
-                    <h3 className="font-semibold flex items-center gap-2">
-                      {channel.username}
-                      <Badge variant={channel.is_active ? 'default' : 'secondary'}>
-                        {channel.is_active ? 'Active' : 'Inactive'}
-                      </Badge>
-                    </h3>
-                    {channel.name && <p className="font-bold">{channel.name}</p>}
-                    {channel.description && <p>{channel.description}</p>}
-                    <p className="text-sm text-gray-500">
-                      {channel.message_count || 0} messages | {channel.job_count || 0} jobs
-                      {(channel.last_fetch_new_count || 0) > 0 && (
-                        <span className="ml-2 inline-flex items-center px-1.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
-                          +{channel.last_fetch_new_count} fetched
-                        </span>
-                      )}
-                      {(channel.pending_count || 0) > 0 && (
-                        <span className="ml-2 inline-flex items-center px-1.5 py-0.5 rounded-full text-xs font-medium bg-orange-100 text-orange-800">
-                          {channel.pending_count} pending
-                        </span>
-                      )}
-                    </p>
-                    {channelProgress[channel.username] && (
-                      <div className="mt-2">
-                        <div className="flex justify-between text-xs mb-1">
-                          <span>Analyzing...</span>
-                          <span>{channelProgress[channel.username].current}/{channelProgress[channel.username].total}</span>
-                        </div>
-                        <div className="w-full bg-gray-200 rounded-full h-2">
-                          <div
-                            className="bg-blue-600 h-2 rounded-full transition-all"
-                            style={{ width: `${(channelProgress[channel.username].current / channelProgress[channel.username].total) * 100}%` }}
-                          />
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                  <div className="flex gap-2">
-                    <Button 
-                      variant="outline"
-                      onClick={() => searchChannel(channel.id)}
-                      disabled={loadingActions.has(`search-${channel.id}`)}
-                    >
-                      {loadingActions.has(`search-${channel.id}`) ? 'Fetching...' : 'Fetch'}
-                    </Button>
-                    <Button 
-                      variant="outline"
-                      onClick={() => toggleChannel(channel.id)}
-                      disabled={loadingActions.has(`toggle-${channel.id}`)}
-                    >
-                      {loadingActions.has(`toggle-${channel.id}`) ? 'Toggling...' : (channel.is_active ? 'Disable' : 'Enable')}
-                    </Button>
-                    <Dialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
-                      <DialogTrigger asChild>
-                        <Button 
-                          variant="destructive"
-                          onClick={() => confirmDelete(channel.id)}
-                          disabled={loadingActions.has(`delete-${channel.id}`)}
-                        >
-                          {loadingActions.has(`delete-${channel.id}`) ? 'Deleting...' : 'Delete'}
-                        </Button>
-                      </DialogTrigger>
-                      <DialogContent>
-                        <DialogHeader>
-                          <DialogTitle>Confirm Delete</DialogTitle>
-                        </DialogHeader>
-                        <p className="text-sm text-gray-600">
-                          Are you sure you want to delete this channel? This will also delete all associated messages and jobs.
-                        </p>
-                        <div className="flex gap-2 justify-end mt-4">
-                          <Button variant="outline" onClick={() => setDeleteDialogOpen(false)}>
-                            Cancel
-                          </Button>
-                          <Button 
-                            variant="destructive"
-                            onClick={() => channelToDelete && deleteChannel(channelToDelete)}
-                            disabled={loadingActions.has(`delete-${channelToDelete || 0}`)}
-                          >
-                            {loadingActions.has(`delete-${channelToDelete || 0}`) ? 'Deleting...' : 'Delete'}
-                          </Button>
-                        </div>
-                      </DialogContent>
-                    </Dialog>
-                  </div>
-                </div>
-              </div>
-            ))
-          ) : (
-            <p>No channels configured yet. Add your first channel above.</p>
-          )}
-        </CardContent>
-      </Card>
+        </DialogContent>
+      </Dialog>
     </>
   );
 };
