@@ -42,6 +42,9 @@ An automated job scraping system that fetches software development job postings 
 ### Developers
 ![Developers](screenshots/Developers.png)
 
+### Telegram Accounts
+![Telegram Accounts](screenshots/Telegrams.png)
+
 ## Who is this for?
 
 **Primary Users:**

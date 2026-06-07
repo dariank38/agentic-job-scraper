@@ -44,6 +44,7 @@ class Channel(Base):
     username = Column(String, unique=True, nullable=False, index=True)
     name = Column(String, nullable=True)
     description = Column(Text, nullable=True)
+    telegram_account_id = Column(Integer, ForeignKey("telegram_accounts.id"), nullable=True)
     is_active = Column(Boolean, default=True)
     last_fetch_new_count = Column(Integer, default=0)  # Number of new messages from last fetch
     last_fetch_at = Column(DateTime, nullable=True)  # Timestamp of last fetch
@@ -54,6 +55,7 @@ class Channel(Base):
     messages = relationship("Message", back_populates="channel", cascade="all, delete-orphan")
     jobs = relationship("Job", back_populates="channel", cascade="all, delete-orphan")
     developers = relationship("Developer", back_populates="channel", cascade="all, delete-orphan")
+    telegram_account = relationship("TelegramAccount")
 
     def __repr__(self) -> str:
         return f"<Channel {self.username}>"
@@ -115,6 +117,7 @@ class Job(Base):
     id = Column(Integer, primary_key=True)
     message_id = Column(Integer, ForeignKey("messages.id"), unique=True, nullable=False)
     channel_id = Column(Integer, ForeignKey("channels.id"), nullable=False)
+    channel_name = Column(String, nullable=True)  # Store channel name for reference
 
     # AI Analysis results
     confidence = Column(String, nullable=True)  # high, medium, low
@@ -152,6 +155,7 @@ class Job(Base):
             "id": self.id,
             "message_id": self.message_id,
             "channel_id": self.channel_id,
+            "channel_name": self.channel_name,
             "confidence": self.confidence,
             "translated_text": self.translated_text,
             "title": self.title,

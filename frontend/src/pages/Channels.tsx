@@ -176,6 +176,9 @@ const Channels = () => {
     data.append('username', username);
     data.append('name', name);
     data.append('description', '');
+    if (selectedAccountId) {
+      data.append('telegram_account_id', selectedAccountId.toString());
+    }
 
     try {
       await withLoading(`add-${username}`, () => api.addChannel(data));
@@ -204,6 +207,9 @@ const Channels = () => {
     data.append('username', formData.username);
     data.append('name', formData.name);
     data.append('description', formData.description);
+    if (selectedAccountId) {
+      data.append('telegram_account_id', selectedAccountId.toString());
+    }
 
     try {
       await withLoading('add-channel', () => api.addChannel(data));
@@ -308,20 +314,6 @@ const Channels = () => {
         <CardHeader>
           <div className="flex justify-between items-center">
             <CardTitle>Configured Channels ({total})</CardTitle>
-            {telegramAccounts.length > 0 && (
-              <select
-                value={selectedAccountId || ''}
-                onChange={(e) => setSelectedAccountId(e.target.value ? parseInt(e.target.value) : null)}
-                className="px-3 py-2 rounded-md border border-gray-200 text-sm bg-white"
-              >
-                <option value="">Select Account</option>
-                {telegramAccounts.map(acc => (
-                  <option key={acc.id} value={acc.id}>
-                    {acc.phone_number} {acc.is_authenticated ? '✓' : '(not authenticated)'}
-                  </option>
-                ))}
-              </select>
-            )}
           </div>
           <div className="flex gap-2 mt-3">
             <div className="relative flex-1">
@@ -477,10 +469,27 @@ const Channels = () => {
           <DialogHeader>
             <DialogTitle>Add New Channel</DialogTitle>
           </DialogHeader>
+          {telegramAccounts.length > 0 && (
+            <div className="mb-4">
+              <label className="block mb-1 font-medium text-sm">Select Telegram Account</label>
+              <select
+                value={selectedAccountId || ''}
+                onChange={(e) => setSelectedAccountId(e.target.value ? parseInt(e.target.value) : null)}
+                className="w-full px-3 py-2 rounded-md border border-gray-200 text-sm bg-white"
+              >
+                <option value="">Select Account</option>
+                {telegramAccounts.map(acc => (
+                  <option key={acc.id} value={acc.id}>
+                    {acc.phone_number} {acc.is_authenticated ? '✓' : '(not authenticated)'}
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
           <Button
             className="mb-4 w-full"
             onClick={loadTelegramDialogs}
-            disabled={loadingActions.has('load-dialogs')}
+            disabled={loadingActions.has('load-dialogs') || !selectedAccountId}
           >
             {loadingActions.has('load-dialogs') ? 'Loading...' : 'Load from Telegram Account'}
           </Button>

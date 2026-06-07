@@ -18,6 +18,7 @@ def register_channel_routes(app):
         username: str = Form(...),
         name: Optional[str] = Form(None),
         description: Optional[str] = Form(None),
+        telegram_account_id: Optional[int] = Form(None),
         db: AsyncSession = Depends(get_db),
     ):
         """Add a new channel."""
@@ -37,6 +38,7 @@ def register_channel_routes(app):
                 username=username,
                 name=name,
                 description=description,
+                telegram_account_id=telegram_account_id,
             )
             db.add(channel)
             await db.commit()

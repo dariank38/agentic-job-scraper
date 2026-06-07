@@ -251,6 +251,7 @@ def register_action_routes(app):
                             new_job = Job(
                                 message_id=message.id,
                                 channel_id=message.channel_id,
+                                channel_name=channel.name if channel else None,
                                 title=job_data.get("title"),
                                 company=job_data.get("company"),
                                 location=job_data.get("location"),
@@ -429,6 +430,7 @@ def register_action_routes(app):
                 job = Job(
                     message_id=message.id,
                     channel_id=message.channel_id,
+                    channel_name=channel.name if channel else None,
                     confidence=confidence,
                     translated_text=translated_text,
                     title=title,
@@ -586,7 +588,7 @@ def register_action_routes(app):
                 result = await db.execute(
                     select(TelegramAccount).filter(TelegramAccount.is_active == True, TelegramAccount.is_authenticated == True)
                 )
-                account = result.scalar_one_or_none()
+                account = result.scalars().first()
                 if not account:
                     raise HTTPException(
                         status_code=400, 

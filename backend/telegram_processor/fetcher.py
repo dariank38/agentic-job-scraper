@@ -158,10 +158,12 @@ async def get_dialogs(client: TelegramClient) -> list[dict[str, Any]]:
     async for dialog in client.iter_dialogs():
         if dialog.is_channel or dialog.is_group:
             entity = dialog.entity
+            # Use dialog.name which works for both channels and groups
+            name = dialog.name or getattr(entity, "title", None) or str(entity.id)
             dialogs.append({
                 "id": entity.id,
                 "username": getattr(entity, "username", None),
-                "name": getattr(entity, "title", None),
+                "name": name,
                 "type": "channel" if dialog.is_channel else "group",
             })
 
