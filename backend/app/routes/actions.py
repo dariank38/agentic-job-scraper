@@ -18,6 +18,9 @@ def register_action_routes(app):
     async def fetch_channel(channel_id: int, account_id: Optional[int] = None, db: AsyncSession = Depends(get_db)):
         """Fetch messages from a Telegram channel."""
         try:
+            import asyncio
+            from app.connection import AsyncSessionLocal
+
             result = await db.execute(select(Channel).filter(Channel.id == channel_id))
             channel = result.scalar_one_or_none()
             if not channel:
@@ -27,12 +30,19 @@ def register_action_routes(app):
             from telegram_processor.config import DEFAULT_DAYS_BACK
             days_back = DEFAULT_DAYS_BACK
 
-            result = await fetch_and_store_messages(
-                db,
-                channel,
-                days_back=days_back,
-                account_id=account_id
-            )
+            # Run fetch in thread pool with fresh async session to avoid context conflicts
+            def _fetch_in_thread():
+                async def _do_fetch():
+                    async with AsyncSessionLocal() as new_db:
+                        return await fetch_and_store_messages(
+                            new_db,
+                            channel,
+                            days_back=days_back,
+                            account_id=account_id
+                        )
+                return asyncio.run(_do_fetch())
+
+            result = await asyncio.to_thread(_fetch_in_thread)
 
             return {
                 "success": result.get("success", True),
@@ -147,6 +157,9 @@ def register_action_routes(app):
             result = await db.execute(select(Channel).filter(Channel.is_active == True))
             channels = result.scalars().all()
 
+            if not channels:
+                return {"success": True, "results": [], "message": "No active channels found"}
+
             results = []
             for channel in channels:
                 try:
@@ -158,9 +171,14 @@ def register_action_routes(app):
                         "channel_id": channel.id,
                         "username": channel.username,
                         "analyzed": analyze_result.get("analyzed", 0),
-                        "jobs_found": analyze_result.get("jobs_found", 0)
+                        "jobs_found": analyze_result.get("jobs_found", 0),
+                        "developers_found": analyze_result.get("developers_found", 0),
+                        "stopped": analyze_result.get("stopped", False),
+                        "remaining": analyze_result.get("remaining", 0)
                     })
                 except Exception as e:
+                    import traceback
+                    error_detail = f"{str(e)}\n{traceback.format_exc()}"
                     results.append({
                         "channel_id": channel.id,
                         "username": channel.username,
@@ -169,7 +187,9 @@ def register_action_routes(app):
 
             return {"success": True, "results": results}
         except Exception as e:
-            raise HTTPException(status_code=500, detail=f"Failed to analyze all: {str(e)}")
+            import traceback
+            error_detail = f"{str(e)}\n{traceback.format_exc()}"
+            raise HTTPException(status_code=500, detail=f"Failed to analyze all: {error_detail}")
 
     @app.post("/api/fetch-analyze-all")
     async def fetch_analyze_all(db: AsyncSession = Depends(get_db)):
@@ -215,7 +235,7 @@ def register_action_routes(app):
         """Re-analyze messages marked for re-analysis."""
         try:
             from app.models import Message
-            
+
             result = await db.execute(
                 select(Message).filter(Message.needs_reanalysis == True)
             )
@@ -224,16 +244,20 @@ def register_action_routes(app):
             reanalyzed = 0
             for message in messages:
                 try:
+                    # BUG FIX: Fetch channel from database since channel variable was undefined
+                    channel_result = await db.execute(select(Channel).filter(Channel.id == message.channel_id))
+                    channel = channel_result.scalar_one_or_none()
+
                     from services.ollama_service import get_analyzer
                     analyzer = get_analyzer()
                     analysis = await analyzer.analyze_message(message.text)
-                    
+
                     if analysis.get("category") == "job_posting":
                         from app.models import Job
                         job_data = analysis.get("job_posting", {})
                         job_result = await db.execute(select(Job).filter(Job.message_id == message.id))
                         job = job_result.scalar_one_or_none()
-                        
+
                         if job:
                             job.title = job_data.get("title")
                             job.company = job_data.get("company")
@@ -251,7 +275,7 @@ def register_action_routes(app):
                             new_job = Job(
                                 message_id=message.id,
                                 channel_id=message.channel_id,
-                                channel_name=channel.name if channel else None,
+                                channel_name=channel.name if channel else None,  # channel is now defined
                                 title=job_data.get("title"),
                                 company=job_data.get("company"),
                                 location=job_data.get("location"),
@@ -265,13 +289,13 @@ def register_action_routes(app):
                             )
                             db.add(new_job)
                             message.needs_reanalysis = False
-                    
+
                     elif analysis.get("category") == "personal_info":
                         from app.models import Developer
                         dev_data = analysis.get("personal_info", {})
                         dev_result = await db.execute(select(Developer).filter(Developer.message_id == message.id))
                         dev = dev_result.scalar_one_or_none()
-                        
+
                         if dev:
                             dev.name = dev_data.get("name")
                             dev.skills = dev_data.get("skills", [])
@@ -298,10 +322,10 @@ def register_action_routes(app):
                             )
                             db.add(new_dev)
                             message.needs_reanalysis = False
-                    
+
                     else:
                         message.needs_reanalysis = False
-                    
+
                     reanalyzed += 1
                     await db.commit()
                 except Exception as e:
@@ -356,7 +380,7 @@ def register_action_routes(app):
     async def reanalyze_single_message(message_id: int, db: AsyncSession = Depends(get_db)):
         """Re-analyze a single skipped message."""
         try:
-            from app.models import Message
+            from app.models import Message, Job, Developer
             from app.tasks import _analyze_single
             from services.ollama_service import get_analyzer, is_ollama_available
 
@@ -367,6 +391,11 @@ def register_action_routes(app):
             message = result.scalar_one_or_none()
             if not message:
                 raise HTTPException(status_code=404, detail="Message not found")
+
+            # Fetch channel for channel_name reference
+            from app.models import Channel
+            channel_result = await db.execute(select(Channel).filter(Channel.id == message.channel_id))
+            channel = channel_result.scalar_one_or_none()
 
             # Reset status to pending
             message.analysis_status = "pending"
@@ -410,6 +439,10 @@ def register_action_routes(app):
                 contact_type = job_data.get("contact_type")
                 if isinstance(contact_type, list):
                     contact_type = ", ".join(contact_type)
+
+                role_type = job_data.get("role_type")
+                if isinstance(role_type, list):
+                    role_type = ", ".join(role_type)
 
                 title = job_data.get("title")
                 company = job_data.get("company")
@@ -492,7 +525,6 @@ def register_action_routes(app):
                             await db.commit()
                             return {"success": True, "analyzed": False, "reason": "Duplicate developer"}
 
-                from app.models import Developer
                 developer = Developer(
                     message_id=message.id,
                     channel_id=message.channel_id,
@@ -525,11 +557,12 @@ def register_action_routes(app):
             raise HTTPException(status_code=500, detail=f"Failed to re-analyze message: {str(e)}")
 
     @app.post("/api/stop-analyze")
-    async def stop_analyze():
-        """Stop the current analysis process."""
+    # BUG FIX: Add channel_id parameter to match stop_analysis(channel_id) signature in tasks.py
+    async def stop_analyze(channel_id: int):
+        """Stop the current analysis process for a specific channel."""
         try:
             from app.tasks import stop_analysis
-            stop_analysis()
+            stop_analysis(channel_id)
             return {"success": True, "message": "Stop signal sent"}
         except Exception as e:
             raise HTTPException(status_code=500, detail=f"Failed to stop analysis: {str(e)}")
@@ -574,6 +607,7 @@ def register_action_routes(app):
     async def get_telegram_dialogs(account_id: Optional[int] = None, db: AsyncSession = Depends(get_db)):
         """Get available Telegram dialogs (channels/groups), excluding those already in database."""
         try:
+            import asyncio
             from telegram_processor import TelegramClientManager, get_dialogs
             from app.models import TelegramAccount
 
@@ -591,28 +625,33 @@ def register_action_routes(app):
                 account = result.scalars().first()
                 if not account:
                     raise HTTPException(
-                        status_code=400, 
+                        status_code=400,
                         detail="No active authenticated Telegram account found. Please add a Telegram account in Settings > Telegram Accounts and authenticate it first."
                     )
-
-            # Create Telegram client with account credentials
-            telegram_manager = TelegramClientManager(
-                api_id=account.api_id,
-                api_hash=account.api_hash,
-                phone_number=account.phone_number,
-                session_name=account.session_name,
-            )
 
             # Get existing channel usernames from database
             result = await db.execute(select(Channel.username))
             existing_usernames = set(row[0].lower() for row in result.all() if row[0])
 
-            # Get dialogs from Telegram
-            await telegram_manager.connect()
-            try:
-                dialogs = await get_dialogs(telegram_manager.client)
-            finally:
-                await telegram_manager.disconnect()
+            # Run Telegram operations in thread pool to avoid event loop conflicts
+            def _get_dialogs_in_thread():
+                async def _do_get_dialogs():
+                    # Create Telegram client with account credentials
+                    telegram_manager = TelegramClientManager(
+                        api_id=account.api_id,
+                        api_hash=account.api_hash,
+                        phone_number=account.phone_number,
+                        session_name=account.session_name,
+                    )
+
+                    await telegram_manager.connect()
+                    try:
+                        return await get_dialogs(telegram_manager.client)
+                    finally:
+                        await telegram_manager.disconnect()
+                return asyncio.run(_do_get_dialogs())
+
+            dialogs = await asyncio.to_thread(_get_dialogs_in_thread)
 
             # Filter out existing channels
             filtered_dialogs = []

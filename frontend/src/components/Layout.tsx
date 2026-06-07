@@ -189,7 +189,6 @@ const WebSocketProgressProvider = ({ children }: { children: React.ReactNode }) 
         ws.onmessage = (event) => {
           try {
             const data = JSON.parse(event.data) as ProgressUpdate;
-            console.log('[WebSocket] Received:', data);
             setProgress(data);
 
             // Update channel progress and operations
@@ -227,7 +226,7 @@ const WebSocketProgressProvider = ({ children }: { children: React.ReactNode }) 
               });
             }
           } catch (e) {
-            console.error('[WebSocket] Parse error:', e);
+            // Silently ignore parse errors
           }
         };
 

@@ -68,7 +68,6 @@ const Dashboard = () => {
       setTotal(channelsData.total || 0);
       setInitialLoading(false);
     } catch (error) {
-      console.error('Failed to load data:', error);
       setInitialLoading(false);
     }
   };
@@ -162,7 +161,7 @@ const Dashboard = () => {
         setCronRunning(data.running);
       }
     } catch (error) {
-      console.error('Failed to check cron status:', error);
+      // Silently ignore cron status check errors
     }
   };
 
