@@ -332,6 +332,7 @@ def register_action_routes(app):
         try:
             from app.models import Message
             from app.tasks import analyze_messages
+            from app.connection import AsyncSessionLocal
 
             # Find all skipped messages
             result = await db.execute(
@@ -352,15 +353,17 @@ def register_action_routes(app):
             results = []
 
             for channel_id in channel_ids:
-                channel_result = await db.execute(select(Channel).filter(Channel.id == channel_id))
-                channel = channel_result.scalar_one_or_none()
-                if channel:
-                    result = await analyze_messages(db, channel)
-                    results.append({
-                        "channel_id": channel_id,
-                        "channel_username": channel.username,
-                        "result": result
-                    })
+                # Use fresh session for each channel analysis to avoid async context conflicts
+                async with AsyncSessionLocal() as new_db:
+                    channel_result = await new_db.execute(select(Channel).filter(Channel.id == channel_id))
+                    channel = channel_result.scalar_one_or_none()
+                    if channel:
+                        result = await analyze_messages(new_db, channel)
+                        results.append({
+                            "channel_id": channel_id,
+                            "channel_username": channel.username,
+                            "result": result
+                        })
 
             return {"success": True, "results": results}
         except Exception as e:

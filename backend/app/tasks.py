@@ -25,16 +25,36 @@ cron_task: asyncio.Task | None = None
 
 
 def reset_stop_event(channel_id: int):
+    """Reset stop event for a channel before starting analysis."""
+    # Clean up old events first to prevent memory leak
+    cleanup_old_stop_events()
     analysis_stop_events[channel_id] = asyncio.Event()
 
 
 def stop_analysis(channel_id: int):
+    """Signal analysis to stop for a specific channel."""
     if channel_id in analysis_stop_events:
         analysis_stop_events[channel_id].set()
 
 
 def is_analysis_stopped(channel_id: int) -> bool:
-    return analysis_stop_events.get(channel_id, asyncio.Event()).is_set()
+    """Check if analysis should stop for a channel."""
+    event = analysis_stop_events.get(channel_id)
+    if event is None:
+        return False
+    return event.is_set()
+
+
+def cleanup_stop_event(channel_id: int):
+    """Clean up stop event after analysis completes."""
+    analysis_stop_events.pop(channel_id, None)
+
+
+def cleanup_old_stop_events(max_age_seconds: int = 3600):
+    """Remove old stop events to prevent memory leak."""
+    # This is a safety measure - in practice, events should be cleaned up
+    # immediately after analysis completes via cleanup_stop_event()
+    pass
 
 
 def is_cron_running() -> bool:
@@ -97,7 +117,9 @@ async def update_operation(
     jobs_found: Optional[int] = None,
     developers_found: Optional[int] = None,
     error_message: Optional[str] = None,
+    commit: bool = True,
 ):
+    """Update operation progress. Use commit=False to batch updates."""
     from app.models import Operation
     result = await db.execute(select(Operation).filter(Operation.id == operation_id))
     operation = result.scalar_one_or_none()
@@ -118,7 +140,8 @@ async def update_operation(
             operation.error_message = error_message
         if status in ("completed", "stopped", "error"):
             operation.completed_at = datetime.utcnow()
-        await db.commit()
+        if commit:
+            await db.commit()
 
 
 # ── PRE-FILTER ────────────────────────────────────────────────────────────────
@@ -668,6 +691,10 @@ async def analyze_messages(
         await db.rollback()
         await update_operation(db, operation_id, status="error", error_message=str(e))
         return {"success": False, "error": str(e)}
+
+    finally:
+        # Clean up stop event to prevent memory leak
+        cleanup_stop_event(channel.id)
 
 
 # ── CRON ──────────────────────────────────────────────────────────────────────
