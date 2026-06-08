@@ -22,6 +22,7 @@ export interface ProgressUpdate {
   status?: string;
   count?: number;
   total?: number;
+  total_messages?: number;
   current?: number;
   analyzed?: number;
   processed?: number;

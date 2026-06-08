@@ -3,7 +3,7 @@
 import asyncio
 import logging
 from contextlib import asynccontextmanager
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Optional
 
 from sqlalchemy import select
@@ -19,9 +19,13 @@ logger = logging.getLogger(__name__)
 # Global stop events for cancelling analysis (per-channel)
 analysis_stop_events: dict[int, asyncio.Event] = {}
 
+# Bulk operation stop events (for analyze-all, fetch-analyze-all)
+bulk_stop_events: dict[str, asyncio.Event] = {}
+
 # Cron job state
 cron_running = False
 cron_task: asyncio.Task | None = None
+_cron_lock = asyncio.Lock()
 
 
 def reset_stop_event(channel_id: int):
@@ -49,33 +53,64 @@ def cleanup_stop_event(channel_id: int):
     analysis_stop_events.pop(channel_id, None)
 
 
+def reset_bulk_stop_event(operation_id: str):
+    """Reset stop event for a bulk operation."""
+    bulk_stop_events[operation_id] = asyncio.Event()
+
+
+def stop_bulk_operation(operation_id: str):
+    """Signal bulk operation to stop."""
+    if operation_id in bulk_stop_events:
+        bulk_stop_events[operation_id].set()
+
+
+def is_bulk_operation_stopped(operation_id: str) -> bool:
+    """Check if bulk operation should stop."""
+    event = bulk_stop_events.get(operation_id)
+    if event is None:
+        return False
+    return event.is_set()
+
+
+def cleanup_bulk_stop_event(operation_id: str):
+    """Clean up bulk stop event after operation completes."""
+    bulk_stop_events.pop(operation_id, None)
+
+
 def cleanup_old_stop_events(max_age_seconds: int = 3600):
-    """Remove old stop events to prevent memory leak."""
-    pass
+    """Remove already-set (finished) stop events to prevent memory leak."""
+    stale = [cid for cid, e in list(analysis_stop_events.items()) if e.is_set()]
+    for cid in stale:
+        analysis_stop_events.pop(cid, None)
+    stale_bulk = [oid for oid, e in list(bulk_stop_events.items()) if e.is_set()]
+    for oid in stale_bulk:
+        bulk_stop_events.pop(oid, None)
 
 
 def is_cron_running() -> bool:
     return cron_running
 
 
-def start_cron_task() -> bool:
+async def start_cron_task() -> bool:
     global cron_running, cron_task
-    if cron_running:
-        return False
-    cron_running = True
-    cron_task = asyncio.create_task(continuous_scanner())
-    return True
+    async with _cron_lock:
+        if cron_running:
+            return False
+        cron_running = True
+        cron_task = asyncio.create_task(continuous_scanner())
+        return True
 
 
-def stop_cron_task() -> bool:
+async def stop_cron_task() -> bool:
     global cron_running, cron_task
-    if not cron_running:
-        return False
-    cron_running = False
-    if cron_task:
-        cron_task.cancel()
-        cron_task = None
-    return True
+    async with _cron_lock:
+        if not cron_running:
+            return False
+        cron_running = False
+        if cron_task:
+            cron_task.cancel()
+            cron_task = None
+        return True
 
 
 async def broadcast_progress(event_type: str, data: dict):
@@ -90,12 +125,16 @@ async def create_operation(
     db: AsyncSession,
     operation_type: str,
     channel: Channel,
+    total_messages: Optional[int] = None,
+    bulk_operation_id: Optional[str] = None,
 ) -> int:
     operation = Operation(
         operation_type=operation_type,
         channel_id=channel.id,
         channel_username=channel.username,
+        bulk_operation_id=bulk_operation_id,
         status="running",
+        total_messages=total_messages or 0,
     )
     db.add(operation)
     await db.commit()
@@ -109,6 +148,7 @@ async def update_operation(
     status: Optional[str] = None,
     current: Optional[int] = None,
     total: Optional[int] = None,
+    total_messages: Optional[int] = None,
     analyzed: Optional[int] = None,
     jobs_found: Optional[int] = None,
     developers_found: Optional[int] = None,
@@ -125,6 +165,8 @@ async def update_operation(
             operation.current = current
         if total is not None:
             operation.total = total
+        if total_messages is not None:
+            operation.total_messages = total_messages
         if analyzed is not None:
             operation.analyzed = analyzed
         if jobs_found is not None:
@@ -140,21 +182,6 @@ async def update_operation(
 
 
 # ── HELPERS ───────────────────────────────────────────────────────────────────
-
-def _contacts_to_str(value) -> Optional[str]:
-    """Convert contacts array or string to a comma-separated string."""
-    if value is None:
-        return None
-    if isinstance(value, list):
-        # contacts can be list of {type, value} dicts or plain strings
-        parts = []
-        for item in value:
-            if isinstance(item, dict):
-                parts.append(item.get("value", ""))
-            else:
-                parts.append(str(item))
-        return ", ".join(p for p in parts if p) or None
-    return str(value)
 
 
 def _first_contact(value) -> Optional[str]:
@@ -196,6 +223,16 @@ def _to_str(value) -> Optional[str]:
     return str(value)
 
 
+def _resolve_contact(contacts, message) -> tuple[Optional[str], Optional[str]]:
+    """Return (contact_value, contact_type), falling back to sender info."""
+    contact = _first_contact(contacts)
+    contact_type = _first_contact_type(contacts)
+    if not contact:
+        contact = message.sender_username or (str(message.sender_id) if message.sender_id else None)
+        contact_type = "telegram" if contact else None
+    return contact, contact_type
+
+
 # ── FETCH ─────────────────────────────────────────────────────────────────────
 
 async def fetch_and_store_messages(
@@ -204,6 +241,7 @@ async def fetch_and_store_messages(
     days_back: int = 10,
     run_id: Optional[int] = None,
     account_id: Optional[int] = None,
+    bulk_operation_id: Optional[str] = None,
 ) -> dict:
     """Fetch messages from Telegram and store in database."""
     if account_id:
@@ -237,7 +275,7 @@ async def fetch_and_store_messages(
         session_name=account.session_name,
     )
 
-    operation_id = await create_operation(db, "fetch", channel)
+    operation_id = await create_operation(db, "fetch", channel, bulk_operation_id=bulk_operation_id)
 
     try:
         await broadcast_progress("fetch_start", {"channel": channel.username, "days_back": days_back, "operation_id": operation_id})
@@ -250,6 +288,9 @@ async def fetch_and_store_messages(
             days_back=days_back,
         )
         await broadcast_progress("fetch_progress", {"channel": channel.username, "status": "fetched", "count": len(messages), "operation_id": operation_id})
+
+        # Update operation with total messages count
+        await update_operation(db, operation_id, total_messages=len(messages))
 
         new_count = 0
         for i, msg_data in enumerate(messages):
@@ -281,19 +322,22 @@ async def fetch_and_store_messages(
                     )
                     db.add(message)
                     await db.flush()
-                    new_count += 1
+                new_count += 1
 
                 if (i + 1) % 10 == 0:
                     await broadcast_progress("fetch_progress", {
                         "channel": channel.username,
                         "processed": i + 1,
                         "total": len(messages),
+                        "total_messages": len(messages),
+                        "analyzed": i + 1,  # For frontend progress bar
                         "new": new_count,
                         "operation_id": operation_id,
                     })
-                    await update_operation(db, operation_id, current=i + 1, total=len(messages))
+                    await update_operation(db, operation_id, current=i + 1, total=len(messages), analyzed=i + 1)
 
-            except Exception:
+            except Exception as e:
+                logger.warning(f"Failed to store message {msg_data.get('id')}: {e}")
                 continue
 
         await db.commit()
@@ -366,28 +410,34 @@ async def analyze_messages(
     db: AsyncSession,
     channel: Channel,
     run_id: Optional[int] = None,
+    bulk_operation_id: Optional[str] = None,
 ) -> dict:
     """Analyze unanalyzed messages with AI using concurrent pipeline."""
+    # Capture primitives immediately — any await/commit expires the ORM object
+    channel_id = channel.id
+    channel_username = channel.username
+    channel_name = channel.name
+
     if not await is_ollama_available():
         return {"success": False, "error": "Ollama not available"}
 
-    operation_id = await create_operation(db, "analyze", channel)
-
     try:
-        reset_stop_event(channel.id)
-        await broadcast_progress("analyze_start", {"channel": channel.username, "channel_id": channel.id, "operation_id": operation_id})
+        reset_stop_event(channel_id)
 
         messages_result = await db.execute(
             select(Message).filter(
-                Message.channel_id == channel.id,
+                Message.channel_id == channel_id,
                 Message.analysis_status == "pending",
-            ).outerjoin(Job).outerjoin(Developer).filter(
-                (Job.id == None) & (Developer.id == None),
             )
         )
         messages = messages_result.scalars().all()
-        await broadcast_progress("analyze_progress", {"channel": channel.username, "status": "found", "total": len(messages), "operation_id": operation_id})
-        await update_operation(db, operation_id, total=len(messages))
+        total_messages = len(messages)
+
+        operation_id = await create_operation(db, "analyze", channel, total_messages=total_messages, bulk_operation_id=bulk_operation_id)
+
+        await broadcast_progress("analyze_start", {"channel": channel_username, "channel_id": channel_id, "operation_id": operation_id})
+        await broadcast_progress("analyze_progress", {"channel": channel_username, "status": "found", "total": total_messages, "operation_id": operation_id})
+        await update_operation(db, operation_id, total_messages=total_messages)
 
         if len(messages) == 0:
             await update_operation(db, operation_id, status="completed")
@@ -406,13 +456,12 @@ async def analyze_messages(
 
         total_input_tokens = 0
         total_output_tokens = 0
-        total_tokens = 0
         message_results: list[dict] = []
 
         logger.info(f"Analyzing {total_messages} messages in {total_batches} batches of {batch_size}")
 
         for batch_num, batch_start in enumerate(range(0, total_messages, batch_size), 1):
-            if is_analysis_stopped(channel.id):
+            if is_analysis_stopped(channel_id):
                 stopped_count = total_messages - batch_start
                 break
 
@@ -428,7 +477,7 @@ async def analyze_messages(
                     msg.analysis_status = "skipped"
 
             if not filtered_messages:
-                await broadcast_progress("analyze_progress", {"channel": channel.username, "current": batch_num, "total": total_batches, "operation_id": operation_id})
+                await broadcast_progress("analyze_progress", {"channel": channel_username, "current": batch_num, "total": total_batches, "operation_id": operation_id})
                 await update_operation(db, operation_id, current=batch_num)
                 continue
 
@@ -463,7 +512,6 @@ async def analyze_messages(
                 usage = result.get("usage", {})
                 total_input_tokens += usage.get("input_tokens", 0)
                 total_output_tokens += usage.get("output_tokens", 0)
-                total_tokens += usage.get("total_tokens", 0)
 
                 category = result.get("category")
                 confidence = result.get("confidence")
@@ -496,15 +544,7 @@ async def analyze_messages(
                     company = job_data.get("company")
 
                     location = _to_str(job_data.get("location"))
-
-                    # contacts: array of {type, value}
-                    contacts = job_data.get("contacts")
-                    contact = _first_contact(contacts)
-                    contact_type = _first_contact_type(contacts)
-
-                    if not contact:
-                        contact = message.sender_username or (str(message.sender_id) if message.sender_id else None)
-                        contact_type = "telegram" if contact else None
+                    contact, contact_type = _resolve_contact(job_data.get("contacts"), message)
 
                     if not title:
                         title = f"[No Title] sender:{message.sender_username or message.sender_id or 'unknown'}"
@@ -523,8 +563,8 @@ async def analyze_messages(
 
                     job = Job(
                         message_id=message.id,
-                        channel_id=channel.id,
-                        channel_name=channel.name,
+                        channel_id=channel_id,
+                        channel_name=channel_name,
                         confidence=confidence,
                         translated_text=translated_text,
                         title=title,
@@ -547,18 +587,11 @@ async def analyze_messages(
                     pi_data = result.get("personal_info") or {}
 
                     name = pi_data.get("name")
-
-                    contacts = pi_data.get("contacts")
-                    contact = _first_contact(contacts)
-                    contact_type = _first_contact_type(contacts)
+                    contact, contact_type = _resolve_contact(pi_data.get("contacts"), message)
 
                     portfolio = _to_str(pi_data.get("portfolio"))
                     github = _to_str(pi_data.get("github"))
                     linkedin = _to_str(pi_data.get("linkedin"))
-
-                    if not contact:
-                        contact = message.sender_username or (str(message.sender_id) if message.sender_id else None)
-                        contact_type = "telegram" if contact else None
 
                     if not name:
                         name = message.sender_username or f"sender:{message.sender_id or 'unknown'}"
@@ -583,7 +616,7 @@ async def analyze_messages(
 
                     developer = Developer(
                         message_id=message.id,
-                        channel_id=channel.id,
+                        channel_id=channel_id,
                         confidence=confidence,
                         translated_text=translated_text,
                         name=name,
@@ -607,21 +640,23 @@ async def analyze_messages(
 
                 analyzed_count += 1
 
+            batch_message_results = message_results[-len(filtered_messages):] if filtered_messages else []
             await broadcast_progress("analyze_progress", {
-                "channel": channel.username,
-                "channel_id": channel.id,
+                "channel": channel_username,
+                "channel_id": channel_id,
                 "current": batch_num,
                 "total": total_batches,
                 "analyzed": analyzed_count,
+                "total_messages": total_messages,
                 "jobs": jobs_added,
                 "developers": devs_added,
                 "operation_id": operation_id,
                 "tokens": {
                     "input": total_input_tokens,
                     "output": total_output_tokens,
-                    "total": total_tokens,
+                    "total": total_input_tokens + total_output_tokens,
                 },
-                "message_results": message_results[-len(filtered_messages):] if filtered_messages else [],
+                "message_results": batch_message_results,
             })
             await update_operation(db, operation_id, current=batch_num, analyzed=analyzed_count, jobs_found=jobs_added, developers_found=devs_added)
 
@@ -647,8 +682,8 @@ async def analyze_messages(
 
         status = "stopped" if stopped_count > 0 else "completed"
         await broadcast_progress("analyze_complete", {
-            "channel": channel.username,
-            "channel_id": channel.id,
+            "channel": channel_username,
+            "channel_id": channel_id,
             "analyzed": analyzed_count,
             "jobs": jobs_added,
             "developers": devs_added,
@@ -658,7 +693,7 @@ async def analyze_messages(
             "tokens": {
                 "input": total_input_tokens,
                 "output": total_output_tokens,
-                "total": total_tokens,
+                "total": total_input_tokens + total_output_tokens,
             },
         })
         await update_operation(db, operation_id, status=status, analyzed=analyzed_count, jobs_found=jobs_added, developers_found=devs_added)
@@ -679,7 +714,7 @@ async def analyze_messages(
         return {"success": False, "error": str(e)}
 
     finally:
-        cleanup_stop_event(channel.id)
+        cleanup_stop_event(channel_id)
 
 
 # ── CRON ──────────────────────────────────────────────────────────────────────
@@ -707,16 +742,17 @@ async def continuous_scanner(
 
                     channel = channels[channel_index % len(channels)]
                     channel_index += 1
+                    channel_id = channel.id
 
-                    now = datetime.now()
-                    last = last_fetch_time.get(channel.id)
+                    now = datetime.now(timezone.utc)
+                    last = last_fetch_time.get(channel_id)
                     due = last is None or (now - last).total_seconds() >= fetch_interval_minutes * 60
 
                     if due:
                         try:
                             fetch_result = await fetch_and_store_messages(db, channel, days_back=1)
                             if fetch_result["success"]:
-                                last_fetch_time[channel.id] = now
+                                last_fetch_time[channel_id] = now
                                 if fetch_result["new_stored"] > 0:
                                     try:
                                         await analyze_messages(db, channel)
@@ -744,4 +780,4 @@ async def lifespan(app):
     try:
         yield
     finally:
-        stop_cron_task()
+        await stop_cron_task()

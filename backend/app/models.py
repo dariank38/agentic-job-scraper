@@ -15,12 +15,14 @@ class Operation(Base):
     __tablename__ = "operations"
 
     id = Column(Integer, primary_key=True)
-    operation_type = Column(String, nullable=False)  # 'fetch', 'analyze', 'search'
+    operation_type = Column(String, nullable=False)  # 'fetch', 'analyze', 'bulk-analyze', 'bulk-fetch-analyze'
     channel_id = Column(Integer, ForeignKey("channels.id"), nullable=True)
     channel_username = Column(String, nullable=True)
+    bulk_operation_id = Column(String, nullable=True)  # Links channels to a bulk operation (e.g., 'analyze-all-abc123')
     status = Column(String, default="running")  # 'running', 'completed', 'stopped', 'error'
     current = Column(Integer, default=0)  # Current progress (batch number)
     total = Column(Integer, default=0)  # Total progress (total batches)
+    total_messages = Column(Integer, default=0)  # Total messages to process
     analyzed = Column(Integer, default=0)  # Number of messages analyzed
     jobs_found = Column(Integer, default=0)
     developers_found = Column(Integer, default=0)

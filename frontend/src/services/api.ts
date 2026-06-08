@@ -293,6 +293,15 @@ const api = {
     return response.json();
   },
 
+  stopBulkOperation: async (operation_id: string): Promise<any> => {
+    const response = await fetch(`${API_BASE}/api/bulk/stop`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ operation_id }),
+    });
+    return response.json();
+  },
+
   reanalyzeMessages: async (): Promise<any> => {
     const response = await fetch(`${API_BASE}/api/reanalyze`, { method: 'POST' });
     return response.json();

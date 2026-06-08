@@ -38,8 +38,9 @@ export const useToast = () => {
 interface WebSocketProgressContextType {
   progress: ProgressUpdate | null;
   isConnected: boolean;
-  channelProgress: Record<string, { current: number; total: number }>;
+  channelProgress: Record<string, { analyzed: number; total: number }>;
   operations: Record<string, { type: string; status: string }>;
+  bulkOperations: Array<{ id: string; operation_type: string; status: string; channels: number[] }>;
   stoppingChannels: Record<string, boolean>;
   tokenUsage: Record<string, { input: number; output: number; total: number }>;
   messageResults: Record<string, any[]>;
@@ -90,8 +91,9 @@ const ToastProvider = ({ children }: { children: React.ReactNode }) => {
 const WebSocketProgressProvider = ({ children }: { children: React.ReactNode }) => {
   const [isConnected, setIsConnected] = useState(false);
   const [progress, setProgress] = useState<ProgressUpdate | null>(null);
-  const [channelProgress, setChannelProgress] = useState<Record<string, { current: number; total: number }>>({});
+  const [channelProgress, setChannelProgress] = useState<Record<string, { analyzed: number; total: number }>>({});
   const [operations, setOperations] = useState<Record<string, { type: string; status: string }>>({});
+  const [bulkOperations, setBulkOperations] = useState<Array<{ id: string; operation_type: string; status: string; channels: number[] }>>([]);
   const [stoppingChannels, setStoppingChannels] = useState<Record<string, boolean>>({});
   const [tokenUsage, setTokenUsage] = useState<Record<string, { input: number; output: number; total: number }>>({});
   const [messageResults, setMessageResults] = useState<Record<string, any[]>>({});
@@ -119,14 +121,21 @@ const WebSocketProgressProvider = ({ children }: { children: React.ReactNode }) 
           });
           setOperations(newOperations);
 
+          // Update bulk operations from API
+          if (data.bulk_operations && data.bulk_operations.length > 0) {
+            setBulkOperations(data.bulk_operations);
+          } else {
+            setBulkOperations([]);
+          }
+
           // Update channel progress for running operations
           data.operations.forEach((op: any) => {
             if (op.status === 'running' && op.channel_username) {
               setChannelProgress(prev => ({
                 ...prev,
                 [op.channel_username]: {
-                  current: op.current,
-                  total: op.total,
+                  analyzed: op.analyzed || 0,
+                  total: op.total_messages || op.total || 0,
                 }
               }));
             }
@@ -134,6 +143,7 @@ const WebSocketProgressProvider = ({ children }: { children: React.ReactNode }) 
         } else {
           // No running operations, clear all
           setOperations({});
+          setBulkOperations([]);
           setChannelProgress({});
         }
       } catch (e) {
@@ -220,14 +230,23 @@ const WebSocketProgressProvider = ({ children }: { children: React.ReactNode }) 
               }));
               setChannelProgress(prev => ({
                 ...prev,
-                [channel]: { current: 0, total: 0 }
+                [channel]: { analyzed: 0, total: 0 }
+              }));
+            } else if (channel && data.type === 'fetch_progress') {
+              // Handle fetch progress updates
+              setChannelProgress(prev => ({
+                ...prev,
+                [channel]: {
+                  analyzed: data.processed || data.analyzed || 0,
+                  total: data.total_messages || data.total || 0,
+                }
               }));
             } else if (channel && data.type === 'analyze_progress') {
               setChannelProgress(prev => ({
                 ...prev,
                 [channel]: {
-                  current: data.current || 0,
-                  total: data.total || 0,
+                  analyzed: data.analyzed || 0,
+                  total: data.total_messages || data.total || 0,
                 }
               }));
               // Update token usage
@@ -303,7 +322,7 @@ const WebSocketProgressProvider = ({ children }: { children: React.ReactNode }) 
   }, []);
 
   return (
-    <WebSocketProgressContext.Provider value={{ progress, isConnected, channelProgress, operations, stoppingChannels, tokenUsage, messageResults, requestStop }}>
+    <WebSocketProgressContext.Provider value={{ progress, isConnected, channelProgress, operations, bulkOperations, stoppingChannels, tokenUsage, messageResults, requestStop }}>
       {children}
     </WebSocketProgressContext.Provider>
   );
