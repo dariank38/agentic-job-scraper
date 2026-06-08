@@ -43,16 +43,34 @@ const Dashboard = () => {
   const [searchParams, setSearchParams] = useSearchParams();
   const [cleanupDialogOpen, setCleanupDialogOpen] = useState(false);
   const [cleanupDays, setCleanupDays] = useState(30);
+  const [bulkOperation, setBulkOperation] = useState<{ id: string; type: 'analyze-all' | 'fetch-analyze-all' } | null>(null);
   const limit = 10;
   const offset = parseInt(searchParams.get('offset') || '0');
 
-  const { progress: wsProgress, channelProgress, operations, stoppingChannels, tokenUsage, messageResults, requestStop } = useWebSocketProgress();
+  const { progress: wsProgress, channelProgress, operations, bulkOperations, stoppingChannels, tokenUsage, messageResults, requestStop } = useWebSocketProgress();
 
   useEffect(() => {
     if (wsProgress && (wsProgress.type === 'analyze_complete' || wsProgress.type === 'error' || wsProgress.type === 'fetch_complete')) {
       loadData();
     }
   }, [wsProgress]);
+
+  // Derive effective bulk operation (local state or from context polling)
+  const effectiveBulkOperation = bulkOperation || (bulkOperations.length > 0 ? {
+    id: bulkOperations[0].id,
+    type: bulkOperations[0].operation_type as 'analyze-all' | 'fetch-analyze-all'
+  } : null);
+
+  // Clear local bulkOperation when bulkOperations from context is empty
+  useEffect(() => {
+    if (bulkOperation && bulkOperations.length === 0 && Object.keys(operations).length === 0) {
+      // Wait a moment to ensure operations are truly done, then clear bulk state
+      const timer = setTimeout(() => {
+        setBulkOperation(null);
+      }, 2000);
+      return () => clearTimeout(timer);
+    }
+  }, [operations, bulkOperations, bulkOperation]);
 
   useEffect(() => {
     loadData();
@@ -130,14 +148,18 @@ const Dashboard = () => {
 
       const data = await withLoading(`analyze-${channelId}`, () => api.analyzeChannel(channelId));
       if (data.success) {
-        if (data.stopped) {
+        if (data.message) {
+          // Background task started
+          showToast('success', data.message);
+        } else if (data.stopped) {
           showToast('info', `Stopped! Analyzed ${data.analyzed} msgs, ${data.jobs_found} jobs (${data.remaining} remaining)`);
         } else {
           showToast('success', `Analyzed: ${data.analyzed} msgs, ${data.jobs_found} jobs, ${data.developers_found} devs`);
         }
-        setTimeout(() => loadData(), 1500);
+        // Reload data after a delay to see results
+        setTimeout(() => loadData(), 3000);
       } else {
-        showToast('error', 'Error: ' + (data.error || 'Unknown'));
+        showToast('error', 'Error: ' + (data.error || data.message || 'Unknown'));
       }
     } catch (e: any) {
       showToast('error', 'Error: ' + e.message);
@@ -218,14 +240,10 @@ const Dashboard = () => {
 
       const data = await withLoading('analyze-all', () => api.analyzeAll());
       if (data.success) {
-        const totalJobs = data.results.reduce((s: number, r: any) => s + (r.jobs_found || 0), 0);
-        const wasStopped = data.results.some((r: any) => r.stopped);
-        if (wasStopped) {
-          showToast('info', `Stopped! Found ${totalJobs} jobs across channels (some remaining)`);
-        } else {
-          showToast('success', `Analysis complete! Found ${totalJobs} jobs across all channels`);
+        if (data.operation_id) {
+          setBulkOperation({ id: data.operation_id, type: 'analyze-all' });
         }
-        setTimeout(() => loadData(), 1500);
+        showToast('success', `Analysis started for ${data.channels} channel(s)`);
       } else {
         showToast('error', 'Error: ' + (data.error || 'Unknown'));
       }
@@ -262,9 +280,10 @@ const Dashboard = () => {
 
       const data = await withLoading('fetch-analyze-all', () => api.fetchAnalyzeAll());
       if (data.success) {
-        const totalJobs = data.results.reduce((s: number, r: any) => s + (r.total_jobs || 0), 0);
-        showToast('success', `Complete! Found ${totalJobs} jobs across all channels`);
-        setTimeout(() => loadData(), 2000);
+        if (data.operation_id) {
+          setBulkOperation({ id: data.operation_id, type: 'fetch-analyze-all' });
+        }
+        showToast('success', `Fetch+analyze started for ${data.channels} channel(s)`);
       } else {
         showToast('error', 'Error: ' + (data.error || 'Unknown'));
       }
@@ -306,6 +325,22 @@ const Dashboard = () => {
         setTimeout(() => loadData(), 1500);
       } else {
         showToast('error', 'Error: ' + (data.error || 'Unknown'));
+      }
+    } catch (e: any) {
+      showToast('error', 'Error: ' + e.message);
+    }
+  };
+
+  const stopBulkOperation = async () => {
+    const targetBulkOp = bulkOperation || effectiveBulkOperation;
+    if (!targetBulkOp) return;
+    try {
+      const data = await api.stopBulkOperation(targetBulkOp.id);
+      if (data.success) {
+        showToast('success', 'Stop signal sent for bulk operation');
+        setBulkOperation(null);
+      } else {
+        showToast('error', 'Error: ' + (data.message || 'Unknown'));
       }
     } catch (e: any) {
       showToast('error', 'Error: ' + e.message);
@@ -402,29 +437,39 @@ const Dashboard = () => {
                   <Button
                     className="w-full justify-start"
                     onClick={() => fetchAll()}
-                    disabled={loadingActions.has('fetch-all') || Object.keys(operations).length > 0}
+                    disabled={loadingActions.has('fetch-all') || Object.keys(operations).length > 0 || effectiveBulkOperation !== null}
                   >
                     <RefreshCw size={14} className="mr-2" />
-                    {loadingActions.has('fetch-all') ? 'Fetching...' : Object.keys(operations).length > 0 ? 'Channel(s) processing...' : 'Fetch All'}
+                    {loadingActions.has('fetch-all') ? 'Fetching...' : (Object.keys(operations).length > 0 || effectiveBulkOperation) ? 'Operation in progress...' : 'Fetch All'}
                   </Button>
                   <Button
                     className="w-full justify-start"
                     variant="outline"
                     onClick={() => analyzeAll()}
-                    disabled={loadingActions.has('analyze-all') || Object.keys(operations).length > 0}
+                    disabled={loadingActions.has('analyze-all') || Object.keys(operations).length > 0 || effectiveBulkOperation !== null}
                   >
                     <Bot size={14} className="mr-2" />
-                    {loadingActions.has('analyze-all') ? 'Analyzing...' : Object.keys(operations).length > 0 ? 'Channel(s) processing...' : 'Analyze All'}
+                    {loadingActions.has('analyze-all') ? 'Analyzing...' : (Object.keys(operations).length > 0 || effectiveBulkOperation) ? 'Operation in progress...' : 'Analyze All'}
                   </Button>
                   <Button
                     className="w-full justify-start"
                     variant="outline"
                     onClick={() => fetchAnalyzeAll()}
-                    disabled={loadingActions.has('fetch-analyze-all') || Object.keys(operations).length > 0}
+                    disabled={loadingActions.has('fetch-analyze-all') || Object.keys(operations).length > 0 || effectiveBulkOperation !== null}
                   >
                     <Zap size={14} className="mr-2" />
-                    {loadingActions.has('fetch-analyze-all') ? 'Processing...' : Object.keys(operations).length > 0 ? 'Channel(s) processing...' : 'Fetch + Analyze All'}
+                    {loadingActions.has('fetch-analyze-all') ? 'Processing...' : (Object.keys(operations).length > 0 || effectiveBulkOperation) ? 'Operation in progress...' : 'Fetch + Analyze All'}
                   </Button>
+                  {effectiveBulkOperation && (
+                    <Button
+                      className="w-full justify-start"
+                      variant="destructive"
+                      onClick={() => stopBulkOperation()}
+                    >
+                      <Square size={14} className="mr-2" />
+                      Stop {effectiveBulkOperation.type === 'analyze-all' ? 'Analyze All' : 'Fetch + Analyze All'}
+                    </Button>
+                  )}
                 </div>
               </div>
 
@@ -545,12 +590,12 @@ const Dashboard = () => {
                                 <span className={stoppingChannels[channel.username] ? 'text-orange-600 font-medium' : ''}>
                                   {stoppingChannels[channel.username] ? '⚠ Stopping... (finishing current)' : 'Analyzing...'}
                                 </span>
-                                <span>{channelProgress[channel.username].current}/{channelProgress[channel.username].total}</span>
+                                <span>{channelProgress[channel.username].analyzed}/{channelProgress[channel.username].total}</span>
                               </div>
                               <div className="w-full bg-gray-200 rounded-full h-2">
                                 <div
                                   className={`h-2 rounded-full transition-all ${stoppingChannels[channel.username] ? 'bg-orange-500' : 'bg-blue-600'}`}
-                                  style={{ width: `${(channelProgress[channel.username].current / channelProgress[channel.username].total) * 100}%` }}
+                                  style={{ width: `${(channelProgress[channel.username].total > 0 ? (channelProgress[channel.username].analyzed / channelProgress[channel.username].total) * 100 : 0)}%` }}
                                 />
                               </div>
                               {tokenUsage[channel.username] && (

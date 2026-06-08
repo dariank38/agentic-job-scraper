@@ -2,13 +2,13 @@
 
 from datetime import datetime
 from typing import Optional
-from fastapi import Depends, HTTPException, Query
+from fastapi import BackgroundTasks, Depends, HTTPException, Query
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.connection import get_db
+from app.connection import get_db, AsyncSessionLocal
 from app.models import AnalysisRun, Channel, Message
-from app.tasks import analyze_messages, fetch_and_store_messages
+from app.tasks import analyze_messages, fetch_and_store_messages, reset_bulk_stop_event, is_bulk_operation_stopped, cleanup_bulk_stop_event, stop_bulk_operation
 
 
 def register_action_routes(app):
@@ -44,25 +44,46 @@ def register_action_routes(app):
         except Exception as e:
             raise HTTPException(status_code=500, detail=f"Failed to fetch: {str(e)}")
 
+    async def _analyze_channel_bg(channel_id: int):
+        """Background task: analyze a single channel with its own DB session."""
+        async with AsyncSessionLocal() as db:
+            try:
+                result = await db.execute(select(Channel).filter(Channel.id == channel_id))
+                channel = result.scalar_one_or_none()
+                if channel:
+                    await analyze_messages(db, channel)
+            except Exception:
+                pass  # Silently handle errors in background
+
     @app.post("/api/analyze/{channel_id}")
-    async def analyze_channel(channel_id: int, db: AsyncSession = Depends(get_db)):
-        """Analyze messages in a channel."""
+    async def analyze_channel(channel_id: int, background_tasks: BackgroundTasks, db: AsyncSession = Depends(get_db)):
+        """Analyze messages in a channel (runs in background)."""
         try:
             result = await db.execute(select(Channel).filter(Channel.id == channel_id))
             channel = result.scalar_one_or_none()
             if not channel:
                 raise HTTPException(status_code=404, detail="Channel not found")
 
-            result = await analyze_messages(
-                db,
-                channel
+            # Check if there are pending messages to analyze
+            messages_result = await db.execute(
+                select(Message).filter(
+                    Message.channel_id == channel_id,
+                    Message.analysis_status == "pending",
+                )
             )
+            pending_count = len(messages_result.scalars().all())
+
+            if pending_count == 0:
+                return {"success": True, "message": "No pending messages to analyze", "analyzed": 0}
+
+            # Start analysis in background
+            background_tasks.add_task(_analyze_channel_bg, channel_id)
 
             return {
-                "success": result.get("success", True),
-                "analyzed": result.get("analyzed", 0),
-                "jobs_found": result.get("jobs_found", 0),
-                "developers_found": result.get("developers_found", 0)
+                "success": True,
+                "message": f"Analysis started for {pending_count} pending message(s)",
+                "analyzed": 0,  # Will be updated via WebSocket
+                "pending": pending_count
             }
         except HTTPException:
             raise
@@ -140,85 +161,83 @@ def register_action_routes(app):
         except Exception as e:
             raise HTTPException(status_code=500, detail=f"Failed to fetch all: {str(e)}")
 
-    @app.post("/api/analyze-all")
-    async def analyze_all(db: AsyncSession = Depends(get_db)):
-        """Analyze messages in all active channels."""
+    async def _run_analyze_all(channel_ids: list, operation_id: str):
+        """Background task: analyze each channel sequentially, each with its own DB session."""
+        reset_bulk_stop_event(operation_id)
         try:
-            result = await db.execute(select(Channel).filter(Channel.is_active == True))
-            channels = result.scalars().all()
+            for channel_id in channel_ids:
+                if is_bulk_operation_stopped(operation_id):
+                    break
+                async with AsyncSessionLocal() as db:
+                    try:
+                        result = await db.execute(select(Channel).filter(Channel.id == channel_id))
+                        channel = result.scalar_one_or_none()
+                        if channel:
+                            await analyze_messages(db, channel, bulk_operation_id=operation_id)
+                    except Exception:
+                        pass
+        finally:
+            cleanup_bulk_stop_event(operation_id)
 
-            if not channels:
-                return {"success": True, "results": [], "message": "No active channels found"}
+    @app.post("/api/analyze-all")
+    async def analyze_all(background_tasks: BackgroundTasks, db: AsyncSession = Depends(get_db)):
+        """Start analysis for all active channels in the background and return immediately."""
+        result = await db.execute(select(Channel).filter(Channel.is_active == True))
+        channels = result.scalars().all()
 
-            results = []
-            for channel in channels:
-                try:
-                    analyze_result = await analyze_messages(
-                        db,
-                        channel
-                    )
-                    results.append({
-                        "channel_id": channel.id,
-                        "username": channel.username,
-                        "analyzed": analyze_result.get("analyzed", 0),
-                        "jobs_found": analyze_result.get("jobs_found", 0),
-                        "developers_found": analyze_result.get("developers_found", 0),
-                        "stopped": analyze_result.get("stopped", False),
-                        "remaining": analyze_result.get("remaining", 0)
-                    })
-                except Exception as e:
-                    import traceback
-                    error_detail = f"{str(e)}\n{traceback.format_exc()}"
-                    results.append({
-                        "channel_id": channel.id,
-                        "username": channel.username,
-                        "error": str(e)
-                    })
+        if not channels:
+            return {"success": True, "message": "No active channels found"}
 
-            return {"success": True, "results": results}
-        except Exception as e:
-            import traceback
-            error_detail = f"{str(e)}\n{traceback.format_exc()}"
-            raise HTTPException(status_code=500, detail=f"Failed to analyze all: {error_detail}")
+        channel_ids = [c.id for c in channels]
+        import uuid
+        operation_id = f"analyze-all-{uuid.uuid4().hex[:8]}"
+        background_tasks.add_task(_run_analyze_all, channel_ids, operation_id)
+        return {"success": True, "message": f"Analysis started for {len(channel_ids)} channel(s)", "channels": len(channel_ids), "operation_id": operation_id}
+
+    async def _run_fetch_analyze_all(channel_ids: list, operation_id: str):
+        """Background task: fetch and analyze each channel sequentially, each with its own DB session."""
+        from telegram_processor.config import DEFAULT_DAYS_BACK
+        days_back = DEFAULT_DAYS_BACK
+        reset_bulk_stop_event(operation_id)
+        try:
+            for channel_id in channel_ids:
+                if is_bulk_operation_stopped(operation_id):
+                    break
+                async with AsyncSessionLocal() as db:
+                    try:
+                        result = await db.execute(select(Channel).filter(Channel.id == channel_id))
+                        channel = result.scalar_one_or_none()
+                        if channel:
+                            await fetch_and_store_messages(db, channel, days_back=days_back, bulk_operation_id=operation_id)
+                    except Exception:
+                        pass
+                if is_bulk_operation_stopped(operation_id):
+                    break
+                async with AsyncSessionLocal() as db:
+                    try:
+                        result = await db.execute(select(Channel).filter(Channel.id == channel_id))
+                        channel = result.scalar_one_or_none()
+                        if channel:
+                            await analyze_messages(db, channel, bulk_operation_id=operation_id)
+                    except Exception:
+                        pass
+        finally:
+            cleanup_bulk_stop_event(operation_id)
 
     @app.post("/api/fetch-analyze-all")
-    async def fetch_analyze_all(db: AsyncSession = Depends(get_db)):
-        """Fetch and analyze messages from all active channels."""
-        try:
-            result = await db.execute(select(Channel).filter(Channel.is_active == True))
-            channels = result.scalars().all()
+    async def fetch_analyze_all(background_tasks: BackgroundTasks, db: AsyncSession = Depends(get_db)):
+        """Start fetch+analyze for all active channels in the background and return immediately."""
+        result = await db.execute(select(Channel).filter(Channel.is_active == True))
+        channels = result.scalars().all()
 
-            from telegram_processor.config import DEFAULT_DAYS_BACK
-            days_back = DEFAULT_DAYS_BACK
+        if not channels:
+            return {"success": True, "message": "No active channels found"}
 
-            results = []
-            for channel in channels:
-                try:
-                    fetch_result = await fetch_and_store_messages(
-                        db,
-                        channel,
-                        days_back=days_back
-                    )
-                    analyze_result = await analyze_messages(
-                        db,
-                        channel
-                    )
-                    results.append({
-                        "channel_id": channel.id,
-                        "username": channel.username,
-                        "total_new_messages": fetch_result.get("new_stored", 0),
-                        "total_jobs": analyze_result.get("jobs_found", 0)
-                    })
-                except Exception as e:
-                    results.append({
-                        "channel_id": channel.id,
-                        "username": channel.username,
-                        "error": str(e)
-                    })
-
-            return {"success": True, "results": results}
-        except Exception as e:
-            raise HTTPException(status_code=500, detail=f"Failed to search all: {str(e)}")
+        channel_ids = [c.id for c in channels]
+        import uuid
+        operation_id = f"fetch-analyze-all-{uuid.uuid4().hex[:8]}"
+        background_tasks.add_task(_run_fetch_analyze_all, channel_ids, operation_id)
+        return {"success": True, "message": f"Fetch+analyze started for {len(channel_ids)} channel(s)", "channels": len(channel_ids), "operation_id": operation_id}
 
     @app.post("/api/reanalyze")
     async def reanalyze_messages(db: AsyncSession = Depends(get_db)):
@@ -662,7 +681,7 @@ def register_action_routes(app):
         """Start the continuous scanner cron job."""
         try:
             from app.tasks import start_cron_task
-            started = start_cron_task()
+            started = await start_cron_task()
             if started:
                 return {"success": True, "message": "Cron job started"}
             else:
@@ -675,13 +694,25 @@ def register_action_routes(app):
         """Stop the continuous scanner cron job."""
         try:
             from app.tasks import stop_cron_task
-            stopped = stop_cron_task()
+            stopped = await stop_cron_task()
             if stopped:
                 return {"success": True, "message": "Cron job stopped"}
             else:
                 return {"success": False, "message": "Cron job is not running"}
         except Exception as e:
             raise HTTPException(status_code=500, detail=f"Failed to stop cron: {str(e)}")
+
+    @app.post("/api/bulk/stop")
+    async def stop_bulk_operation(operation_id: str):
+        """Stop a bulk operation (analyze-all or fetch-analyze-all)."""
+        try:
+            stop_bulk_operation(operation_id)
+            return {"success": True, "message": f"Stop signal sent for operation {operation_id}"}
+        except Exception as e:
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.error(f"Failed to stop bulk operation: {str(e)}")
+            raise HTTPException(status_code=500, detail=f"Failed to stop bulk operation: {str(e)}")
 
     @app.get("/api/cron/status")
     async def cron_status():

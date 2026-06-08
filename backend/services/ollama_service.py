@@ -24,15 +24,15 @@ async def is_ollama_available() -> bool:
 
 # ── SYSTEM PROMPT ─────────────────────────────────────────────────────────────
 # Condensed for speed — same logic, fewer tokens
-SYSTEM_PROMPT = """Telegram message classifier for remote tech job boards. English JSON only. No markdown.
+SYSTEM_PROMPT = """Telegram message classifier for remote tech job boards. Output: JSON only, no markdown, no explanation.
 
 CATEGORIES:
 - "job_posting": Software engineering role offer (frontend, backend, fullstack, devops, mobile, blockchain, smart_contract, qa, data, ml_ai, security, systems, embedded)
-- "personal_info": Software developer describing themselves or seeking work
-- "other": Non-engineering (design, marketing, HR, sales, product, ops, finance, support, admin, etc.)
+- "personal_info": Software developer (coder/programmer) describing themselves or seeking work. MUST have software engineering skills or experience.
+- "other": Non-engineering (design, marketing, HR, sales, product, ops, finance, trading, support, admin, etc.) OR job seekers without software engineering background
 
 RULES:
-- "translated_text": full English translation
+- "translated_text": Full English translation of the original message. Required for ALL categories including other. If the message is not in English, translate the FULL message to English and put it in "translated_text". If the message is already in English, copy the original text into "translated_text". Never return null for "translated_text"
 - "skills": array of individual items, never comma-separated in one string
 - Unknown fields: null (not "", not "N/A")
 - "is_remote": true=remote/wfh/anywhere mentioned; false=onsite only; null=not mentioned
@@ -45,13 +45,13 @@ CONTACT TYPES: telegram(@user or t.me/), email, linkedin, twitter, discord, wech
 OUTPUT: Only return the block matching the category.
 
 job_posting:
-{"category":"job_posting","confidence":"...","translated_text":"...","job_posting":{"title":null,"company":null,"company_link":null,"location":null,"is_remote":null,"role_type":"frontend|backend|fullstack|devops|mobile|blockchain|smart_contract|data|ml_ai|qa|security|systems|embedded|other_tech","skills":[],"contacts":[{"type":"...","value":"..."}],"summary":null}}
+{"category":"job_posting","confidence":"...","translated_text":"<REQUIRED: full English translation>","job_posting":{"title":null,"company":null,"company_link":null,"location":null,"is_remote":null,"role_type":"frontend|backend|fullstack|devops|mobile|blockchain|smart_contract|data|ml_ai|qa|security|systems|embedded|other_tech","skills":[],"contacts":[{"type":"...","value":"..."}],"summary":null}}
 
 personal_info:
-{"category":"personal_info","confidence":"...","translated_text":"...","personal_info":{"name":null,"skills":[],"experience":null,"portfolio":null,"github":null,"linkedin":null,"contacts":[{"type":"...","value":"..."}],"looking_for_work":null,"summary":null}}
+{"category":"personal_info","confidence":"...","translated_text":"<REQUIRED: full English translation>","personal_info":{"name":null,"skills":[],"experience":null,"portfolio":null,"github":null,"linkedin":null,"contacts":[{"type":"...","value":"..."}],"looking_for_work":null,"summary":null}}
 
 other:
-{"category":"other","confidence":"...","translated_text":"..."}"""
+{"category":"other","confidence":"...","translated_text":"<REQUIRED: full English translation>"}"""
 
 
 # ── PRE-FILTER ────────────────────────────────────────────────────────────────

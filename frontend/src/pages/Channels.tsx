@@ -386,12 +386,12 @@ const Channels = () => {
                             <span className={stoppingChannels[channel.username] ? 'text-orange-600 font-medium' : ''}>
                               {stoppingChannels[channel.username] ? '⚠ Stopping... (finishing current)' : 'Analyzing...'}
                             </span>
-                            <span>{channelProgress[channel.username].current}/{channelProgress[channel.username].total}</span>
+                            <span>{channelProgress[channel.username].analyzed}/{channelProgress[channel.username].total}</span>
                           </div>
                           <div className="w-full bg-gray-200 rounded-full h-2">
                             <div
                               className={`h-2 rounded-full transition-all ${stoppingChannels[channel.username] ? 'bg-orange-500' : 'bg-blue-600'}`}
-                              style={{ width: `${(channelProgress[channel.username].current / channelProgress[channel.username].total) * 100}%` }}
+                              style={{ width: `${(channelProgress[channel.username].total > 0 ? (channelProgress[channel.username].analyzed / channelProgress[channel.username].total) * 100 : 0)}%` }}
                             />
                           </div>
                           {tokenUsage[channel.username] && (
