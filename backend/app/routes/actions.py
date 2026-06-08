@@ -3,6 +3,7 @@
 from datetime import datetime
 from typing import Optional
 from fastapi import BackgroundTasks, Depends, HTTPException, Query
+from pydantic import BaseModel
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -702,12 +703,16 @@ def register_action_routes(app):
         except Exception as e:
             raise HTTPException(status_code=500, detail=f"Failed to stop cron: {str(e)}")
 
+    class BulkStopRequest(BaseModel):
+        operation_id: str
+
     @app.post("/api/bulk/stop")
-    async def stop_bulk_operation(operation_id: str):
+    async def stop_bulk_operation(request: BulkStopRequest):
         """Stop a bulk operation (analyze-all or fetch-analyze-all)."""
         try:
-            stop_bulk_operation(operation_id)
-            return {"success": True, "message": f"Stop signal sent for operation {operation_id}"}
+            from app.tasks import stop_bulk_operation as tasks_stop_bulk_operation
+            tasks_stop_bulk_operation(request.operation_id)
+            return {"success": True, "message": f"Stop signal sent for operation {request.operation_id}"}
         except Exception as e:
             import logging
             logger = logging.getLogger(__name__)

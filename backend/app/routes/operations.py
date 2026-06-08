@@ -14,25 +14,31 @@ def register_operations_routes(app):
     @app.get("/api/operations")
     async def get_operations(db: AsyncSession = Depends(get_db)):
         """Get all running and recent operations."""
+        from datetime import datetime, timedelta
+        # Get running, error, and recently stopped operations (within last 5 minutes)
+        recent_cutoff = datetime.utcnow() - timedelta(minutes=5)
         result = await db.execute(
             select(Operation)
-            .filter(Operation.status.in_(["running", "error"]))
+            .filter(
+                (Operation.status.in_(["running", "error"])) |
+                ((Operation.status == "stopped") & (Operation.completed_at >= recent_cutoff))
+            )
             .order_by(Operation.started_at.desc())
             .limit(20)
         )
         operations = result.scalars().all()
 
-        # Get unique bulk operation IDs from running operations
+        # Get unique bulk operation IDs from RUNNING operations only
         bulk_operations = {}
         for op in operations:
-            if op.bulk_operation_id and op.bulk_operation_id not in bulk_operations:
-                bulk_operations[op.bulk_operation_id] = {
-                    "id": op.bulk_operation_id,
-                    "operation_type": "bulk-analyze" if "analyze-all" in op.bulk_operation_id else "bulk-fetch-analyze",
-                    "status": "running",
-                    "channels": [],
-                }
-            if op.bulk_operation_id:
+            if op.bulk_operation_id and op.status == "running":
+                if op.bulk_operation_id not in bulk_operations:
+                    bulk_operations[op.bulk_operation_id] = {
+                        "id": op.bulk_operation_id,
+                        "operation_type": "bulk-analyze" if "analyze-all" in op.bulk_operation_id else "bulk-fetch-analyze",
+                        "status": "running",
+                        "channels": [],
+                    }
                 bulk_operations[op.bulk_operation_id]["channels"].append(op.channel_id)
 
         return {

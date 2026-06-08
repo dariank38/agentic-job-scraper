@@ -96,6 +96,7 @@ export interface TelegramAccount {
   id: number;
   api_id: number;
   phone_number: string;
+  username: string | null;
   session_name: string;
   is_active: boolean;
   is_authenticated: boolean;

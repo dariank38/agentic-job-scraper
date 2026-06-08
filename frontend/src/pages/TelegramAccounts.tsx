@@ -6,18 +6,8 @@ import { Badge } from '@/components/ui/badge';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 import { Plus, Trash2, RefreshCw, CheckCircle, XCircle, Key } from 'lucide-react';
 import api from '@/services/api';
+import type { TelegramAccount } from '@/services/api';
 import { useToast } from '@/components/Layout';
-
-interface TelegramAccount {
-  id: number;
-  api_id: number;
-  phone_number: string;
-  session_name: string;
-  is_active: boolean;
-  is_authenticated: boolean;
-  created_at: string;
-  last_used_at: string | null;
-}
 
 const TelegramAccounts = () => {
   const [accounts, setAccounts] = useState<TelegramAccount[]>([]);
@@ -246,7 +236,7 @@ const TelegramAccounts = () => {
                 <div className="flex items-start justify-between">
                   <div className="flex-1">
                     <div className="flex items-center gap-2 mb-2">
-                      <h3 className="font-semibold">{account.phone_number}</h3>
+                      <h3 className="font-semibold">{account.username ? `@${account.username}` : account.phone_number}</h3>
                       <Badge variant={account.is_active ? 'default' : 'secondary'}>
                         {account.is_active ? 'Active' : 'Inactive'}
                       </Badge>

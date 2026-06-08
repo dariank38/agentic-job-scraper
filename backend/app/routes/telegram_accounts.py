@@ -17,6 +17,7 @@ class TelegramAccountResponse(BaseModel):
     id: int
     api_id: int
     phone_number: str
+    username: Optional[str]
     session_name: str
     is_active: bool
     is_authenticated: bool
@@ -51,6 +52,7 @@ def register_telegram_account_routes(app):
                 "id": acc.id,
                 "api_id": acc.api_id,
                 "phone_number": acc.phone_number,
+                "username": acc.username,
                 "session_name": acc.session_name,
                 "is_active": acc.is_active,
                 "is_authenticated": acc.is_authenticated,
@@ -90,6 +92,7 @@ def register_telegram_account_routes(app):
             "id": new_account.id,
             "api_id": new_account.api_id,
             "phone_number": new_account.phone_number,
+            "username": new_account.username,
             "session_name": new_account.session_name,
             "is_active": new_account.is_active,
             "is_authenticated": new_account.is_authenticated,

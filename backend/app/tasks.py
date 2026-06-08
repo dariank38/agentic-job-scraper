@@ -293,7 +293,20 @@ async def fetch_and_store_messages(
         await update_operation(db, operation_id, total_messages=len(messages))
 
         new_count = 0
+        stopped_early = False
         for i, msg_data in enumerate(messages):
+            # Check if bulk operation was stopped (every 10 messages)
+            if bulk_operation_id and (i % 10 == 0) and is_bulk_operation_stopped(bulk_operation_id):
+                await broadcast_progress("fetch_progress", {
+                    "channel": channel.username,
+                    "status": "stopped",
+                    "processed": i,
+                    "total": len(messages),
+                    "operation_id": operation_id,
+                })
+                stopped_early = True
+                break
+
             try:
                 result = await db.execute(
                     select(Message).filter(
@@ -346,8 +359,9 @@ async def fetch_and_store_messages(
         channel.last_fetch_at = datetime.utcnow()
         await db.commit()
 
-        await broadcast_progress("fetch_complete", {"channel": channel.username, "new_messages": new_count, "operation_id": operation_id})
-        await update_operation(db, operation_id, status="completed")
+        status = "stopped" if stopped_early else "completed"
+        await broadcast_progress("fetch_complete", {"channel": channel.username, "new_messages": new_count, "operation_id": operation_id, "stopped": stopped_early})
+        await update_operation(db, operation_id, status=status)
 
         if run_id:
             try:
@@ -461,7 +475,8 @@ async def analyze_messages(
         logger.info(f"Analyzing {total_messages} messages in {total_batches} batches of {batch_size}")
 
         for batch_num, batch_start in enumerate(range(0, total_messages, batch_size), 1):
-            if is_analysis_stopped(channel_id):
+            # Check both individual channel stop and bulk operation stop
+            if is_analysis_stopped(channel_id) or (bulk_operation_id and is_bulk_operation_stopped(bulk_operation_id)):
                 stopped_count = total_messages - batch_start
                 break
 

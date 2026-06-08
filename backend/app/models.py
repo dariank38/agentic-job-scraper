@@ -272,6 +272,7 @@ class TelegramAccount(Base):
     api_id = Column(Integer, nullable=False)
     api_hash = Column(String, nullable=False)
     phone_number = Column(String, nullable=False, unique=True)
+    username = Column(String, nullable=True)  # Telegram username (e.g., @username)
     session_name = Column(String, nullable=False, unique=True)  # e.g., session_+1234567890
     is_active = Column(Boolean, default=True)
     is_authenticated = Column(Boolean, default=False)
@@ -280,4 +281,4 @@ class TelegramAccount(Base):
     last_used_at = Column(DateTime, nullable=True)
 
     def __repr__(self) -> str:
-        return f"<TelegramAccount {self.id} {self.phone_number}>"
+        return f"<TelegramAccount {self.id} {self.username or self.phone_number}>"
