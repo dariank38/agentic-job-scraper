@@ -99,11 +99,27 @@ def register_telegram_account_routes(app):
 
     @app.delete("/api/telegram-accounts/{account_id}")
     async def delete_telegram_account(account_id: int, db: AsyncSession = Depends(get_db)):
-        """Delete a Telegram account."""
+        """Delete a Telegram account and clean up session file."""
+        from pathlib import Path
+        from telegram_processor import TelegramClientManager
+
         result = await db.execute(select(TelegramAccount).filter(TelegramAccount.id == account_id))
         account = result.scalar_one_or_none()
         if not account:
             raise HTTPException(status_code=404, detail="Account not found")
+
+        # Clean up session file
+        try:
+            session_path = TelegramClientManager(
+                api_id=account.api_id,
+                api_hash=account.api_hash,
+                phone_number=account.phone_number,
+                session_name=account.session_name,
+            ).session_path
+            if Path(session_path).exists():
+                Path(session_path).unlink()
+        except Exception:
+            pass  # Ignore cleanup errors
 
         await db.delete(account)
         await db.commit()
@@ -143,26 +159,22 @@ def register_telegram_account_routes(app):
         # Delete existing session file if it exists to start fresh
         session_file = Path(manager.session_path)
         if session_file.exists():
-            print(f"[Auth] Deleting existing session file: {session_file}")
             session_file.unlink()
 
         # Connect without auto-start, then send code request
+        client = None
         try:
-            print(f"[Auth] Starting authentication for account {account.phone_number}")
             client = await manager.connect(auto_start=False)
-            print(f"[Auth] Client connected, sending code request to {account.phone_number}")
             result = await client.send_code_request(account.phone_number)
-            print(f"[Auth] Code request sent successfully, phone_code_hash: {result.phone_code_hash[:20]}...")
             # Store the phone_code_hash in database for verification
             account.phone_code_hash = result.phone_code_hash
             await db.commit()
-            await manager.disconnect()
-            print(f"[Auth] Client disconnected")
             return {"success": True, "message": "Code sent to your phone"}
         except Exception as e:
-            print(f"[Auth] Error during authentication: {str(e)}")
-            await manager.disconnect()
             raise HTTPException(status_code=400, detail=str(e))
+        finally:
+            if client:
+                await manager.disconnect()
 
     @app.post("/api/telegram-accounts/verify-code")
     async def verify_code(request: CodeRequest, db: AsyncSession = Depends(get_db)):
@@ -186,6 +198,7 @@ def register_telegram_account_routes(app):
             session_name=account.session_name,
         )
 
+        client = None
         try:
             client = await manager.connect(auto_start=False)
             await client.sign_in(account.phone_number, request.code, phone_code_hash=account.phone_code_hash)
@@ -193,15 +206,16 @@ def register_telegram_account_routes(app):
             account.is_authenticated = True
             account.phone_code_hash = None
             await db.commit()
-            await manager.disconnect()
             return {"success": True, "message": "Account authenticated successfully"}
         except Exception as e:
-            await manager.disconnect()
             error_msg = str(e)
             # Check for various forms of the 2FA error
             if "SessionPasswordNeededError" in error_msg or "two-steps verification" in error_msg.lower() or "password is required" in error_msg.lower():
                 return {"success": False, "needs_password": True, "message": "Two-factor authentication password required"}
             raise HTTPException(status_code=400, detail=error_msg)
+        finally:
+            if client:
+                await manager.disconnect()
 
     @app.post("/api/telegram-accounts/verify-password")
     async def verify_password(request: PasswordRequest, db: AsyncSession = Depends(get_db)):
@@ -221,15 +235,17 @@ def register_telegram_account_routes(app):
             session_name=account.session_name,
         )
 
+        client = None
         try:
             client = await manager.connect(auto_start=False)
             await client.sign_in(password=request.password)
             # Update account as authenticated
             account.is_authenticated = True
             await db.commit()
-            await manager.disconnect()
             return {"success": True, "message": "Account authenticated successfully"}
         except Exception as e:
-            await manager.disconnect()
             raise HTTPException(status_code=400, detail=str(e))
+        finally:
+            if client:
+                await manager.disconnect()
 

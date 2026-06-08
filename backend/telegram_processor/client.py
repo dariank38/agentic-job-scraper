@@ -89,7 +89,7 @@ class TelegramClientManager:
         if self._client:
             try:
                 await self._client.disconnect()
-            except Exception as e:
-                print(f"[Telegram] Warning: disconnect error (ignored): {e}")
+            except Exception:
+                pass
             finally:
                 self._client = None
