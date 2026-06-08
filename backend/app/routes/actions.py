@@ -7,7 +7,7 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.connection import get_db
-from app.models import AnalysisRun, Channel
+from app.models import AnalysisRun, Channel, Message
 from app.tasks import analyze_messages, fetch_and_store_messages
 
 
@@ -692,6 +692,42 @@ def register_action_routes(app):
             return {"success": True, "running": running}
         except Exception as e:
             raise HTTPException(status_code=500, detail=f"Failed to get cron status: {str(e)}")
+
+    @app.post("/api/cleanup/old-messages")
+    async def cleanup_old_messages(days: int = Query(30, description="Delete messages older than this many days"), db: AsyncSession = Depends(get_db)):
+        """Delete messages older than specified days (and their associated jobs). Developers are kept."""
+        try:
+            from datetime import timedelta
+            cutoff_date = datetime.utcnow() - timedelta(days=days)
+            
+            # Count messages to be deleted
+            result = await db.execute(
+                select(func.count(Message.id)).filter(Message.date < cutoff_date)
+            )
+            count = result.scalar()
+            
+            if count == 0:
+                return {"success": True, "deleted": 0, "message": "No old messages found"}
+            
+            # Delete messages (cascade will delete jobs, but not developers)
+            result = await db.execute(
+                select(Message).filter(Message.date < cutoff_date)
+            )
+            messages_to_delete = result.scalars().all()
+            
+            for msg in messages_to_delete:
+                await db.delete(msg)
+            
+            await db.commit()
+            
+            return {
+                "success": True,
+                "deleted": count,
+                "message": f"Deleted {count} messages older than {days} days (and their associated jobs)"
+            }
+        except Exception as e:
+            await db.rollback()
+            raise HTTPException(status_code=500, detail=f"Failed to cleanup old messages: {str(e)}")
 
     @app.get("/api/telegram-dialogs")
     async def get_telegram_dialogs(account_id: Optional[int] = None, db: AsyncSession = Depends(get_db)):

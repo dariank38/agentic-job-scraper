@@ -1,5 +1,13 @@
 import { useEffect, useRef, useState } from 'react';
 
+export interface MessageResult {
+  message_id: number;
+  status: 'success' | 'failed' | 'other' | 'json_cutoff';
+  category?: string;
+  confidence?: string;
+  error?: string;
+}
+
 export interface TokenUsage {
   input: number;
   output: number;
@@ -23,6 +31,7 @@ export interface ProgressUpdate {
   developers_found?: number;
   error?: string;
   tokens?: TokenUsage;
+  message_results?: MessageResult[];
 }
 
 export const useWebSocket = (url: string) => {

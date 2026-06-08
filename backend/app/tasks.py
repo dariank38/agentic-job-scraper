@@ -12,7 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.connection import AsyncSessionLocal, get_db, manager
 from app.models import AnalysisRun, Channel, Developer, Job, Message, Operation, TelegramAccount
 from telegram_processor import TelegramClientManager, fetch_messages
-from services.ollama_service import get_analyzer, is_ollama_available
+from services.ollama_service import get_analyzer, is_ollama_available, should_analyze_message
 
 logger = logging.getLogger(__name__)
 
@@ -26,7 +26,6 @@ cron_task: asyncio.Task | None = None
 
 def reset_stop_event(channel_id: int):
     """Reset stop event for a channel before starting analysis."""
-    # Clean up old events first to prevent memory leak
     cleanup_old_stop_events()
     analysis_stop_events[channel_id] = asyncio.Event()
 
@@ -52,8 +51,6 @@ def cleanup_stop_event(channel_id: int):
 
 def cleanup_old_stop_events(max_age_seconds: int = 3600):
     """Remove old stop events to prevent memory leak."""
-    # This is a safety measure - in practice, events should be cleaned up
-    # immediately after analysis completes via cleanup_stop_event()
     pass
 
 
@@ -85,7 +82,7 @@ async def broadcast_progress(event_type: str, data: dict):
     try:
         message = {"type": event_type, **data}
         await manager.broadcast(message)
-    except Exception as e:
+    except Exception:
         pass
 
 
@@ -94,7 +91,6 @@ async def create_operation(
     operation_type: str,
     channel: Channel,
 ) -> int:
-    from app.models import Operation
     operation = Operation(
         operation_type=operation_type,
         channel_id=channel.id,
@@ -120,7 +116,6 @@ async def update_operation(
     commit: bool = True,
 ):
     """Update operation progress. Use commit=False to batch updates."""
-    from app.models import Operation
     result = await db.execute(select(Operation).filter(Operation.id == operation_id))
     operation = result.scalar_one_or_none()
     if operation:
@@ -144,98 +139,61 @@ async def update_operation(
             await db.commit()
 
 
-# ── PRE-FILTER ────────────────────────────────────────────────────────────────
-# DISABLED: Pre-filtering disabled to analyze all messages with Ollama
+# ── HELPERS ───────────────────────────────────────────────────────────────────
 
-# def should_analyze_message(text: str) -> bool:
-#     text_lower = text.lower()
-#
-#     exclusion_keywords = [
-#         "marketing", "seo", "digital marketing", "growth hacker",
-#         "advertising", "dropshipping", "mlm",
-#         "crypto investment", "forex", "trading signal",
-#         "airdrop", "casino", "gambling", "betting",
-#         "medical", "healthcare", "nursing", "doctor", "pharmacist",
-#         "accountant", "accounting", "finance manager", "auditor",
-#         "graphic designer", "visual designer",
-#         "content writer", "copywriter", "journalist",
-#         "community manager", "social media manager",
-#         "community moderator",
-#         "real estate", "property agent", "construction worker",
-#         "driver", "delivery rider", "cleaning",
-#         "customer service", "customer support", "call center",
-#         "recruiter", "talent acquisition", "headhunter",
-#         "hr manager", "human resources",
-#         "product manager", "project manager",
-#         "teacher", "tutor", "professor",
-#         # Chinese
-#         "营销", "推广", "广告", "销售", "微商",
-#         "投资", "外汇", "赌博", "博彩",
-#         "医疗", "护士", "医生", "会计", "财务",
-#         "人力资源", "人事", "招聘专员", "猎头",
-#         "社群运营", "新媒体运营", "内容运营", "运营专员", "运营经理",
-#         "文案", "编辑", "平面设计", "客服",
-#         "产品经理", "项目经理", "商务",
-#         "房产", "建筑工", "司机", "快递员",
-#         "ui设计", "ux设计", "视觉设计",
-#     ]
-#
-#     for keyword in exclusion_keywords:
-#         if keyword in text_lower:
-#             return False
-#
-#     role_keywords = [
-#         "software engineer", "software developer", "software programmer",
-#         "backend", "frontend", "front-end", "front end",
-#         "fullstack", "full-stack", "full stack",
-#         "devops", "platform engineer", "site reliability", "sre",
-#         "mobile developer", "ios developer", "android developer",
-#         "ml engineer", "ai engineer", "data engineer", "data scientist",
-#         "blockchain developer", "smart contract", "web3 developer",
-#         "qa engineer", "test engineer", "automation engineer",
-#         "security engineer", "cloud engineer", "infrastructure engineer",
-#         "tech lead", "team lead", "staff engineer", "principal engineer",
-#         "solutions architect", "software architect", "cto",
-#         "junior developer", "senior developer", "junior engineer", "senior engineer",
-#         "web developer", "programmer", "coder",
-#         # Chinese roots
-#         "前端", "后端", "全栈", "运维",
-#         "移动开发", "安卓", "鸿蒙",
-#         "区块链", "智能合约",
-#         "数据工程", "算法", "机器学习", "人工智能", "大模型",
-#         "爬虫", "研发", "架构师", "技术负责人", "小程序",
-#         "测试工程",
-#     ]
-#
-#     stack_keywords = [
-#         "python", "javascript", "typescript",
-#         "golang", "rust", "java", "kotlin", "swift", "scala", "elixir",
-#         "php", "ruby", "c++", "c#",
-#         "react", "vue", "angular", "next.js", "nuxt", "svelte",
-#         "h5", "uni-app", "uniapp", "taro",
-#         "antd", "ant design", "element ui", "element plus",
-#         "webpack", "vite",
-#         "django", "flask", "fastapi", "laravel", "rails",
-#         "spring boot", "springboot", "spring cloud", "mybatis", "dubbo",
-#         "node.js", "nodejs", "express", "nestjs",
-#         "flutter", "react native",
-#         "docker", "kubernetes", "k8s", "terraform", "jenkins",
-#         "ci/cd", "cicd", "github actions",
-#         "aws", "gcp", "azure", "阿里云", "腾讯云", "华为云",
-#         "linux",
-#         "postgresql", "mongodb", "redis", "mysql", "elasticsearch",
-#         "flink", "spark", "hadoop", "kafka",
-#         "graphql", "microservices",
-#         "分布式", "高并发", "中间件",
-#         "solidity", "web3.js", "ethers.js",
-#         "llm", "rag", "langchain",
-#     ]
-#
-#     has_role = any(kw in text_lower for kw in role_keywords)
-#     has_stack = any(kw in text_lower for kw in stack_keywords)
-#
-#     # role or stack keywords indicate software development content
-#     return has_role or has_stack
+def _contacts_to_str(value) -> Optional[str]:
+    """Convert contacts array or string to a comma-separated string."""
+    if value is None:
+        return None
+    if isinstance(value, list):
+        # contacts can be list of {type, value} dicts or plain strings
+        parts = []
+        for item in value:
+            if isinstance(item, dict):
+                parts.append(item.get("value", ""))
+            else:
+                parts.append(str(item))
+        return ", ".join(p for p in parts if p) or None
+    return str(value)
+
+
+def _first_contact(value) -> Optional[str]:
+    """Return the first contact value from contacts array or string."""
+    if value is None:
+        return None
+    if isinstance(value, list):
+        for item in value:
+            if isinstance(item, dict):
+                v = item.get("value")
+                if v:
+                    return v
+            elif item:
+                return str(item)
+        return None
+    return str(value)
+
+
+def _first_contact_type(value) -> Optional[str]:
+    """Return the first contact type from contacts array."""
+    if isinstance(value, list):
+        for item in value:
+            if isinstance(item, dict):
+                t = item.get("type")
+                if t:
+                    return t
+        return None
+    if isinstance(value, str):
+        return value
+    return None
+
+
+def _to_str(value) -> Optional[str]:
+    """Convert list or value to comma-separated string."""
+    if value is None:
+        return None
+    if isinstance(value, list):
+        return ", ".join(str(v) for v in value if v) or None
+    return str(value)
 
 
 # ── FETCH ─────────────────────────────────────────────────────────────────────
@@ -335,7 +293,7 @@ async def fetch_and_store_messages(
                     })
                     await update_operation(db, operation_id, current=i + 1, total=len(messages))
 
-            except Exception as e:
+            except Exception:
                 continue
 
         await db.commit()
@@ -371,12 +329,11 @@ async def fetch_and_store_messages(
             "channel not found", "channel invalid", "username not occupied",
             "username invalid", "no such entity", "private", "forbidden",
         ]
-
         if any(err in error_msg for err in invalid_channel_errors):
             try:
                 await db.delete(channel)
                 await db.commit()
-            except Exception as delete_error:
+            except Exception:
                 await db.rollback()
             return {"success": False, "error": f"Channel removed: {str(e)}", "channel_removed": True}
 
@@ -420,7 +377,6 @@ async def analyze_messages(
         reset_stop_event(channel.id)
         await broadcast_progress("analyze_start", {"channel": channel.username, "channel_id": channel.id, "operation_id": operation_id})
 
-        # BUG FIX: Add analysis_status == "pending" filter to avoid re-analyzing skipped messages
         messages_result = await db.execute(
             select(Message).filter(
                 Message.channel_id == channel.id,
@@ -448,12 +404,12 @@ async def analyze_messages(
         batch_size = 3
         total_batches = (total_messages + batch_size - 1) // batch_size
 
-        # Token usage tracking
         total_input_tokens = 0
         total_output_tokens = 0
         total_tokens = 0
+        message_results: list[dict] = []
 
-        logger.info(f"Analyzing {total_messages} messages in {total_batches} batches of {batch_size} with stop support")
+        logger.info(f"Analyzing {total_messages} messages in {total_batches} batches of {batch_size}")
 
         for batch_num, batch_start in enumerate(range(0, total_messages, batch_size), 1):
             if is_analysis_stopped(channel.id):
@@ -462,10 +418,10 @@ async def analyze_messages(
 
             batch = messages[batch_start:batch_start + batch_size]
 
+            # Pre-filter: skip spam and empty messages
             filtered_messages = []
             for msg in batch:
-                # Pre-filtering disabled - analyze all messages with Ollama
-                if msg.text:  # and should_analyze_message(msg.text):
+                if msg.text and should_analyze_message(msg.text):
                     filtered_messages.append(msg)
                 else:
                     skipped_count += 1
@@ -480,29 +436,50 @@ async def analyze_messages(
             completed = await asyncio.gather(*tasks)
 
             for message, result, error in completed:
+                msg_status = "success"
+
                 if error:
                     skipped_count += 1
                     message.analysis_status = "skipped"
+                    msg_status = "failed"
+                    message_results.append({
+                        "message_id": message.id,
+                        "status": msg_status,
+                        "error": str(error),
+                    })
                     continue
 
                 if not result or result.get("category") == "other":
                     skipped_count += 1
                     message.analysis_status = "skipped"
+                    msg_status = "other"
+                    message_results.append({
+                        "message_id": message.id,
+                        "status": msg_status,
+                    })
                     continue
 
-                # Track token usage from this message
+                # Track token usage
                 usage = result.get("usage", {})
-                msg_input_tokens = usage.get("input_tokens", 0)
-                msg_output_tokens = usage.get("output_tokens", 0)
-                msg_total_tokens = usage.get("total_tokens", 0)
-
-                total_input_tokens += msg_input_tokens
-                total_output_tokens += msg_output_tokens
-                total_tokens += msg_total_tokens
+                total_input_tokens += usage.get("input_tokens", 0)
+                total_output_tokens += usage.get("output_tokens", 0)
+                total_tokens += usage.get("total_tokens", 0)
 
                 category = result.get("category")
                 confidence = result.get("confidence")
                 translated_text = result.get("translated_text")
+
+                if not confidence or not category:
+                    msg_status = "json_cutoff"
+                else:
+                    msg_status = "success"
+
+                message_results.append({
+                    "message_id": message.id,
+                    "status": msg_status,
+                    "category": category,
+                    "confidence": confidence,
+                })
 
                 # ── JOB POSTING ───────────────────────────────────────────────
                 if category == "job_posting":
@@ -510,6 +487,7 @@ async def analyze_messages(
 
                     is_remote = job_data.get("is_remote")
                     if is_remote is False:
+                        # On-site only — not relevant for this board
                         skipped_count += 1
                         message.analysis_status = "skipped"
                         continue
@@ -517,17 +495,12 @@ async def analyze_messages(
                     title = job_data.get("title")
                     company = job_data.get("company")
 
-                    location = job_data.get("location")
-                    if isinstance(location, list):
-                        location = ", ".join(location)
+                    location = _to_str(job_data.get("location"))
 
-                    contact = job_data.get("contact")
-                    if isinstance(contact, list):
-                        contact = ", ".join(contact)
-
-                    contact_type = job_data.get("contact_type")
-                    if isinstance(contact_type, list):
-                        contact_type = ", ".join(contact_type)
+                    # contacts: array of {type, value}
+                    contacts = job_data.get("contacts")
+                    contact = _first_contact(contacts)
+                    contact_type = _first_contact_type(contacts)
 
                     if not contact:
                         contact = message.sender_username or (str(message.sender_id) if message.sender_id else None)
@@ -575,25 +548,13 @@ async def analyze_messages(
 
                     name = pi_data.get("name")
 
-                    contact = pi_data.get("contact")
-                    if isinstance(contact, list):
-                        contact = ", ".join(contact)
+                    contacts = pi_data.get("contacts")
+                    contact = _first_contact(contacts)
+                    contact_type = _first_contact_type(contacts)
 
-                    contact_type = pi_data.get("contact_type")
-                    if isinstance(contact_type, list):
-                        contact_type = ", ".join(contact_type)
-
-                    portfolio = pi_data.get("portfolio")
-                    if isinstance(portfolio, list):
-                        portfolio = ", ".join(portfolio)
-
-                    github = pi_data.get("github")
-                    if isinstance(github, list):
-                        github = ", ".join(github)
-
-                    linkedin = pi_data.get("linkedin")
-                    if isinstance(linkedin, list):
-                        linkedin = ", ".join(linkedin)
+                    portfolio = _to_str(pi_data.get("portfolio"))
+                    github = _to_str(pi_data.get("github"))
+                    linkedin = _to_str(pi_data.get("linkedin"))
 
                     if not contact:
                         contact = message.sender_username or (str(message.sender_id) if message.sender_id else None)
@@ -659,17 +620,18 @@ async def analyze_messages(
                     "input": total_input_tokens,
                     "output": total_output_tokens,
                     "total": total_tokens,
-                }
+                },
+                "message_results": message_results[-len(filtered_messages):] if filtered_messages else [],
             })
             await update_operation(db, operation_id, current=batch_num, analyzed=analyzed_count, jobs_found=jobs_added, developers_found=devs_added)
 
         try:
             await db.commit()
-            logger.info(f"Database commit successful. Jobs found: {jobs_added}, Developers found: {devs_added}")
+            logger.info(f"Commit OK — jobs: {jobs_added}, devs: {devs_added}")
         except Exception as e:
             await db.rollback()
-            logger.error(f"Database write transaction failed: {str(e)}")
-            raise e
+            logger.error(f"DB commit failed: {e}")
+            raise
 
         if run_id:
             try:
@@ -683,7 +645,6 @@ async def analyze_messages(
                 logger.error(f"Error updating run stats: {e}")
                 await db.rollback()
 
-        stop_note = f" (stopped {stopped_count} remaining)" if stopped_count > 0 else ""
         status = "stopped" if stopped_count > 0 else "completed"
         await broadcast_progress("analyze_complete", {
             "channel": channel.username,
@@ -698,7 +659,7 @@ async def analyze_messages(
                 "input": total_input_tokens,
                 "output": total_output_tokens,
                 "total": total_tokens,
-            }
+            },
         })
         await update_operation(db, operation_id, status=status, analyzed=analyzed_count, jobs_found=jobs_added, developers_found=devs_added)
 
@@ -718,7 +679,6 @@ async def analyze_messages(
         return {"success": False, "error": str(e)}
 
     finally:
-        # Clean up stop event to prevent memory leak
         cleanup_stop_event(channel.id)
 
 
@@ -757,25 +717,21 @@ async def continuous_scanner(
                             fetch_result = await fetch_and_store_messages(db, channel, days_back=1)
                             if fetch_result["success"]:
                                 last_fetch_time[channel.id] = now
-
                                 if fetch_result["new_stored"] > 0:
                                     try:
-                                        analyze_result = await analyze_messages(db, channel)
+                                        await analyze_messages(db, channel)
                                     except Exception as e:
-                                        pass
+                                        logger.error(f"Analyze error in cron: {e}")
                         except Exception as e:
-                            pass
-                    else:
-                        mins_left = int((fetch_interval_minutes * 60 - (now - last).total_seconds()) / 60)
-                        pass
+                            logger.error(f"Fetch error in cron: {e}")
 
                 except Exception as e:
-                    pass
+                    logger.error(f"Cron inner error: {e}")
 
         except asyncio.CancelledError:
             break
         except Exception as e:
-            pass
+            logger.error(f"Cron outer error: {e}")
 
         await asyncio.sleep(sleep_interval_seconds)
 
@@ -785,8 +741,7 @@ async def continuous_scanner(
 @asynccontextmanager
 async def lifespan(app):
     """Startup and shutdown events."""
-    # Cron job no longer starts automatically - must be started manually via API
     try:
         yield
     finally:
-        stop_cron_task()  # Clean up on app shutdown
+        stop_cron_task()

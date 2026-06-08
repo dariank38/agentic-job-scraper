@@ -328,6 +328,26 @@ const api = {
     return response.json();
   },
 
+  cleanupOldMessages: async (days: number = 30): Promise<any> => {
+    const response = await fetch(`${API_BASE}/api/cleanup/old-messages?days=${days}`, { method: 'POST' });
+    return response.json();
+  },
+
+  getDailyJobs: async (days: number = 30): Promise<any> => {
+    const response = await fetch(`${API_BASE}/api/daily-jobs?days=${days}`);
+    return response.json();
+  },
+
+  getDailyDevelopersContacted: async (days: number = 30): Promise<any> => {
+    const response = await fetch(`${API_BASE}/api/daily-developers-contacted?days=${days}`);
+    return response.json();
+  },
+
+  getDailyJobsApplied: async (days: number = 30): Promise<any> => {
+    const response = await fetch(`${API_BASE}/api/daily-jobs-applied?days=${days}`);
+    return response.json();
+  },
+
   getOperations: async (): Promise<any> => {
     const response = await fetch(`${API_BASE}/api/operations`);
     return response.json();

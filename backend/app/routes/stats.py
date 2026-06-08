@@ -1,6 +1,7 @@
 """Stats-related API routes."""
 
-from fastapi import Depends
+from datetime import datetime, timedelta
+from fastapi import Depends, Query
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -132,3 +133,75 @@ def register_stats_routes(app):
             ],
             "pending_by_channel": pending_by_channel,
         }
+
+    @app.get("/api/daily-jobs")
+    async def api_daily_jobs(
+        days: int = Query(30, description="Number of days to include"),
+        db: AsyncSession = Depends(get_db),
+    ):
+        """Get daily job postings count by channel for the last N days."""
+        cutoff_date = datetime.utcnow() - timedelta(days=days)
+
+        result = await db.execute(
+            select(
+                func.date(Message.date).label('date'),
+                Channel.username.label('channel'),
+                func.count(Job.id).label('count')
+            )
+            .join(Job, Job.message_id == Message.id)
+            .join(Channel, Channel.id == Job.channel_id)
+            .filter(Message.date >= cutoff_date)
+            .group_by(func.date(Message.date), Channel.username)
+            .order_by(func.date(Message.date).desc())
+        )
+
+        data = {}
+        for row in result.all():
+            date_str = str(row.date)
+            if date_str not in data:
+                data[date_str] = {}
+            data[date_str][row.channel] = row.count
+
+        return {"data": data, "days": days}
+
+    @app.get("/api/daily-developers-contacted")
+    async def api_daily_developers_contacted(
+        days: int = Query(30, description="Number of days to include"),
+        db: AsyncSession = Depends(get_db),
+    ):
+        """Get daily developers contacted count for the last N days."""
+        cutoff_date = datetime.utcnow() - timedelta(days=days)
+
+        result = await db.execute(
+            select(
+                func.date(Developer.contacted_at).label('date'),
+                func.count(Developer.id).label('count')
+            )
+            .filter(Developer.is_contacted == True, Developer.contacted_at >= cutoff_date)
+            .group_by(func.date(Developer.contacted_at))
+            .order_by(func.date(Developer.contacted_at).desc())
+        )
+
+        data = {str(row.date): row.count for row in result.all()}
+        return {"data": data, "days": days}
+
+    @app.get("/api/daily-jobs-applied")
+    async def api_daily_jobs_applied(
+        days: int = Query(30, description="Number of days to include"),
+        db: AsyncSession = Depends(get_db),
+    ):
+        """Get daily jobs applied count for the last N days."""
+        cutoff_date = datetime.utcnow() - timedelta(days=days)
+
+        result = await db.execute(
+            select(
+                func.date(Job.applied_at).label('date'),
+                func.count(Job.id).label('count')
+            )
+            .filter(Job.is_applied == True, Job.applied_at >= cutoff_date)
+            .group_by(func.date(Job.applied_at))
+            .order_by(func.date(Job.applied_at).desc())
+        )
+
+        data = {str(row.date): row.count for row in result.all()}
+        return {"data": data, "days": days}

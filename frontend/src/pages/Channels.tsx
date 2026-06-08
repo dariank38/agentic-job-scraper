@@ -32,7 +32,7 @@ const Channels = () => {
   const [selectedAccountId, setSelectedAccountId] = useState<number | null>(null);
   const limit = 10;
   const offset = parseInt(searchParams.get('offset') || '0');
-  const { progress: wsProgress, channelProgress, operations, stoppingChannels, tokenUsage, requestStop } = useWebSocketProgress();
+  const { progress: wsProgress, channelProgress, operations, stoppingChannels, tokenUsage, messageResults, requestStop } = useWebSocketProgress();
 
   useEffect(() => {
     if (wsProgress && (wsProgress.type === 'analyze_complete' || wsProgress.type === 'error' || wsProgress.type === 'fetch_complete')) {
@@ -398,6 +398,16 @@ const Channels = () => {
                             <div className="flex justify-between text-xs mt-1 text-gray-500">
                               <span>🤖 {(tokenUsage[channel.username].total / 1000).toFixed(1)}k tokens</span>
                               <span>⬆{(tokenUsage[channel.username].input / 1000).toFixed(1)}k ⬇{(tokenUsage[channel.username].output / 1000).toFixed(1)}k</span>
+                            </div>
+                          )}
+                          {messageResults[channel.username] && messageResults[channel.username].length > 0 && (
+                            <div className="mt-2 text-xs">
+                              <div className="flex gap-2 text-gray-500">
+                                <span>✓ {messageResults[channel.username].filter((r: any) => r.status === 'success').length}</span>
+                                <span className="text-orange-500">⚠ {messageResults[channel.username].filter((r: any) => r.status === 'json_cutoff').length}</span>
+                                <span className="text-red-500">✗ {messageResults[channel.username].filter((r: any) => r.status === 'failed').length}</span>
+                                <span className="text-gray-400">○ {messageResults[channel.username].filter((r: any) => r.status === 'other').length}</span>
+                              </div>
                             </div>
                           )}
                         </div>

@@ -5,14 +5,17 @@ An automated job scraping system that fetches software development job postings 
 ## Features
 
 - **Automated Fetching**: Continuously monitors Telegram channels for new job postings
-- **AI-Powered Analysis**: Uses Ollama (Mistral) to analyze messages and extract job/developer information
+- **AI-Powered Analysis**: Uses Ollama (qwen2.5 recommended) to analyze messages and extract job/developer information
 - **Real-time Progress**: WebSocket-based progress tracking for analysis operations
 - **Token Usage Monitoring**: Real-time token usage tracking for Ollama API calls
 - **Stop Analysis**: Gracefully stop ongoing analysis operations with visual feedback
 - **Concurrent Processing**: Batch processing with configurable concurrency for faster analysis
+- **Per-Message Status**: Visual indicators for each analyzed message (success, JSON cutoff, failed, other)
+- **Analytics Dashboard**: Daily charts for job postings by channel, developers contacted, and jobs applied
+- **Message Cleanup**: Remove messages older than N days (associated jobs deleted, developers preserved)
 - **Modern UI**: Clean, responsive interface built with React, TypeScript, and shadcn/ui
 - **Multi-language Support**: Analyzes job postings in multiple languages (English, Chinese, etc.)
-- **Smart Filtering**: Automatically filters out non-software-development content
+- **Smart Filtering**: Spam pre-filter before sending to Ollama for faster processing
 - **Remote Jobs Focus**: Prioritizes remote/work-from-home opportunities
 - **Multi-Account Support**: Manage multiple Telegram accounts dynamically through the UI with interactive authentication
 
@@ -335,10 +338,12 @@ Now the frontend will connect to your backend through the ngrok tunnel.
 3. **Fetch Messages**: Click "Fetch" to retrieve recent messages from channels
 4. **Analyze**: Click "Analyze" to process messages with AI and extract job/developer info
 5. **Stop Analysis**: Click "Stop" to gracefully stop an ongoing analysis operation (shows "Stopping..." state)
-6. **Monitor Progress**: View real-time progress including token usage (🤖 X.Xk tokens, ⬆input ⬇output)
+6. **Monitor Progress**: View real-time progress including token usage and per-message status (success/cutoff/failed)
 7. **View Results**: Browse Jobs and Developers pages to see extracted information
 8. **Track Progress**: Use the status indicators to mark jobs as applied or developers as contacted
 9. **Continuous Scanning**: Enable the cron job for automatic periodic fetching
+10. **Analytics**: View daily charts on the Dashboard for job postings by channel, developers contacted, and jobs applied
+11. **Cleanup**: Use "Cleanup Old Messages" in Quick Actions to remove messages older than N days
 
 ## API Endpoints
 
@@ -376,6 +381,12 @@ Now the frontend will connect to your backend through the ngrok tunnel.
 - `POST /api/stop-analyze?channel_id={id}` - Stop ongoing analysis for a channel
 - `POST /api/cron/start` - Start continuous scanner
 - `POST /api/cron/stop` - Stop continuous scanner
+- `POST /api/cleanup/old-messages?days={n}` - Delete messages older than N days (jobs deleted, developers kept)
+
+### Analytics
+- `GET /api/daily-jobs?days={n}` - Daily job postings by channel (last N days)
+- `GET /api/daily-developers-contacted?days={n}` - Daily developers contacted (last N days)
+- `GET /api/daily-jobs-applied?days={n}` - Daily jobs applied (last N days)
 
 ### WebSocket
 - `WS /ws/progress` - Real-time progress updates
@@ -434,18 +445,20 @@ The application supports managing multiple Telegram accounts through the web UI 
 Get your API credentials from [my.telegram.org/apps](https://my.telegram.org/apps). You can create multiple applications if needed for different accounts.
 
 ### Ollama Configuration
-- Default model: `mistral` (or `qwen2.5:7b-instruct-q4_K_M` recommended)
+- Recommended model: `qwen2.5:7b-instruct-q4_K_M`
 - Can be configured to use remote Ollama instance
 - Supports GPU acceleration for faster processing
 - Concurrent processing with semaphore (default: 3 concurrent requests)
 - Batch processing (default: 3 messages per batch)
 - Real-time token usage tracking (input/output/total tokens)
+- Spam pre-filter (`should_analyze_message`) skips obvious non-tech messages before Ollama
 - Configure via `OLLAMA_BASE_URL` and `OLLAMA_MODEL` in `.env`
 - Advanced options in `ollama_service.py`:
   - `num_predict`: Maximum tokens to generate (default: 2048)
   - `num_ctx`: Context window size (default: 2048)
-  - `num_gpu`: GPU layers to offload (default: 99)
-  - `keep_alive`: Keep model in memory (default: -1)
+  - `num_gpu`: GPU layers to offload (default: 99, full GPU offload)
+  - `keep_alive`: Keep model in memory (default: -1, indefinitely)
+  - `timeout`: Request timeout (default: 120s)
 
 ### Database
 - PostgreSQL with async support
@@ -465,6 +478,11 @@ psql -U your_username -d job_scraper -f backend/migrations/add_telegram_accounts
 **Add Phone Code Hash Column:**
 ```bash
 psql -U your_username -d job_scraper -f backend/migrations/add_phone_code_hash.sql
+```
+
+**Make developer.message_id nullable (required for message cleanup feature):**
+```bash
+psql -U your_username -d job_scraper -f backend/migrations/make_developer_message_id_nullable.sql
 ```
 
 Or run all migrations at once:

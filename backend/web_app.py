@@ -30,11 +30,18 @@ register_api_routes(app)
 # Mount static files from frontend build
 frontend_dist = Path(__file__).parent.parent / "frontend" / "dist"
 if frontend_dist.exists():
-    app.mount("/static", StaticFiles(directory=str(frontend_dist)), name="static")
+    # Mount only the assets directory (JS/CSS bundles)
+    assets_dir = frontend_dist / "assets"
+    if assets_dir.exists():
+        app.mount("/assets", StaticFiles(directory=str(assets_dir)), name="assets")
 
-    # Serve index.html for all other routes (SPA support)
+    # Serve index.html for SPA routes (non-API paths only)
     @app.get("/{path:path}")
     async def serve_frontend(path: str):
+        # Never intercept API or WebSocket routes
+        if path.startswith("api/") or path.startswith("ws/"):
+            from fastapi import HTTPException
+            raise HTTPException(status_code=404, detail="Not found")
         file_path = frontend_dist / path
         if file_path.exists() and file_path.is_file():
             return FileResponse(str(file_path))

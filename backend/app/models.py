@@ -82,7 +82,7 @@ class Message(Base):
 
     # Relationships
     channel = relationship("Channel", back_populates="messages")
-    job = relationship("Job", back_populates="message", uselist=False)
+    job = relationship("Job", back_populates="message", uselist=False, cascade="all, delete-orphan")
     developer = relationship("Developer", back_populates="message", uselist=False)
 
     def __repr__(self) -> str:
@@ -182,7 +182,7 @@ class Developer(Base):
     __tablename__ = "developers"
 
     id = Column(Integer, primary_key=True)
-    message_id = Column(Integer, ForeignKey("messages.id"), unique=True, nullable=False)
+    message_id = Column(Integer, ForeignKey("messages.id"), unique=True, nullable=True)
     channel_id = Column(Integer, ForeignKey("channels.id"), nullable=False)
 
     # AI Analysis results

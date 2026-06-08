@@ -42,6 +42,7 @@ interface WebSocketProgressContextType {
   operations: Record<string, { type: string; status: string }>;
   stoppingChannels: Record<string, boolean>;
   tokenUsage: Record<string, { input: number; output: number; total: number }>;
+  messageResults: Record<string, any[]>;
   requestStop: (channelId: number, channelUsername: string) => void;
 }
 
@@ -93,6 +94,7 @@ const WebSocketProgressProvider = ({ children }: { children: React.ReactNode }) 
   const [operations, setOperations] = useState<Record<string, { type: string; status: string }>>({});
   const [stoppingChannels, setStoppingChannels] = useState<Record<string, boolean>>({});
   const [tokenUsage, setTokenUsage] = useState<Record<string, { input: number; output: number; total: number }>>({});
+  const [messageResults, setMessageResults] = useState<Record<string, any[]>>({});
   const wsRef = useRef<WebSocket | null>(null);
   const pollIntervalRef = useRef<number | null>(null);
 
@@ -235,6 +237,13 @@ const WebSocketProgressProvider = ({ children }: { children: React.ReactNode }) 
                   [channel]: data.tokens!
                 }));
               }
+              // Update message results
+              if (data.message_results && data.message_results.length > 0) {
+                setMessageResults(prev => ({
+                  ...prev,
+                  [channel]: [...(prev[channel] || []), ...data.message_results!]
+                }));
+              }
             } else if (channel && (data.type === 'analyze_complete' || data.type === 'fetch_complete' || data.type === 'error')) {
               // End operation - also clear stopping state
               setOperations(prev => {
@@ -257,6 +266,12 @@ const WebSocketProgressProvider = ({ children }: { children: React.ReactNode }) 
                 const newTokens = { ...prev };
                 delete newTokens[channel];
                 return newTokens;
+              });
+              // Clear message results for completed channel
+              setMessageResults(prev => {
+                const newResults = { ...prev };
+                delete newResults[channel];
+                return newResults;
               });
             }
           } catch (e) {
@@ -288,7 +303,7 @@ const WebSocketProgressProvider = ({ children }: { children: React.ReactNode }) 
   }, []);
 
   return (
-    <WebSocketProgressContext.Provider value={{ progress, isConnected, channelProgress, operations, stoppingChannels, tokenUsage, requestStop }}>
+    <WebSocketProgressContext.Provider value={{ progress, isConnected, channelProgress, operations, stoppingChannels, tokenUsage, messageResults, requestStop }}>
       {children}
     </WebSocketProgressContext.Provider>
   );

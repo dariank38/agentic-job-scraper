@@ -5,6 +5,10 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Separator } from '@/components/ui/separator';
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { DailyJobsChart } from '@/components/DailyJobsChart';
+import { DailyDevelopersChart } from '@/components/DailyDevelopersChart';
+import { DailyJobsAppliedChart } from '@/components/DailyJobsAppliedChart';
 import {
   MessageSquare,
   Clock,
@@ -18,6 +22,7 @@ import {
   RefreshCw,
   Play,
   Square,
+  Trash2,
   RotateCcw,
   ChevronRight,
   Loader2,
@@ -36,10 +41,12 @@ const Dashboard = () => {
   const [initialLoading, setInitialLoading] = useState(true);
   const [total, setTotal] = useState(0);
   const [searchParams, setSearchParams] = useSearchParams();
+  const [cleanupDialogOpen, setCleanupDialogOpen] = useState(false);
+  const [cleanupDays, setCleanupDays] = useState(30);
   const limit = 10;
   const offset = parseInt(searchParams.get('offset') || '0');
 
-  const { progress: wsProgress, channelProgress, operations, stoppingChannels, tokenUsage, requestStop } = useWebSocketProgress();
+  const { progress: wsProgress, channelProgress, operations, stoppingChannels, tokenUsage, messageResults, requestStop } = useWebSocketProgress();
 
   useEffect(() => {
     if (wsProgress && (wsProgress.type === 'analyze_complete' || wsProgress.type === 'error' || wsProgress.type === 'fetch_complete')) {
@@ -227,6 +234,24 @@ const Dashboard = () => {
     }
   };
 
+  const cleanupOldMessages = async () => {
+    if (!confirm(`Delete messages older than ${cleanupDays} days?\n\nThis will also delete associated jobs, but developers will be kept.`)) {
+      return;
+    }
+    try {
+      const data = await withLoading('cleanup', () => api.cleanupOldMessages(cleanupDays));
+      if (data.success) {
+        showToast('success', data.message || `Deleted ${data.deleted} messages`);
+        loadData();
+        setCleanupDialogOpen(false);
+      } else {
+        showToast('error', 'Error: ' + (data.message || 'Unknown'));
+      }
+    } catch (e: any) {
+      showToast('error', 'Error: ' + e.message);
+    }
+  };
+
   const fetchAnalyzeAll = async () => {
     try {
       // Check if Ollama is available before attempting analysis (fetch-analyze includes analysis)
@@ -300,6 +325,43 @@ const Dashboard = () => {
 
   return (
     <div className="space-y-6">
+      {/* Analytics Charts */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        <Card>
+          <CardHeader className="px-4 py-3 pb-2">
+            <CardTitle className="text-sm flex items-center gap-2">
+              <Briefcase size={14} className="text-blue-500" />
+              Daily Job Postings
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="px-4 pb-4 pt-0">
+            <DailyJobsChart days={30} />
+          </CardContent>
+        </Card>
+        <Card>
+          <CardHeader className="px-4 py-3 pb-2">
+            <CardTitle className="text-sm flex items-center gap-2">
+              <Users size={14} className="text-purple-500" />
+              Developers Contacted
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="px-4 pb-4 pt-0">
+            <DailyDevelopersChart days={30} />
+          </CardContent>
+        </Card>
+        <Card>
+          <CardHeader className="px-4 py-3 pb-2">
+            <CardTitle className="text-sm flex items-center gap-2">
+              <CheckCircle2 size={14} className="text-green-500" />
+              Jobs Applied
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="px-4 pb-4 pt-0">
+            <DailyJobsAppliedChart days={30} />
+          </CardContent>
+        </Card>
+      </div>
+
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         {/* Left Sidebar */}
         <div className="lg:col-span-1 space-y-4">
@@ -413,7 +475,16 @@ const Dashboard = () => {
                     disabled={loadingActions.has('reanalyze')}
                   >
                     <RefreshCw size={14} className="mr-2" />
-                    {loadingActions.has('reanalyze') ? 'Re-analyzing...' : 'Re-analyze Queued'}
+                    {loadingActions.has('reanalyze') ? 'Re-analyzing...' : 'Re-analyze All'}
+                  </Button>
+                  <Button
+                    className="w-full justify-start"
+                    variant="destructive"
+                    onClick={() => setCleanupDialogOpen(true)}
+                    disabled={loadingActions.has('cleanup')}
+                  >
+                    <Trash2 size={14} className="mr-2" />
+                    {loadingActions.has('cleanup') ? 'Cleaning...' : 'Cleanup Old Messages'}
                   </Button>
                 </div>
               </div>
@@ -486,6 +557,16 @@ const Dashboard = () => {
                                 <div className="flex justify-between text-xs mt-1 text-gray-500">
                                   <span>🤖 {(tokenUsage[channel.username].total / 1000).toFixed(1)}k tokens</span>
                                   <span>⬆{(tokenUsage[channel.username].input / 1000).toFixed(1)}k ⬇{(tokenUsage[channel.username].output / 1000).toFixed(1)}k</span>
+                                </div>
+                              )}
+                              {messageResults[channel.username] && messageResults[channel.username].length > 0 && (
+                                <div className="mt-2 text-xs">
+                                  <div className="flex gap-2 text-gray-500">
+                                    <span>✓ {messageResults[channel.username].filter((r: any) => r.status === 'success').length}</span>
+                                    <span className="text-orange-500">⚠ {messageResults[channel.username].filter((r: any) => r.status === 'json_cutoff').length}</span>
+                                    <span className="text-red-500">✗ {messageResults[channel.username].filter((r: any) => r.status === 'failed').length}</span>
+                                    <span className="text-gray-400">○ {messageResults[channel.username].filter((r: any) => r.status === 'other').length}</span>
+                                  </div>
                                 </div>
                               )}
                             </div>
@@ -565,6 +646,38 @@ const Dashboard = () => {
           </Card>
         </div>
       </div>
+
+      {/* Cleanup Confirmation Dialog */}
+      <Dialog open={cleanupDialogOpen} onOpenChange={setCleanupDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Cleanup Old Messages</DialogTitle>
+            <DialogDescription>
+              Delete messages older than {cleanupDays} days. This will also delete associated jobs, but developers will be kept.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div>
+              <label className="text-sm font-medium">Days to keep</label>
+              <input
+                type="number"
+                min="1"
+                value={cleanupDays}
+                onChange={(e) => setCleanupDays(parseInt(e.target.value) || 30)}
+                className="w-full mt-1 px-3 py-2 border rounded-md"
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setCleanupDialogOpen(false)}>
+              Cancel
+            </Button>
+            <Button variant="destructive" onClick={cleanupOldMessages} disabled={loadingActions.has('cleanup')}>
+              {loadingActions.has('cleanup') ? 'Cleaning...' : 'Delete Messages'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 };
