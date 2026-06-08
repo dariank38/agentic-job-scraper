@@ -1,5 +1,6 @@
 """Action-related API routes (fetch, analyze, search)."""
 
+import logging
 from datetime import datetime
 from typing import Optional
 from fastapi import BackgroundTasks, Depends, HTTPException, Query
@@ -8,7 +9,9 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.connection import get_db, AsyncSessionLocal
-from app.models import AnalysisRun, Channel, Message
+
+logger = logging.getLogger(__name__)
+from app.models import AnalysisRun, Channel, Message, Operation
 from app.tasks import analyze_messages, fetch_and_store_messages, reset_bulk_stop_event, is_bulk_operation_stopped, cleanup_bulk_stop_event, stop_bulk_operation
 
 
@@ -47,14 +50,33 @@ def register_action_routes(app):
 
     async def _analyze_channel_bg(channel_id: int):
         """Background task: analyze a single channel with its own DB session."""
+        logger.info(f"[BG TASK] Starting analysis for channel {channel_id}")
+        channel_name = None
         async with AsyncSessionLocal() as db:
             try:
                 result = await db.execute(select(Channel).filter(Channel.id == channel_id))
                 channel = result.scalar_one_or_none()
                 if channel:
-                    await analyze_messages(db, channel)
-            except Exception:
-                pass  # Silently handle errors in background
+                    channel_name = channel.username or channel.name or f"ID:{channel_id}"
+                    logger.info(f"[BG TASK] Analyzing channel @{channel_name} (ID: {channel_id})")
+                    analyze_result = await analyze_messages(db, channel)
+                    # Check result outside the try block to avoid session issues
+                    success = analyze_result.get("success", False)
+                    jobs = analyze_result.get("jobs_found", 0)
+                    devs = analyze_result.get("developers_found", 0)
+                    error = analyze_result.get("error", "unknown")
+                else:
+                    logger.warning(f"[BG TASK] Channel {channel_id} not found")
+                    return
+            except Exception as e:
+                logger.error(f"[BG TASK] Exception during analysis for channel {channel_id}: {e}", exc_info=True)
+                return
+        
+        # Log results outside async with block (session already closed)
+        if success:
+            logger.info(f"[BG TASK] Completed analysis for @{channel_name}: {jobs} jobs, {devs} devs")
+        else:
+            logger.warning(f"[BG TASK] Analysis failed for @{channel_name}: {error}")
 
     @app.post("/api/analyze/{channel_id}")
     async def analyze_channel(channel_id: int, background_tasks: BackgroundTasks, db: AsyncSession = Depends(get_db)):
@@ -76,6 +98,17 @@ def register_action_routes(app):
 
             if pending_count == 0:
                 return {"success": True, "message": "No pending messages to analyze", "analyzed": 0}
+
+            # Check if analyze already running for this channel
+            existing_op = await db.execute(
+                select(Operation).filter(
+                    Operation.channel_id == channel_id,
+                    Operation.operation_type == "analyze",
+                    Operation.status == "running"
+                )
+            )
+            if existing_op.scalar_one_or_none():
+                return {"success": False, "message": "Analysis already running for this channel"}
 
             # Start analysis in background
             background_tasks.add_task(_analyze_channel_bg, channel_id)
@@ -164,32 +197,51 @@ def register_action_routes(app):
 
     async def _run_analyze_all(channel_ids: list, operation_id: str):
         """Background task: analyze each channel sequentially, each with its own DB session."""
+        logger.info(f"[BULK ANALYZE] Starting operation {operation_id} for {len(channel_ids)} channels")
         reset_bulk_stop_event(operation_id)
+        success_count = 0
+        error_count = 0
         try:
-            for channel_id in channel_ids:
+            for idx, channel_id in enumerate(channel_ids):
                 if is_bulk_operation_stopped(operation_id):
+                    logger.info(f"[BULK ANALYZE] Operation {operation_id} stopped by user at channel {idx+1}/{len(channel_ids)}")
                     break
                 async with AsyncSessionLocal() as db:
                     try:
                         result = await db.execute(select(Channel).filter(Channel.id == channel_id))
                         channel = result.scalar_one_or_none()
                         if channel:
-                            await analyze_messages(db, channel, bulk_operation_id=operation_id)
-                    except Exception:
-                        pass
+                            logger.info(f"[BULK ANALYZE] {operation_id} | Channel {idx+1}/{len(channel_ids)}: @{channel.username}")
+                            analyze_result = await analyze_messages(db, channel, bulk_operation_id=operation_id)
+                            if analyze_result.get("success"):
+                                success_count += 1
+                                logger.info(f"[BULK ANALYZE] ✓ @{channel.username} complete: {analyze_result.get('jobs_found', 0)} jobs")
+                            else:
+                                error_count += 1
+                                logger.warning(f"[BULK ANALYZE] ✗ @{channel.username} failed: {analyze_result.get('error', 'unknown')}")
+                        else:
+                            logger.warning(f"[BULK ANALYZE] Channel {channel_id} not found")
+                    except Exception as e:
+                        error_count += 1
+                        logger.error(f"[BULK ANALYZE] Exception in channel {channel_id}: {e}", exc_info=True)
+            logger.info(f"[BULK ANALYZE] Operation {operation_id} complete: {success_count} success, {error_count} errors")
         finally:
             cleanup_bulk_stop_event(operation_id)
 
     @app.post("/api/analyze-all")
     async def analyze_all(background_tasks: BackgroundTasks, db: AsyncSession = Depends(get_db)):
-        """Start analysis for all active channels in the background and return immediately."""
-        result = await db.execute(select(Channel).filter(Channel.is_active == True))
-        channels = result.scalars().all()
+        """Start analysis for channels with pending messages in the background and return immediately."""
+        # Find channels that have pending messages to analyze
+        channels_result = await db.execute(
+            select(Channel.id)
+            .join(Message, Message.channel_id == Channel.id)
+            .filter(Message.analysis_status == "pending")
+            .group_by(Channel.id)
+        )
+        channel_ids = [row[0] for row in channels_result.all()]
 
-        if not channels:
-            return {"success": True, "message": "No active channels found"}
-
-        channel_ids = [c.id for c in channels]
+        if not channel_ids:
+            return {"success": True, "message": "No channels with pending messages found"}
         import uuid
         operation_id = f"analyze-all-{uuid.uuid4().hex[:8]}"
         background_tasks.add_task(_run_analyze_all, channel_ids, operation_id)
@@ -199,29 +251,60 @@ def register_action_routes(app):
         """Background task: fetch and analyze each channel sequentially, each with its own DB session."""
         from telegram_processor.config import DEFAULT_DAYS_BACK
         days_back = DEFAULT_DAYS_BACK
+        logger.info(f"[BULK FETCH+ANALYZE] Starting operation {operation_id} for {len(channel_ids)} channels")
         reset_bulk_stop_event(operation_id)
+        fetch_success = 0
+        fetch_error = 0
+        analyze_success = 0
+        analyze_error = 0
         try:
-            for channel_id in channel_ids:
+            for idx, channel_id in enumerate(channel_ids):
                 if is_bulk_operation_stopped(operation_id):
+                    logger.info(f"[BULK FETCH+ANALYZE] Operation {operation_id} stopped by user at channel {idx+1}/{len(channel_ids)}")
                     break
+                # Fetch phase
                 async with AsyncSessionLocal() as db:
                     try:
                         result = await db.execute(select(Channel).filter(Channel.id == channel_id))
                         channel = result.scalar_one_or_none()
                         if channel:
-                            await fetch_and_store_messages(db, channel, days_back=days_back, bulk_operation_id=operation_id)
-                    except Exception:
-                        pass
+                            logger.info(f"[BULK FETCH+ANALYZE] {operation_id} | Fetch {idx+1}/{len(channel_ids)}: @{channel.username}")
+                            fetch_result = await fetch_and_store_messages(db, channel, days_back=days_back, bulk_operation_id=operation_id)
+                            if fetch_result.get("success"):
+                                fetch_success += 1
+                                logger.info(f"[BULK FETCH+ANALYZE] ✓ Fetch @{channel.username}: {fetch_result.get('new_stored', 0)} new messages")
+                            else:
+                                fetch_error += 1
+                                logger.warning(f"[BULK FETCH+ANALYZE] ✗ Fetch @{channel.username} failed: {fetch_result.get('error', 'unknown')}")
+                        else:
+                            logger.warning(f"[BULK FETCH+ANALYZE] Channel {channel_id} not found for fetch")
+                    except Exception as e:
+                        fetch_error += 1
+                        logger.error(f"[BULK FETCH+ANALYZE] Fetch exception for channel {channel_id}: {e}", exc_info=True)
+                # Check stop signal again before analyze
                 if is_bulk_operation_stopped(operation_id):
+                    logger.info(f"[BULK FETCH+ANALYZE] Operation {operation_id} stopped before analyze phase")
                     break
+                # Analyze phase
                 async with AsyncSessionLocal() as db:
                     try:
                         result = await db.execute(select(Channel).filter(Channel.id == channel_id))
                         channel = result.scalar_one_or_none()
                         if channel:
-                            await analyze_messages(db, channel, bulk_operation_id=operation_id)
-                    except Exception:
-                        pass
+                            logger.info(f"[BULK FETCH+ANALYZE] {operation_id} | Analyze {idx+1}/{len(channel_ids)}: @{channel.username}")
+                            analyze_result = await analyze_messages(db, channel, bulk_operation_id=operation_id)
+                            if analyze_result.get("success"):
+                                analyze_success += 1
+                                logger.info(f"[BULK FETCH+ANALYZE] ✓ Analyze @{channel.username}: {analyze_result.get('jobs_found', 0)} jobs")
+                            else:
+                                analyze_error += 1
+                                logger.warning(f"[BULK FETCH+ANALYZE] ✗ Analyze @{channel.username} failed: {analyze_result.get('error', 'unknown')}")
+                        else:
+                            logger.warning(f"[BULK FETCH+ANALYZE] Channel {channel_id} not found for analyze")
+                    except Exception as e:
+                        analyze_error += 1
+                        logger.error(f"[BULK FETCH+ANALYZE] Analyze exception for channel {channel_id}: {e}", exc_info=True)
+            logger.info(f"[BULK FETCH+ANALYZE] Operation {operation_id} complete: fetch({fetch_success}✓ {fetch_error}✗) analyze({analyze_success}✓ {analyze_error}✗)")
         finally:
             cleanup_bulk_stop_event(operation_id)
 
@@ -709,14 +792,16 @@ def register_action_routes(app):
     @app.post("/api/bulk/stop")
     async def stop_bulk_operation(request: BulkStopRequest):
         """Stop a bulk operation (analyze-all or fetch-analyze-all)."""
+        import logging
+        logger = logging.getLogger(__name__)
         try:
+            logger.info(f"[BULK STOP] Received stop request for operation: {request.operation_id}")
             from app.tasks import stop_bulk_operation as tasks_stop_bulk_operation
             tasks_stop_bulk_operation(request.operation_id)
+            logger.info(f"[BULK STOP] Stop signal set for operation: {request.operation_id}")
             return {"success": True, "message": f"Stop signal sent for operation {request.operation_id}"}
         except Exception as e:
-            import logging
-            logger = logging.getLogger(__name__)
-            logger.error(f"Failed to stop bulk operation: {str(e)}")
+            logger.error(f"[BULK STOP] Failed to stop bulk operation {request.operation_id}: {str(e)}")
             raise HTTPException(status_code=500, detail=f"Failed to stop bulk operation: {str(e)}")
 
     @app.get("/api/cron/status")

@@ -55,13 +55,21 @@ def cleanup_stop_event(channel_id: int):
 
 def reset_bulk_stop_event(operation_id: str):
     """Reset stop event for a bulk operation."""
+    import logging
+    logger = logging.getLogger(__name__)
     bulk_stop_events[operation_id] = asyncio.Event()
+    logger.info(f"[STOP EVENT] Bulk operation {operation_id} - Reset/stop event created")
 
 
 def stop_bulk_operation(operation_id: str):
     """Signal bulk operation to stop."""
+    import logging
+    logger = logging.getLogger(__name__)
     if operation_id in bulk_stop_events:
         bulk_stop_events[operation_id].set()
+        logger.info(f"[STOP SIGNAL] Bulk operation {operation_id} - STOP event set")
+    else:
+        logger.warning(f"[STOP SIGNAL] Bulk operation {operation_id} - no stop event found in memory (already finished or not started?)")
 
 
 def is_bulk_operation_stopped(operation_id: str) -> bool:
@@ -69,7 +77,12 @@ def is_bulk_operation_stopped(operation_id: str) -> bool:
     event = bulk_stop_events.get(operation_id)
     if event is None:
         return False
-    return event.is_set()
+    is_stopped = event.is_set()
+    if is_stopped:
+        import logging
+        logger = logging.getLogger(__name__)
+        logger.info(f"[STOP CHECK] Bulk operation {operation_id} - STOP detected")
+    return is_stopped
 
 
 def cleanup_bulk_stop_event(operation_id: str):
@@ -159,6 +172,7 @@ async def update_operation(
     result = await db.execute(select(Operation).filter(Operation.id == operation_id))
     operation = result.scalar_one_or_none()
     if operation:
+        old_analyzed = operation.analyzed
         if status is not None:
             operation.status = status
         if current is not None:
@@ -179,6 +193,9 @@ async def update_operation(
             operation.completed_at = datetime.utcnow()
         if commit:
             await db.commit()
+            logger.info(f"[DB UPDATE] Op:{operation_id} | analyzed:{old_analyzed}->{analyzed} | status:{status} | commit:OK")
+    else:
+        logger.warning(f"[DB UPDATE] Op:{operation_id} - Operation not found!")
 
 
 # ── HELPERS ───────────────────────────────────────────────────────────────────
@@ -276,6 +293,7 @@ async def fetch_and_store_messages(
     )
 
     operation_id = await create_operation(db, "fetch", channel, bulk_operation_id=bulk_operation_id)
+    logger.info(f"[FETCH START] Channel: {channel.username} | Days: {days_back} | BulkOp: {bulk_operation_id or 'none'}")
 
     try:
         await broadcast_progress("fetch_start", {"channel": channel.username, "days_back": days_back, "operation_id": operation_id})
@@ -288,6 +306,7 @@ async def fetch_and_store_messages(
             days_back=days_back,
         )
         await broadcast_progress("fetch_progress", {"channel": channel.username, "status": "fetched", "count": len(messages), "operation_id": operation_id})
+        logger.info(f"[FETCH FETCHED] Channel: {channel.username} | Messages to store: {len(messages)}")
 
         # Update operation with total messages count
         await update_operation(db, operation_id, total_messages=len(messages))
@@ -360,6 +379,7 @@ async def fetch_and_store_messages(
         await db.commit()
 
         status = "stopped" if stopped_early else "completed"
+        logger.info(f"[FETCH COMPLETE] Channel: {channel.username} | Status: {status} | New messages: {new_count} | Total processed: {i+1 if 'i' in locals() else 0}")
         await broadcast_progress("fetch_complete", {"channel": channel.username, "new_messages": new_count, "operation_id": operation_id, "stopped": stopped_early})
         await update_operation(db, operation_id, status=status)
 
@@ -382,6 +402,14 @@ async def fetch_and_store_messages(
     except Exception as e:
         await db.rollback()
         await update_operation(db, operation_id, status="error", error_message=str(e))
+        # Broadcast error to frontend so it clears the UI
+        await broadcast_progress("error", {
+            "channel": channel_username,
+            "channel_id": channel_id,
+            "operation_id": operation_id,
+            "error": str(e),
+        })
+        logger.error(f"[FETCH ERROR] Channel: {channel_username} | Error: {e}")
         error_msg = str(e).lower()
         invalid_channel_errors = [
             "channel not found", "channel invalid", "username not occupied",
@@ -406,17 +434,28 @@ async def fetch_and_store_messages(
 
 # ── ANALYZE ───────────────────────────────────────────────────────────────────
 
-async def _analyze_single(analyzer, message):
+async def _analyze_single(analyzer, message, channel_username: str):
     """Analyze a single message, returning (message, result, error)."""
+    import time
+    start_time = time.time()
+    msg_preview = message.text[:50] if message.text else "[no text]"
+    logger.info(f"[ANALYZE MSG START] Channel: {channel_username} | Msg: {msg_preview}...")
+    
     try:
         result = await asyncio.wait_for(
             analyzer.analyze_message(message.text),
-            timeout=120,
+            timeout=60,  # Reduced from 120 to 60 seconds
         )
+        elapsed = time.time() - start_time
+        logger.info(f"[ANALYZE MSG DONE] Channel: {channel_username} | Msg: {msg_preview}... | Time: {elapsed:.1f}s | Result: {result.get('category') if result else 'none'}")
         return message, result, None
     except asyncio.TimeoutError:
-        return message, None, Exception("Analysis timeout")
+        elapsed = time.time() - start_time
+        logger.warning(f"[ANALYZE MSG TIMEOUT] Channel: {channel_username} | Msg: {msg_preview}... | Time: {elapsed:.1f}s")
+        return message, None, Exception(f"Analysis timeout after 60s")
     except Exception as e:
+        elapsed = time.time() - start_time
+        logger.error(f"[ANALYZE MSG ERROR] Channel: {channel_username} | Msg: {msg_preview}... | Time: {elapsed:.1f}s | Error: {e}")
         return message, None, e
 
 
@@ -472,13 +511,30 @@ async def analyze_messages(
         total_output_tokens = 0
         message_results: list[dict] = []
 
-        logger.info(f"Analyzing {total_messages} messages in {total_batches} batches of {batch_size}")
+        # Circuit breaker: stop after too many consecutive batch failures
+        consecutive_failures = 0
+        max_consecutive_failures = 5
+
+        logger.info(f"[ANALYZE START] Channel: {channel_username} | Messages: {total_messages} | Batches: {total_batches} | BulkOp: {bulk_operation_id or 'none'}")
 
         for batch_num, batch_start in enumerate(range(0, total_messages, batch_size), 1):
             # Check both individual channel stop and bulk operation stop
-            if is_analysis_stopped(channel_id) or (bulk_operation_id and is_bulk_operation_stopped(bulk_operation_id)):
+            if is_analysis_stopped(channel_id):
+                logger.info(f"[ANALYZE STOP] Channel: {channel_username} - Individual stop signal received")
                 stopped_count = total_messages - batch_start
                 break
+            if bulk_operation_id and is_bulk_operation_stopped(bulk_operation_id):
+                logger.info(f"[ANALYZE STOP] Channel: {channel_username} - Bulk stop signal received for {bulk_operation_id}")
+                stopped_count = total_messages - batch_start
+                break
+
+            # Circuit breaker: stop if too many consecutive failures
+            if consecutive_failures >= max_consecutive_failures:
+                logger.error(f"[ANALYZE CIRCUIT BREAKER] Channel: {channel_username} - Stopping after {consecutive_failures} consecutive batch failures")
+                stopped_count = total_messages - batch_start
+                break
+
+            logger.info(f"[ANALYZE BATCH] Channel: {channel_username} | Batch {batch_num}/{total_batches} | Messages {batch_start}-{min(batch_start+batch_size, total_messages)}")
 
             batch = messages[batch_start:batch_start + batch_size]
 
@@ -496,7 +552,7 @@ async def analyze_messages(
                 await update_operation(db, operation_id, current=batch_num)
                 continue
 
-            tasks = [_analyze_single(analyzer, msg) for msg in filtered_messages]
+            tasks = [_analyze_single(analyzer, msg, channel_username) for msg in filtered_messages]
             completed = await asyncio.gather(*tasks)
 
             for message, result, error in completed:
@@ -528,9 +584,9 @@ async def analyze_messages(
                 total_input_tokens += usage.get("input_tokens", 0)
                 total_output_tokens += usage.get("output_tokens", 0)
 
-                category = result.get("category")
-                confidence = result.get("confidence")
-                translated_text = result.get("translated_text")
+                category = _to_str(result.get("category"))
+                confidence = _to_str(result.get("confidence"))
+                translated_text = _to_str(result.get("translated_text"))
 
                 if not confidence or not category:
                     msg_status = "json_cutoff"
@@ -555,8 +611,8 @@ async def analyze_messages(
                         message.analysis_status = "skipped"
                         continue
 
-                    title = job_data.get("title")
-                    company = job_data.get("company")
+                    title = _to_str(job_data.get("title"))
+                    company = _to_str(job_data.get("company"))
 
                     location = _to_str(job_data.get("location"))
                     contact, contact_type = _resolve_contact(job_data.get("contacts"), message)
@@ -576,32 +632,42 @@ async def analyze_messages(
                             message.analysis_status = "skipped"
                             continue
 
-                    job = Job(
-                        message_id=message.id,
-                        channel_id=channel_id,
-                        channel_name=channel_name,
-                        confidence=confidence,
-                        translated_text=translated_text,
-                        title=title,
-                        company=company,
-                        company_link=job_data.get("company_link"),
-                        location=location,
-                        is_remote=is_remote,
-                        role_type=job_data.get("role_type"),
-                        skills=job_data.get("skills", []),
-                        contact=contact,
-                        contact_type=contact_type,
-                        summary=job_data.get("summary"),
-                    )
-                    db.add(job)
-                    jobs_added += 1
-                    message.analysis_status = "analyzed"
+                    # Fix: role_type might be a list from Ollama, convert to string
+                    role_str = _to_str(job_data.get("role_type"))
+
+                    try:
+                        job = Job(
+                            message_id=message.id,
+                            channel_id=channel_id,
+                            channel_name=channel_name,
+                            confidence=confidence,
+                            translated_text=translated_text,
+                            title=title,
+                            company=company,
+                            company_link=_to_str(job_data.get("company_link")),
+                            location=location,
+                            is_remote=is_remote,
+                            role_type=role_str,
+                            skills=job_data.get("skills", []),
+                            contact=contact,
+                            contact_type=contact_type,
+                            summary=_to_str(job_data.get("summary")),
+                        )
+                        db.add(job)
+                        jobs_added += 1
+                        message.analysis_status = "analyzed"
+                    except Exception as e:
+                        logger.error(f"[DB ERROR] Failed to save job for msg {message.id}: {e}")
+                        skipped_count += 1
+                        message.analysis_status = "skipped"
+                        message_results[-1]["status"] = "db_error"
+                        message_results[-1]["error"] = str(e)
 
                 # ── PERSONAL INFO ─────────────────────────────────────────────
                 elif category == "personal_info":
                     pi_data = result.get("personal_info") or {}
 
-                    name = pi_data.get("name")
+                    name = _to_str(pi_data.get("name"))
                     contact, contact_type = _resolve_contact(pi_data.get("contacts"), message)
 
                     portfolio = _to_str(pi_data.get("portfolio"))
@@ -629,25 +695,39 @@ async def analyze_messages(
                                 message.analysis_status = "skipped"
                                 continue
 
-                    developer = Developer(
-                        message_id=message.id,
-                        channel_id=channel_id,
-                        confidence=confidence,
-                        translated_text=translated_text,
-                        name=name,
-                        skills=pi_data.get("skills", []),
-                        experience=pi_data.get("experience"),
-                        portfolio=portfolio,
-                        github=github,
-                        linkedin=linkedin,
-                        contact=contact,
-                        contact_type=contact_type,
-                        looking_for_work=pi_data.get("looking_for_work"),
-                        summary=pi_data.get("summary"),
-                    )
-                    db.add(developer)
-                    devs_added += 1
-                    message.analysis_status = "analyzed"
+                    # Fix: experience might be a list from Ollama, convert to string with newlines
+                    exp_val = pi_data.get("experience")
+                    if isinstance(exp_val, list):
+                        exp_str = "\n".join(str(item) for item in exp_val)
+                    else:
+                        exp_str = str(exp_val) if exp_val else None
+
+                    try:
+                        developer = Developer(
+                            message_id=message.id,
+                            channel_id=channel_id,
+                            confidence=confidence,
+                            translated_text=translated_text,
+                            name=name,
+                            skills=pi_data.get("skills", []),
+                            experience=exp_str,
+                            portfolio=portfolio,
+                            github=github,
+                            linkedin=linkedin,
+                            contact=contact,
+                            contact_type=contact_type,
+                            looking_for_work=pi_data.get("looking_for_work"),
+                            summary=_to_str(pi_data.get("summary")),
+                        )
+                        db.add(developer)
+                        devs_added += 1
+                        message.analysis_status = "analyzed"
+                    except Exception as e:
+                        logger.error(f"[DB ERROR] Failed to save developer for msg {message.id}: {e}")
+                        skipped_count += 1
+                        message.analysis_status = "skipped"
+                        message_results[-1]["status"] = "db_error"
+                        message_results[-1]["error"] = str(e)
 
                 else:
                     skipped_count += 1
@@ -656,6 +736,15 @@ async def analyze_messages(
                 analyzed_count += 1
 
             batch_message_results = message_results[-len(filtered_messages):] if filtered_messages else []
+            
+            # Determine if this batch succeeded (at least one message processed without error)
+            batch_has_errors = any(r.get("status") in ["failed", "db_error"] for r in batch_message_results)
+            if batch_has_errors:
+                consecutive_failures += 1
+                logger.warning(f"[ANALYZE BATCH ERROR] Channel: {channel_username} | Batch {batch_num} had errors | Consecutive failures: {consecutive_failures}")
+            else:
+                consecutive_failures = 0  # Reset on success
+            
             await broadcast_progress("analyze_progress", {
                 "channel": channel_username,
                 "channel_id": channel_id,
@@ -673,15 +762,37 @@ async def analyze_messages(
                 },
                 "message_results": batch_message_results,
             })
-            await update_operation(db, operation_id, current=batch_num, analyzed=analyzed_count, jobs_found=jobs_added, developers_found=devs_added)
+            
+            # Update operation progress
+            try:
+                await update_operation(db, operation_id, current=batch_num, analyzed=analyzed_count, jobs_found=jobs_added, developers_found=devs_added)
+            except Exception as e:
+                logger.warning(f"[ANALYZE] Failed to update operation progress: {e}")
+            
+            # Commit after each batch to save progress (with error recovery)
+            try:
+                await db.commit()
+            except Exception as e:
+                logger.error(f"[ANALYZE BATCH COMMIT ERROR] Channel: {channel_username} | Batch {batch_num} commit failed: {e}")
+                await db.rollback()
+                # Continue anyway - next batch will try again
 
         try:
             await db.commit()
             logger.info(f"Commit OK — jobs: {jobs_added}, devs: {devs_added}")
         except Exception as e:
             await db.rollback()
-            logger.error(f"DB commit failed: {e}")
-            raise
+            logger.error(f"[ANALYZE COMMIT ERROR] Channel: {channel_username} | DB commit failed: {e}")
+            # Don't raise - return partial success instead
+            return {
+                "success": True,  # Partial success - some messages were processed
+                "jobs_found": jobs_added,
+                "developers_found": devs_added,
+                "analyzed": analyzed_count,
+                "stopped": stopped_count > 0,
+                "remaining": stopped_count,
+                "warning": f"Commit failed: {str(e)[:100]}",
+            }
 
         if run_id:
             try:
@@ -696,6 +807,7 @@ async def analyze_messages(
                 await db.rollback()
 
         status = "stopped" if stopped_count > 0 else "completed"
+        logger.info(f"[ANALYZE COMPLETE] Channel: {channel_username} | Status: {status} | Analyzed: {analyzed_count} | Jobs: {jobs_added} | Devs: {devs_added} | Stopped: {stopped_count > 0}")
         await broadcast_progress("analyze_complete", {
             "channel": channel_username,
             "channel_id": channel_id,
@@ -726,6 +838,14 @@ async def analyze_messages(
     except Exception as e:
         await db.rollback()
         await update_operation(db, operation_id, status="error", error_message=str(e))
+        # Broadcast error to frontend so it clears the UI
+        await broadcast_progress("error", {
+            "channel": channel_username,
+            "channel_id": channel_id,
+            "operation_id": operation_id,
+            "error": str(e),
+        })
+        logger.error(f"[ANALYZE ERROR] Channel: {channel_username} | Error: {e}")
         return {"success": False, "error": str(e)}
 
     finally:

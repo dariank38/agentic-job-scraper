@@ -17,6 +17,8 @@ def register_operations_routes(app):
         from datetime import datetime, timedelta
         # Get running, error, and recently stopped operations (within last 5 minutes)
         recent_cutoff = datetime.utcnow() - timedelta(minutes=5)
+        # Force fresh data from database (not cached)
+        db.expire_all()
         result = await db.execute(
             select(Operation)
             .filter(
@@ -64,6 +66,68 @@ def register_operations_routes(app):
             ],
             "bulk_operations": list(bulk_operations.values()),
         }
+
+    @app.get("/api/operations/all")
+    async def get_all_operations(db: AsyncSession = Depends(get_db)):
+        """Get ALL operations (including completed) for debugging."""
+        result = await db.execute(
+            select(Operation)
+            .order_by(Operation.started_at.desc())
+            .limit(50)
+        )
+        operations = result.scalars().all()
+        return {
+            "operations": [
+                {
+                    "id": op.id,
+                    "operation_type": op.operation_type,
+                    "channel_id": op.channel_id,
+                    "channel_username": op.channel_username,
+                    "status": op.status,
+                    "current": op.current,
+                    "total": op.total,
+                    "analyzed": op.analyzed,
+                    "jobs_found": op.jobs_found,
+                    "started_at": op.started_at.isoformat() if op.started_at else None,
+                    "completed_at": op.completed_at.isoformat() if op.completed_at else None,
+                }
+                for op in operations
+            ],
+            "summary": {
+                "running": len([o for o in operations if o.status == "running"]),
+                "completed": len([o for o in operations if o.status == "completed"]),
+                "stopped": len([o for o in operations if o.status == "stopped"]),
+                "error": len([o for o in operations if o.status == "error"]),
+            }
+        }
+
+    @app.post("/api/operations/cleanup")
+    async def cleanup_stuck_operations(db: AsyncSession = Depends(get_db)):
+        """Mark old 'running' operations as 'error' - use when backend restarted."""
+        from datetime import datetime, timedelta
+        import logging
+        logger = logging.getLogger(__name__)
+        
+        # Find operations running for more than 10 minutes
+        stale_cutoff = datetime.utcnow() - timedelta(minutes=10)
+        result = await db.execute(
+            select(Operation).filter(
+                (Operation.status == "running") &
+                (Operation.started_at < stale_cutoff)
+            )
+        )
+        stuck_ops = result.scalars().all()
+        
+        fixed_count = 0
+        for op in stuck_ops:
+            op.status = "error"
+            op.error_message = "Marked as error - backend restart detected"
+            op.completed_at = datetime.utcnow()
+            fixed_count += 1
+            logger.info(f"[CLEANUP] Fixed stuck operation {op.id} for channel {op.channel_username}")
+        
+        await db.commit()
+        return {"fixed": fixed_count, "operations": [op.id for op in stuck_ops]}
 
     @app.get("/api/operations/{operation_id}")
     async def get_operation(operation_id: int, db: AsyncSession = Depends(get_db)):

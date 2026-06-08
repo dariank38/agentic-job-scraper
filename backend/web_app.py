@@ -1,5 +1,27 @@
 """FastAPI API application for job scraper."""
 
+import logging
+import sys
+from pathlib import Path
+
+# Configure logging at startup to show INFO level logs
+log_file = Path(__file__).parent / "app.log"
+
+# Fix Windows console encoding for Chinese characters
+if sys.platform == 'win32':
+    import io
+    sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8')
+
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    handlers=[
+        logging.StreamHandler(sys.stdout),
+        logging.FileHandler(str(log_file), mode='a', encoding='utf-8')
+    ]
+)
+logging.info(f"Logging to file: {log_file}")
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles

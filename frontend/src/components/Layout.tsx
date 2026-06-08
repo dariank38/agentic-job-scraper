@@ -110,7 +110,13 @@ const WebSocketProgressProvider = ({ children }: { children: React.ReactNode }) 
       try {
         const api = (await import('../services/api')).default;
         const data = await api.getOperations();
+        console.log(`[POLL] Operations: ${data.operations?.length || 0}, BulkOps: ${data.bulk_operations?.length || 0}`);
         if (data.operations && data.operations.length > 0) {
+          data.operations.forEach((op: any) => {
+            if (op.status === 'running') {
+              console.log(`[POLL] Running: ${op.channel_username} | ${op.operation_type} | ${op.analyzed}/${op.total_messages}`);
+            }
+          });
           // Build operations state from running database operations
           const newOperations: Record<string, { type: string; status: string }> = {};
           data.operations.forEach((op: any) => {
@@ -123,6 +129,7 @@ const WebSocketProgressProvider = ({ children }: { children: React.ReactNode }) 
 
           // Update bulk operations from API
           if (data.bulk_operations && data.bulk_operations.length > 0) {
+            console.log(`[POLL] BulkOps active:`, data.bulk_operations.map((b: any) => b.id));
             setBulkOperations(data.bulk_operations);
           } else {
             setBulkOperations([]);
@@ -142,6 +149,7 @@ const WebSocketProgressProvider = ({ children }: { children: React.ReactNode }) 
           });
         } else {
           // No running operations, clear all
+          console.log('[POLL] No running operations, clearing state');
           setOperations({});
           setBulkOperations([]);
           setChannelProgress({});
@@ -217,6 +225,7 @@ const WebSocketProgressProvider = ({ children }: { children: React.ReactNode }) 
         ws.onmessage = (event) => {
           try {
             const data = JSON.parse(event.data) as ProgressUpdate;
+            console.log(`[WS ${data.type}] Channel: ${data.channel || 'N/A'}`, data);
             setProgress(data);
 
             // Update channel progress and operations

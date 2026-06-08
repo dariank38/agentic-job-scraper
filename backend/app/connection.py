@@ -1,5 +1,6 @@
 """Database connection and session management."""
 
+import logging
 import os
 from typing import Set
 from fastapi import WebSocket
@@ -7,6 +8,8 @@ from fastapi import WebSocket
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 from telegram_processor.config import DATABASE_URL
+
+logger = logging.getLogger(__name__)
 
 # Validate DATABASE_URL
 if not DATABASE_URL:
@@ -38,20 +41,38 @@ class ConnectionManager:
         self.active_connections: Set[WebSocket] = set()
 
     async def connect(self, websocket: WebSocket):
-        await websocket.accept()
-        self.active_connections.add(websocket)
+        """Accept a new WebSocket connection."""
+        try:
+            await websocket.accept()
+            self.active_connections.add(websocket)
+            logger.info(f"[WS] Client connected. Total: {len(self.active_connections)}")
+        except Exception as e:
+            logger.error(f"[WS] Error accepting connection: {e}")
 
     def disconnect(self, websocket: WebSocket):
+        """Remove a WebSocket connection."""
         self.active_connections.discard(websocket)
+        logger.info(f"[WS] Client disconnected. Total: {len(self.active_connections)}")
 
     async def broadcast(self, message: dict):
         """Broadcast a message to all connected clients."""
         import json
+        dead_connections = set()
+        
         for connection in self.active_connections:
             try:
                 await connection.send_json(message)
-            except Exception:
-                self.active_connections.discard(connection)
+            except Exception as e:
+                # Mark dead connections for removal
+                dead_connections.add(connection)
+                logger.debug(f"[WS] Failed to send to client: {e}")
+        
+        # Clean up dead connections
+        for dead in dead_connections:
+            self.active_connections.discard(dead)
+        
+        if dead_connections:
+            logger.info(f"[WS] Removed {len(dead_connections)} dead connections. Total: {len(self.active_connections)}")
 
 
 manager = ConnectionManager()

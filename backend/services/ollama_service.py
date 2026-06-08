@@ -16,7 +16,7 @@ logger = logging.getLogger(__name__)
 async def is_ollama_available() -> bool:
     try:
         client = AsyncClient(host=OLLAMA_BASE_URL)
-        await client.list()
+        await asyncio.wait_for(client.list(), timeout=5)
         return True
     except Exception:
         return False
@@ -84,6 +84,7 @@ class AsyncOllamaAnalyzer:
         self.semaphore = asyncio.Semaphore(max_concurrent)
 
     async def analyze_message(self, message_text: str) -> dict[str, Any]:
+        import time
         if not should_analyze_message(message_text):
             return {
                 "category": "other",
@@ -92,8 +93,15 @@ class AsyncOllamaAnalyzer:
 
         # Trim to 2000 chars, collapse whitespace
         clean_text = " ".join(message_text.split())[:2000]
+        msg_preview = clean_text[:50]
 
+        # Track semaphore wait time
+        wait_start = time.time()
+        logger.info(f"[OLLAMA] Waiting for semaphore | Msg: {msg_preview}... | Semaphore: {self.semaphore._value if hasattr(self.semaphore, '_value') else 'N/A'}")
+        
         async with self.semaphore:
+            wait_elapsed = time.time() - wait_start
+            logger.info(f"[OLLAMA] Acquired semaphore | Msg: {msg_preview}... | Wait time: {wait_elapsed:.1f}s")
             try:
                 response = await asyncio.wait_for(
                     self.client.generate(
@@ -134,16 +142,21 @@ class AsyncOllamaAnalyzer:
 
                 result = self._parse_json(response_text)
                 result["usage"] = usage
+                total_elapsed = time.time() - wait_start
+                logger.info(f"[OLLAMA] Success | Msg: {msg_preview}... | Category: {result.get('category', 'unknown')} | Total time: {total_elapsed:.1f}s | Tokens: {usage['total_tokens']}")
                 return result
 
             except asyncio.TimeoutError:
-                logger.error("[Ollama] Request timed out at 120s.")
-                raise ValueError("Ollama request timed out")
+                elapsed = time.time() - wait_start
+                logger.error(f"[OLLAMA] TIMEOUT | Msg: {msg_preview}... | Total time: {elapsed:.1f}s")
+                raise ValueError("Ollama request timed out after 120s")
             except json.JSONDecodeError as e:
-                logger.error(f"[Ollama] JSON parse failed: {e}")
+                elapsed = time.time() - wait_start
+                logger.error(f"[OLLAMA] JSON ERROR | Msg: {msg_preview}... | Time: {elapsed:.1f}s | Error: {e}")
                 raise ValueError(f"JSON parse failed: {e}")
             except Exception as e:
-                logger.error(f"[Ollama] Error: {e}")
+                elapsed = time.time() - wait_start
+                logger.error(f"[OLLAMA] ERROR | Msg: {msg_preview}... | Time: {elapsed:.1f}s | Error: {e}")
                 raise
 
     @staticmethod

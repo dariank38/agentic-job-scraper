@@ -1,10 +1,11 @@
 """Telegram message fetcher with FloodWait handling."""
 
 import asyncio
+import logging
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
-from telethon.errors import FloodWaitError
+from telethon.errors import FloodWaitError, ChannelInvalidError, ChannelPrivateError, UsernameNotOccupiedError
 from telethon import TelegramClient
 from telethon.tl.types import User, Channel, MessageMediaPhoto
 
@@ -12,6 +13,8 @@ from telegram_processor.config import (
     DEFAULT_BATCH_SIZE,
     DEFAULT_BATCH_DELAY,
 )
+
+logger = logging.getLogger(__name__)
 
 
 async def _get_sender_info(
@@ -134,12 +137,21 @@ async def fetch_messages(
 
     except FloodWaitError as e:
         wait_time = e.seconds
-        print(f"FloodWaitError: waiting {wait_time} seconds before resuming from id={last_id}...")
+        logger.warning(f"[FETCH] FloodWaitError for {channel_username}: waiting {wait_time}s, resuming from id={last_id}")
         await asyncio.sleep(wait_time)
         return messages + await fetch_messages(
             client, channel_username, days_back, batch_size, batch_delay,
             _offset_id=last_id,
         )
+    except (ChannelInvalidError, UsernameNotOccupiedError) as e:
+        logger.error(f"[FETCH] Channel {channel_username} invalid or not found: {e}")
+        return messages  # Return what we got so far
+    except ChannelPrivateError as e:
+        logger.error(f"[FETCH] Channel {channel_username} is private/forbidden: {e}")
+        return messages  # Return what we got so far
+    except Exception as e:
+        logger.error(f"[FETCH] Unexpected error fetching {channel_username}: {e}", exc_info=True)
+        return messages  # Return what we got so far instead of crashing
 
     return messages
 
@@ -155,16 +167,23 @@ async def get_dialogs(client: TelegramClient) -> list[dict[str, Any]]:
     """
     dialogs = []
 
-    async for dialog in client.iter_dialogs():
-        if dialog.is_channel or dialog.is_group:
-            entity = dialog.entity
-            # Use dialog.name which works for both channels and groups
-            name = dialog.name or getattr(entity, "title", None) or str(entity.id)
-            dialogs.append({
-                "id": entity.id,
-                "username": getattr(entity, "username", None),
-                "name": name,
-                "type": "channel" if dialog.is_channel else "group",
-            })
+    try:
+        async for dialog in client.iter_dialogs():
+            try:
+                if dialog.is_channel or dialog.is_group:
+                    entity = dialog.entity
+                    # Use dialog.name which works for both channels and groups
+                    name = dialog.name or getattr(entity, "title", None) or str(entity.id)
+                    dialogs.append({
+                        "id": entity.id,
+                        "username": getattr(entity, "username", None),
+                        "name": name,
+                        "type": "channel" if dialog.is_channel else "group",
+                    })
+            except Exception as e:
+                logger.warning(f"[DIALOGS] Error processing dialog: {e}")
+                continue  # Skip problematic dialogs
+    except Exception as e:
+        logger.error(f"[DIALOGS] Error fetching dialogs: {e}", exc_info=True)
 
     return dialogs
