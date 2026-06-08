@@ -8,3 +8,9 @@ python-multipart
 websockets
 ollama
 fastapi
+playwright
+httpx
+beautifulsoup4
+trafilatura
+feedparser
+pydantic

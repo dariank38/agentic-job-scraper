@@ -104,6 +104,16 @@ export interface TelegramAccount {
   last_used_at: string | null;
 }
 
+export interface WebsiteSource {
+  id: number;
+  name: string;
+  url: string;
+  site_type: string;
+  is_active: boolean;
+  last_fetch_new_count: number;
+  last_fetch_at: string | null;
+}
+
 const api = {
   // Stats
   getStats: async (): Promise<Stats> => {
@@ -365,6 +375,55 @@ const api = {
 
   getOperation: async (operationId: number): Promise<any> => {
     const response = await fetch(`${API_BASE}/api/operations/${operationId}`);
+    return response.json();
+  },
+
+  // Website Sources
+  getWebsiteSources: async (): Promise<{ success: boolean; sources: WebsiteSource[] }> => {
+    const response = await fetch(`${API_BASE}/api/website-sources`);
+    return response.json();
+  },
+
+  addWebsiteSource: async (formData: FormData): Promise<any> => {
+    const response = await fetch(`${API_BASE}/api/website-sources`, {
+      method: 'POST',
+      body: formData,
+    });
+    return response.json();
+  },
+
+  deleteWebsiteSource: async (id: number): Promise<any> => {
+    const response = await fetch(`${API_BASE}/api/website-sources/${id}`, { method: 'DELETE' });
+    return response.json();
+  },
+
+  fetchWebsiteSource: async (id: number, days_back: number = 0): Promise<any> => {
+    const formData = new FormData();
+    formData.append('days_back', days_back.toString());
+    const response = await fetch(`${API_BASE}/api/website-sources/${id}/fetch`, {
+      method: 'POST',
+      body: formData,
+    });
+    return response.json();
+  },
+
+  fetchAllWebsiteSources: async (days_back: number = 0): Promise<any> => {
+    const formData = new FormData();
+    formData.append('days_back', days_back.toString());
+    const response = await fetch(`${API_BASE}/api/website-sources/fetch-all`, {
+      method: 'POST',
+      body: formData,
+    });
+    return response.json();
+  },
+
+  analyzeWebsiteSource: async (id: number): Promise<any> => {
+    const response = await fetch(`${API_BASE}/api/website-sources/${id}/analyze`, { method: 'POST' });
+    return response.json();
+  },
+
+  analyzeAllWebsiteSources: async (): Promise<any> => {
+    const response = await fetch(`${API_BASE}/api/website-sources/analyze-all`, { method: 'POST' });
     return response.json();
   },
 };
