@@ -7,7 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.connection import get_db
-from app.models import Job
+from app.models import Job, Message
 
 
 def register_job_routes(app):
@@ -40,10 +40,11 @@ def register_job_routes(app):
         total = total_result.scalar()
 
         # Get jobs with pagination, eagerly load message and channel
+        # Order by message date (when posted on Telegram) for most recent first
         jobs_query = query.options(
             selectinload(Job.message),
             selectinload(Job.channel)
-        ).order_by(Job.analyzed_at.desc()).offset(offset).limit(limit)
+        ).join(Job.message).order_by(Message.date.desc()).offset(offset).limit(limit)
         jobs_result = await db.execute(jobs_query)
         jobs = jobs_result.scalars().all()
 

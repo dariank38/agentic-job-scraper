@@ -25,13 +25,13 @@ import {
 } from 'lucide-react';
 import api from '@/services/api';
 import type { Channel, Stats } from '@/services/api';
-import { useWebSocketProgress } from '@/components/Layout';
+import { useWebSocketProgress, useToast } from '@/components/Layout';
 
 const Dashboard = () => {
   const [stats, setStats] = useState<Stats | null>(null);
   const [channels, setChannels] = useState<Channel[]>([]);
-  const [status, setStatus] = useState<{ message: string; isError: boolean } | null>(null);
   const [loadingActions, setLoadingActions] = useState<Set<string>>(new Set());
+  const { showToast } = useToast();
   const [cronRunning, setCronRunning] = useState(false);
   const [initialLoading, setInitialLoading] = useState(true);
   const [total, setTotal] = useState(0);
@@ -39,7 +39,7 @@ const Dashboard = () => {
   const limit = 10;
   const offset = parseInt(searchParams.get('offset') || '0');
 
-  const { progress: wsProgress, channelProgress, operations } = useWebSocketProgress();
+  const { progress: wsProgress, channelProgress, operations, stoppingChannels, tokenUsage, requestStop } = useWebSocketProgress();
 
   useEffect(() => {
     if (wsProgress && (wsProgress.type === 'analyze_complete' || wsProgress.type === 'error' || wsProgress.type === 'fetch_complete')) {
@@ -82,10 +82,6 @@ const Dashboard = () => {
     setSearchParams({ offset: newOffset.toString() });
   };
 
-  const showStatus = (message: string, isError = false) => {
-    setStatus({ message, isError });
-    setTimeout(() => setStatus(null), 5000);
-  };
 
   const withLoading = async <T,>(
     actionKey: string,
@@ -107,13 +103,13 @@ const Dashboard = () => {
     try {
       const data = await withLoading(`fetch-${channelId}`, () => api.fetchChannel(channelId));
       if (data.success) {
-        showStatus(`Fetched ${data.new_messages} new messages from channel (${data.days_back_used}d window)`);
+        showToast('success', `Fetched ${data.new_messages} new messages from channel (${data.days_back_used}d window)`);
         loadData();
       } else {
-        showStatus('Error: ' + (data.error || 'Unknown'), true);
+        showToast('error', 'Error: ' + (data.error || 'Unknown'));
       }
     } catch (e: any) {
-      showStatus('Error: ' + e.message, true);
+      showToast('error', 'Error: ' + e.message);
     }
   };
 
@@ -121,36 +117,38 @@ const Dashboard = () => {
     try {
       // Check if Ollama is available before attempting analysis
       if (!stats?.ollama_available) {
-        showStatus('Error: Ollama is not available. Please check if Ollama is running.', true);
+        showToast('error', 'Ollama is not available. Please check if Ollama is running.');
         return;
       }
 
       const data = await withLoading(`analyze-${channelId}`, () => api.analyzeChannel(channelId));
       if (data.success) {
         if (data.stopped) {
-          showStatus(`Stopped! Analyzed ${data.analyzed} msgs, ${data.jobs_found} jobs (${data.remaining} remaining)`);
+          showToast('info', `Stopped! Analyzed ${data.analyzed} msgs, ${data.jobs_found} jobs (${data.remaining} remaining)`);
         } else {
-          showStatus(`Analyzed: ${data.analyzed} msgs, ${data.jobs_found} jobs, ${data.developers_found} devs`);
+          showToast('success', `Analyzed: ${data.analyzed} msgs, ${data.jobs_found} jobs, ${data.developers_found} devs`);
         }
         setTimeout(() => loadData(), 1500);
       } else {
-        showStatus('Error: ' + (data.error || 'Unknown'), true);
+        showToast('error', 'Error: ' + (data.error || 'Unknown'));
       }
     } catch (e: any) {
-      showStatus('Error: ' + e.message, true);
+      showToast('error', 'Error: ' + e.message);
     }
   };
 
-  const stopAnalyzeChannel = async () => {
+  const stopAnalyzeChannel = async (channelId: number, channelUsername: string) => {
     try {
-      const data = await api.stopAnalyze();
+      // Mark channel as stopping immediately for UI feedback
+      requestStop(channelId, channelUsername);
+      const data = await api.stopAnalyze(channelId);
       if (data.success) {
-        showStatus('Stop signal sent');
+        showToast('success', 'Stop signal sent - finishing current message...');
       } else {
-        showStatus('Error stopping analysis', true);
+        showToast('warning', data.message || 'No active analysis to stop');
       }
     } catch (e: any) {
-      showStatus('Error: ' + e.message, true);
+      showToast('error', 'Error: ' + e.message);
     }
   };
 
@@ -171,21 +169,21 @@ const Dashboard = () => {
         const data = await api.stopCron();
         if (data.success) {
           setCronRunning(false);
-          showStatus('Cron job stopped');
+          showToast('success', 'Cron job stopped');
         } else {
-          showStatus('Error: ' + (data.message || 'Unknown'), true);
+          showToast('error', 'Error: ' + (data.message || 'Unknown'));
         }
       } else {
         const data = await api.startCron();
         if (data.success) {
           setCronRunning(true);
-          showStatus('Cron job started - fetching messages every 30 minutes');
+          showToast('success', 'Cron job started - fetching messages every 30 minutes');
         } else {
-          showStatus('Error: ' + (data.message || 'Unknown'), true);
+          showToast('error', 'Error: ' + (data.message || 'Unknown'));
         }
       }
     } catch (e: any) {
-      showStatus('Error: ' + e.message, true);
+      showToast('error', 'Error: ' + e.message);
     }
   };
 
@@ -194,12 +192,12 @@ const Dashboard = () => {
       const data = await withLoading('fetch-all', () => api.fetchAll());
       if (data.success) {
         const total = data.results.reduce((s: number, r: any) => s + (r.new_messages || 0), 0);
-        showStatus(`Fetched ${total} new messages across all channels`);
+        showToast('success', `Fetched ${total} new messages across all channels`);
       } else {
-        showStatus('Error: ' + (data.error || 'Unknown'), true);
+        showToast('error', 'Error: ' + (data.error || 'Unknown'));
       }
     } catch (e: any) {
-      showStatus('Error: ' + e.message, true);
+      showToast('error', 'Error: ' + e.message);
     }
   };
 
@@ -207,7 +205,7 @@ const Dashboard = () => {
     try {
       // Check if Ollama is available before attempting analysis
       if (!stats?.ollama_available) {
-        showStatus('Error: Ollama is not available. Please check if Ollama is running.', true);
+        showToast('error', 'Ollama is not available. Please check if Ollama is running.');
         return;
       }
 
@@ -216,16 +214,16 @@ const Dashboard = () => {
         const totalJobs = data.results.reduce((s: number, r: any) => s + (r.jobs_found || 0), 0);
         const wasStopped = data.results.some((r: any) => r.stopped);
         if (wasStopped) {
-          showStatus(`Stopped! Found ${totalJobs} jobs across channels (some remaining)`);
+          showToast('info', `Stopped! Found ${totalJobs} jobs across channels (some remaining)`);
         } else {
-          showStatus(`Analysis complete! Found ${totalJobs} jobs across all channels`);
+          showToast('success', `Analysis complete! Found ${totalJobs} jobs across all channels`);
         }
         setTimeout(() => loadData(), 1500);
       } else {
-        showStatus('Error: ' + (data.error || 'Unknown'), true);
+        showToast('error', 'Error: ' + (data.error || 'Unknown'));
       }
     } catch (e: any) {
-      showStatus('Error: ' + e.message, true);
+      showToast('error', 'Error: ' + e.message);
     }
   };
 
@@ -233,39 +231,39 @@ const Dashboard = () => {
     try {
       // Check if Ollama is available before attempting analysis (fetch-analyze includes analysis)
       if (!stats?.ollama_available) {
-        showStatus('Error: Ollama is not available. Please check if Ollama is running.', true);
+        showToast('error', 'Ollama is not available. Please check if Ollama is running.');
         return;
       }
 
       const data = await withLoading('fetch-analyze-all', () => api.fetchAnalyzeAll());
       if (data.success) {
         const totalJobs = data.results.reduce((s: number, r: any) => s + (r.total_jobs || 0), 0);
-        showStatus(`Complete! Found ${totalJobs} jobs across all channels`);
+        showToast('success', `Complete! Found ${totalJobs} jobs across all channels`);
         setTimeout(() => loadData(), 2000);
       } else {
-        showStatus('Error: ' + (data.error || 'Unknown'), true);
+        showToast('error', 'Error: ' + (data.error || 'Unknown'));
       }
     } catch (e: any) {
-      showStatus('Error: ' + e.message, true);
+      showToast('error', 'Error: ' + e.message);
     }
   };
 
   const reanalyzeSkipped = async () => {
     try {
       if (!stats?.ollama_available) {
-        showStatus('Error: Ollama is not available. Please check if Ollama is running.', true);
+        showToast('error', 'Ollama is not available. Please check if Ollama is running.');
         return;
       }
 
       const data = await withLoading('reanalyze-skipped', () => api.reanalyzeSkipped());
       if (data.success) {
-        showStatus('Re-analysis started for skipped messages');
+        showToast('success', 'Re-analysis started for skipped messages');
         setTimeout(() => loadData(), 2000);
       } else {
-        showStatus('Error: ' + (data.error || 'Unknown'), true);
+        showToast('error', 'Error: ' + (data.error || 'Unknown'));
       }
     } catch (e: any) {
-      showStatus('Error: ' + e.message, true);
+      showToast('error', 'Error: ' + e.message);
     }
   };
 
@@ -273,19 +271,19 @@ const Dashboard = () => {
     try {
       // Check if Ollama is available before attempting analysis
       if (!stats?.ollama_available) {
-        showStatus('Error: Ollama is not available. Please check if Ollama is running.', true);
+        showToast('error', 'Ollama is not available. Please check if Ollama is running.');
         return;
       }
 
       const data = await withLoading('reanalyze', () => api.reanalyzeMessages());
       if (data.success) {
-        showStatus(`Re-analysis complete! Processed ${data.reanalyzed} messages`);
+        showToast('success', `Re-analysis complete! Processed ${data.reanalyzed} messages`);
         setTimeout(() => loadData(), 1500);
       } else {
-        showStatus('Error: ' + (data.error || 'Unknown'), true);
+        showToast('error', 'Error: ' + (data.error || 'Unknown'));
       }
     } catch (e: any) {
-      showStatus('Error: ' + e.message, true);
+      showToast('error', 'Error: ' + e.message);
     }
   };
 
@@ -420,11 +418,6 @@ const Dashboard = () => {
                 </div>
               </div>
 
-              {status && (
-                <div className={`p-3 rounded-md text-sm ${status.isError ? 'bg-red-50 text-red-700 border border-red-200' : 'bg-green-50 text-green-700 border border-green-200'}`}>
-                  {status.message}
-                </div>
-              )}
             </CardContent>
           </Card>
         </div>
@@ -478,43 +471,58 @@ const Dashboard = () => {
                           {channelProgress[channel.username] && (
                             <div className="mt-2">
                               <div className="flex justify-between text-xs mb-1">
-                                <span>Analyzing...</span>
+                                <span className={stoppingChannels[channel.username] ? 'text-orange-600 font-medium' : ''}>
+                                  {stoppingChannels[channel.username] ? '⚠ Stopping... (finishing current)' : 'Analyzing...'}
+                                </span>
                                 <span>{channelProgress[channel.username].current}/{channelProgress[channel.username].total}</span>
                               </div>
                               <div className="w-full bg-gray-200 rounded-full h-2">
                                 <div
-                                  className="bg-blue-600 h-2 rounded-full transition-all"
+                                  className={`h-2 rounded-full transition-all ${stoppingChannels[channel.username] ? 'bg-orange-500' : 'bg-blue-600'}`}
                                   style={{ width: `${(channelProgress[channel.username].current / channelProgress[channel.username].total) * 100}%` }}
                                 />
                               </div>
+                              {tokenUsage[channel.username] && (
+                                <div className="flex justify-between text-xs mt-1 text-gray-500">
+                                  <span>🤖 {(tokenUsage[channel.username].total / 1000).toFixed(1)}k tokens</span>
+                                  <span>⬆{(tokenUsage[channel.username].input / 1000).toFixed(1)}k ⬇{(tokenUsage[channel.username].output / 1000).toFixed(1)}k</span>
+                                </div>
+                              )}
                             </div>
                           )}
                         </div>
                         <div className="flex gap-2 flex-shrink-0">
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            onClick={() => fetchChannel(channel.id)}
-                            disabled={loadingActions.has(`fetch-${channel.id}`)}
-                          >
-                            <RefreshCw size={12} className="mr-1" />
-                            {loadingActions.has(`fetch-${channel.id}`) ? 'Fetching...' : 'Fetch'}
-                          </Button>
-                          <Button
-                            size="sm"
-                            onClick={() => analyzeChannel(channel.id)}
-                            disabled={loadingActions.has(`analyze-${channel.id}`)}
-                          >
-                            <Bot size={12} className="mr-1" />
-                            {loadingActions.has(`analyze-${channel.id}`) ? 'Analyzing...' : 'Analyze'}
-                          </Button>
-                          {loadingActions.has(`analyze-${channel.id}`) && (
+                          {!(loadingActions.has(`fetch-${channel.id}`) || loadingActions.has(`analyze-${channel.id}`) || !!operations[channel.username]) && (
+                            <>
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                onClick={() => fetchChannel(channel.id)}
+                                disabled={loadingActions.has(`fetch-${channel.id}`)}
+                              >
+                                <RefreshCw size={12} className="mr-1" />
+                                {loadingActions.has(`fetch-${channel.id}`) ? 'Fetching...' : 'Fetch'}
+                              </Button>
+                              <Button
+                                size="sm"
+                                onClick={() => analyzeChannel(channel.id)}
+                                disabled={loadingActions.has(`analyze-${channel.id}`)}
+                              >
+                                <Bot size={12} className="mr-1" />
+                                {loadingActions.has(`analyze-${channel.id}`) ? 'Analyzing...' : 'Analyze'}
+                              </Button>
+                            </>
+                          )}
+                          {(loadingActions.has(`fetch-${channel.id}`) || loadingActions.has(`analyze-${channel.id}`) || !!operations[channel.username]) && (
                             <Button
                               size="sm"
                               variant="destructive"
-                              onClick={() => stopAnalyzeChannel()}
+                              onClick={() => stopAnalyzeChannel(channel.id, channel.username)}
+                              title="Stop analysis"
+                              disabled={stoppingChannels[channel.id] || stoppingChannels[channel.username]}
                             >
-                              <Square size={12} />
+                              <Square size={12} className="mr-1" />
+                              {stoppingChannels[channel.id] || stoppingChannels[channel.username] ? 'Stopping...' : 'Stop'}
                             </Button>
                           )}
                         </div>

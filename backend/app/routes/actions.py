@@ -2,7 +2,7 @@
 
 from datetime import datetime
 from typing import Optional
-from fastapi import Depends, HTTPException
+from fastapi import Depends, HTTPException, Query
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -333,39 +333,79 @@ def register_action_routes(app):
             from app.models import Message
             from app.tasks import analyze_messages
             from app.connection import AsyncSessionLocal
+            from sqlalchemy import func
 
-            # Find all skipped messages
+            # Count skipped messages per channel (more memory efficient than loading all)
             result = await db.execute(
-                select(Message).filter(Message.analysis_status == "skipped")
+                select(Message.channel_id, func.count(Message.id).label("count"))
+                .filter(Message.analysis_status == "skipped")
+                .group_by(Message.channel_id)
             )
-            skipped_messages = result.scalars().all()
+            channel_counts = result.all()
 
-            if not skipped_messages:
+            if not channel_counts:
                 return {"success": True, "message": "No skipped messages to re-analyze"}
 
-            # Reset status to pending
-            for msg in skipped_messages:
-                msg.analysis_status = "pending"
-            await db.commit()
+            channel_ids = [row[0] for row in channel_counts]
+            total_skipped = sum(row[1] for row in channel_counts)
 
-            # Analyze all channels that have skipped messages
-            channel_ids = set(msg.channel_id for msg in skipped_messages)
             results = []
+            failed_channels = []
 
             for channel_id in channel_ids:
-                # Use fresh session for each channel analysis to avoid async context conflicts
-                async with AsyncSessionLocal() as new_db:
-                    channel_result = await new_db.execute(select(Channel).filter(Channel.id == channel_id))
-                    channel = channel_result.scalar_one_or_none()
-                    if channel:
-                        result = await analyze_messages(new_db, channel)
+                # Use fresh session for each channel to avoid async context conflicts
+                async with AsyncSessionLocal() as channel_db:
+                    try:
+                        # Get channel info
+                        channel_result = await channel_db.execute(
+                            select(Channel).filter(Channel.id == channel_id)
+                        )
+                        channel = channel_result.scalar_one_or_none()
+
+                        if not channel:
+                            failed_channels.append({"channel_id": channel_id, "error": "Channel not found"})
+                            continue
+
+                        # Reset only this channel's messages to pending within transaction
+                        await channel_db.execute(
+                            Message.__table__.update()
+                            .where(
+                                (Message.channel_id == channel_id) &
+                                (Message.analysis_status == "skipped")
+                            )
+                            .values(analysis_status="pending")
+                        )
+                        await channel_db.commit()
+
+                        # Analyze the channel
+                        result = await analyze_messages(channel_db, channel)
                         results.append({
                             "channel_id": channel_id,
                             "channel_username": channel.username,
                             "result": result
                         })
 
-            return {"success": True, "results": results}
+                    except Exception as channel_error:
+                        # Log failure but continue with other channels
+                        failed_channels.append({
+                            "channel_id": channel_id,
+                            "error": str(channel_error)
+                        })
+                        # Don't re-raise - continue with next channel
+
+            response = {
+                "success": True,
+                "total_skipped": total_skipped,
+                "channels_processed": len(results),
+                "channels_failed": len(failed_channels),
+                "results": results
+            }
+
+            if failed_channels:
+                response["failed_channels"] = failed_channels
+
+            return response
+
         except Exception as e:
             raise HTTPException(status_code=500, detail=f"Failed to re-analyze skipped messages: {str(e)}")
 
@@ -550,14 +590,71 @@ def register_action_routes(app):
             raise HTTPException(status_code=500, detail=f"Failed to re-analyze message: {str(e)}")
 
     @app.post("/api/stop-analyze")
-    # BUG FIX: Add channel_id parameter to match stop_analysis(channel_id) signature in tasks.py
-    async def stop_analyze(channel_id: int):
+    async def stop_analyze(
+        channel_id: int = Query(..., description="Channel ID to stop analysis for"),
+        db: AsyncSession = Depends(get_db)
+    ):
         """Stop the current analysis process for a specific channel."""
         try:
-            from app.tasks import stop_analysis
-            stop_analysis(channel_id)
-            return {"success": True, "message": "Stop signal sent"}
+            from app.tasks import stop_analysis, analysis_stop_events
+            from app.models import Operation
+            from sqlalchemy import select
+            import logging
+            logger = logging.getLogger(__name__)
+
+            logger.info(f"Stop analysis requested for channel_id={channel_id}")
+            logger.info(f"Current stop events in memory: {list(analysis_stop_events.keys())}")
+
+            # First check in-memory (fast path)
+            if channel_id in analysis_stop_events:
+                stop_analysis(channel_id)
+                logger.info(f"Stop signal sent via memory for channel_id={channel_id}")
+
+                # Also update any running operation in database
+                result = await db.execute(
+                    select(Operation).filter(
+                        Operation.channel_id == channel_id,
+                        Operation.status == "running"
+                    )
+                )
+                operation = result.scalar_one_or_none()
+                if operation:
+                    operation.status = "stopped"
+                    operation.completed_at = datetime.utcnow()
+                    await db.commit()
+
+                return {"success": True, "message": "Stop signal sent"}
+
+            # Fallback: Check database for running operations (cross-process support)
+            result = await db.execute(
+                select(Operation).filter(
+                    Operation.channel_id == channel_id,
+                    Operation.status == "running"
+                )
+            )
+            operation = result.scalar_one_or_none()
+
+            if operation:
+                # Mark operation as stopped in database
+                operation.status = "stopped"
+                operation.completed_at = datetime.utcnow()
+                await db.commit()
+                logger.info(f"Operation marked as stopped in database for channel_id={channel_id}")
+
+                # Try to stop via memory if available
+                if channel_id in analysis_stop_events:
+                    stop_analysis(channel_id)
+                    logger.info(f"Also sent memory signal for channel_id={channel_id}")
+
+                return {"success": True, "message": "Stop signal sent (cross-process)"}
+
+            logger.warning(f"No active analysis found for channel_id={channel_id}")
+            return {"success": False, "message": "No active analysis found for this channel"}
+
         except Exception as e:
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.error(f"Failed to stop analysis: {str(e)}")
             raise HTTPException(status_code=500, detail=f"Failed to stop analysis: {str(e)}")
 
     @app.post("/api/cron/start")

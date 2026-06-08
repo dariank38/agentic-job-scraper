@@ -6,18 +6,18 @@ import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Badge } from '@/components/ui/badge';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
-import { Search } from 'lucide-react';
+import { Search, Square } from 'lucide-react';
 import api from '@/services/api';
 import type { Channel, TelegramAccount } from '@/services/api';
-import { useWebSocketProgress } from '@/components/Layout';
+import { useWebSocketProgress, useToast } from '@/components/Layout';
 
 const Channels = () => {
   const [channels, setChannels] = useState<Channel[]>([]);
   const [dialogs, setDialogs] = useState<any[]>([]);
   const [allDialogs, setAllDialogs] = useState<any[]>([]);
   const [showDialogs, setShowDialogs] = useState(false);
-  const [status, setStatus] = useState<{ message: string; isError: boolean } | null>(null);
   const [loadingActions, setLoadingActions] = useState<Set<string>>(new Set());
+  const { showToast } = useToast();
   const [formData, setFormData] = useState({ username: '', name: '', description: '' });
   const [addedUsernames, setAddedUsernames] = useState<Set<string>>(new Set());
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
@@ -32,7 +32,7 @@ const Channels = () => {
   const [selectedAccountId, setSelectedAccountId] = useState<number | null>(null);
   const limit = 10;
   const offset = parseInt(searchParams.get('offset') || '0');
-  const { progress: wsProgress, channelProgress, operations } = useWebSocketProgress();
+  const { progress: wsProgress, channelProgress, operations, stoppingChannels, tokenUsage, requestStop } = useWebSocketProgress();
 
   useEffect(() => {
     if (wsProgress && (wsProgress.type === 'analyze_complete' || wsProgress.type === 'error' || wsProgress.type === 'fetch_complete')) {
@@ -64,7 +64,7 @@ const Channels = () => {
       } else if (e.message) {
         errorMessage = e.message;
       }
-      showStatus('Error: ' + errorMessage, true);
+      showToast('error', 'Error: ' + errorMessage);
     }
   };
 
@@ -80,7 +80,7 @@ const Channels = () => {
       } else if (e.message) {
         errorMessage = e.message;
       }
-      showStatus('Error: ' + errorMessage, true);
+      showToast('error', 'Error: ' + errorMessage);
     }
   };
 
@@ -101,7 +101,7 @@ const Channels = () => {
       } else if (e.message) {
         errorMessage = e.message;
       }
-      showStatus('Error: ' + errorMessage, true);
+      showToast('error', 'Error: ' + errorMessage);
     }
   };
 
@@ -115,10 +115,6 @@ const Channels = () => {
     setSearchParams({ offset: newOffset.toString() });
   };
 
-  const showStatus = (message: string, isError = false) => {
-    setStatus({ message, isError });
-    setTimeout(() => setStatus(null), 5000);
-  };
 
   const withLoading = async <T,>(
     actionKey: string,
@@ -144,7 +140,7 @@ const Channels = () => {
         setShowDialogs(true);
         filterDialogsLocally(data.dialogs);
       } else {
-        showStatus('Error: ' + (data.error || 'Failed to load dialogs'), true);
+        showToast('error', 'Error: ' + (data.error || 'Failed to load dialogs'));
       }
     } catch (e: any) {
       // Try to extract error message from response
@@ -155,7 +151,7 @@ const Channels = () => {
       } else if (e.message) {
         errorMessage = e.message;
       }
-      showStatus('Error: ' + errorMessage, true);
+      showToast('error', 'Error: ' + errorMessage);
     }
   };
 
@@ -182,7 +178,7 @@ const Channels = () => {
 
     try {
       await withLoading(`add-${username}`, () => api.addChannel(data));
-      showStatus('Channel added successfully!');
+      showToast('success', 'Channel added successfully!');
       setAddedUsernames(prev => new Set(prev).add(username));
       setTimeout(() => {
         loadChannels();
@@ -197,7 +193,7 @@ const Channels = () => {
       } else if (e.message) {
         errorMessage = e.message;
       }
-      showStatus('Error: ' + errorMessage, true);
+      showToast('error', 'Error: ' + errorMessage);
     }
   };
 
@@ -213,7 +209,7 @@ const Channels = () => {
 
     try {
       await withLoading('add-channel', () => api.addChannel(data));
-      showStatus('Channel added successfully!');
+      showToast('success', 'Channel added successfully!');
       setFormData({ username: '', name: '', description: '' });
       setAddedUsernames(prev => new Set(prev).add(formData.username));
       setTimeout(() => {
@@ -229,7 +225,7 @@ const Channels = () => {
       } else if (e.message) {
         errorMessage = e.message;
       }
-      showStatus('Error: ' + errorMessage, true);
+      showToast('error', 'Error: ' + errorMessage);
     }
   };
 
@@ -237,16 +233,16 @@ const Channels = () => {
     try {
       // Check if Ollama is available before attempting analysis (fetch-analyze includes analysis)
       if (!stats?.ollama_available) {
-        showStatus('Error: Ollama is not available. Please check if Ollama is running.', true);
+        showToast('error', 'Ollama is not available. Please check if Ollama is running.');
         return;
       }
 
       const data = await withLoading(`fetch-analyze-${channelId}`, () => api.fetchAnalyzeChannel(channelId, selectedAccountId || undefined));
       if (data.success) {
-        showStatus(`Fetched ${data.total_new_messages} new messages, found ${data.total_jobs} jobs (${data.days_back_used}d window)`);
+        showToast('success', `Fetched ${data.total_new_messages} new messages, found ${data.total_jobs} jobs (${data.days_back_used}d window)`);
         setTimeout(() => loadChannels(), 1500);
       } else {
-        showStatus('Error: ' + (data.error || 'Unknown error'), true);
+        showToast('error', 'Error: ' + (data.error || 'Unknown error'));
       }
     } catch (e: any) {
       let errorMessage = 'Failed to fetch and analyze channel';
@@ -256,7 +252,22 @@ const Channels = () => {
       } else if (e.message) {
         errorMessage = e.message;
       }
-      showStatus('Error: ' + errorMessage, true);
+      showToast('error', 'Error: ' + errorMessage);
+    }
+  };
+
+  const stopAnalyzeChannel = async (channelId: number, channelUsername: string) => {
+    try {
+      // Mark channel as stopping immediately for UI feedback
+      requestStop(channelId, channelUsername);
+      const data = await api.stopAnalyze(channelId);
+      if (data.success) {
+        showToast('success', 'Stop signal sent - finishing current message...');
+      } else {
+        showToast('warning', data.message || 'No active analysis to stop');
+      }
+    } catch (e: any) {
+      showToast('error', 'Error: ' + e.message);
     }
   };
 
@@ -272,7 +283,7 @@ const Channels = () => {
       } else if (e.message) {
         errorMessage = e.message;
       }
-      showStatus('Error: ' + errorMessage, true);
+      showToast('error', 'Error: ' + errorMessage);
     }
   };
 
@@ -289,7 +300,7 @@ const Channels = () => {
       } else if (e.message) {
         errorMessage = e.message;
       }
-      showStatus('Error: ' + errorMessage, true);
+      showToast('error', 'Error: ' + errorMessage);
     }
   };
 
@@ -372,37 +383,58 @@ const Channels = () => {
                       {channelProgress[channel.username] && (
                         <div className="mt-2">
                           <div className="flex justify-between text-xs mb-1">
-                            <span>Analyzing...</span>
+                            <span className={stoppingChannels[channel.username] ? 'text-orange-600 font-medium' : ''}>
+                              {stoppingChannels[channel.username] ? '⚠ Stopping... (finishing current)' : 'Analyzing...'}
+                            </span>
                             <span>{channelProgress[channel.username].current}/{channelProgress[channel.username].total}</span>
                           </div>
                           <div className="w-full bg-gray-200 rounded-full h-2">
                             <div
-                              className="bg-blue-600 h-2 rounded-full transition-all"
+                              className={`h-2 rounded-full transition-all ${stoppingChannels[channel.username] ? 'bg-orange-500' : 'bg-blue-600'}`}
                               style={{ width: `${(channelProgress[channel.username].current / channelProgress[channel.username].total) * 100}%` }}
                             />
                           </div>
+                          {tokenUsage[channel.username] && (
+                            <div className="flex justify-between text-xs mt-1 text-gray-500">
+                              <span>🤖 {(tokenUsage[channel.username].total / 1000).toFixed(1)}k tokens</span>
+                              <span>⬆{(tokenUsage[channel.username].input / 1000).toFixed(1)}k ⬇{(tokenUsage[channel.username].output / 1000).toFixed(1)}k</span>
+                            </div>
+                          )}
                         </div>
                       )}
                     </div>
                     <div className="flex gap-2">
-                      <Button
-                        variant="outline"
-                        onClick={() => fetchAnalyzeChannel(channel.id)}
-                        disabled={loadingActions.has(`fetch-analyze-${channel.id}`) || !!operations[channel.username]}
-                      >
-                        {loadingActions.has(`fetch-analyze-${channel.id}`) ? 'Fetching...' : operations[channel.username] ? 'Processing...' : 'Fetch'}
-                      </Button>
+                      {!(loadingActions.has(`fetch-analyze-${channel.id}`) || !!operations[channel.username]) ? (
+                        <Button
+                          variant="outline"
+                          onClick={() => fetchAnalyzeChannel(channel.id)}
+                          disabled={loadingActions.has(`fetch-analyze-${channel.id}`)}
+                        >
+                          Fetch
+                        </Button>
+                      ) : (
+                        <Button
+                          size="sm"
+                          variant="destructive"
+                          onClick={() => stopAnalyzeChannel(channel.id, channel.username)}
+                          title="Stop analysis"
+                          disabled={stoppingChannels[channel.id] || stoppingChannels[channel.username]}
+                        >
+                          <Square size={12} className="mr-1" />
+                          {stoppingChannels[channel.id] || stoppingChannels[channel.username] ? 'Stopping...' : 'Stop'}
+                        </Button>
+                      )}
                       <Button
                         variant="outline"
                         onClick={() => toggleChannel(channel.id)}
-                        disabled={loadingActions.has(`toggle-${channel.id}`)}
+                        disabled={loadingActions.has(`toggle-${channel.id}`) || !!(loadingActions.has(`fetch-analyze-${channel.id}`) || !!operations[channel.username])}
                       >
                         {loadingActions.has(`toggle-${channel.id}`) ? 'Toggling...' : (channel.is_active ? 'Disable' : 'Enable')}
                       </Button>
                       <Button
                         variant="destructive"
                         onClick={() => confirmDelete(channel.id)}
-                        disabled={loadingActions.has(`delete-${channel.id}`)}
+                        disabled={loadingActions.has(`delete-${channel.id}`) || !!(loadingActions.has(`fetch-analyze-${channel.id}`) || !!operations[channel.username])}
                       >
                         {loadingActions.has(`delete-${channel.id}`) ? 'Deleting...' : 'Delete'}
                       </Button>
@@ -568,11 +600,6 @@ const Channels = () => {
               </Button>
             </div>
           </form>
-          {status && (
-            <div className={`mt-4 p-3 rounded-md ${status.isError ? 'bg-red-50 text-red-700' : 'bg-green-50 text-green-700'}`}>
-              {status.message}
-            </div>
-          )}
         </DialogContent>
       </Dialog>
     </>

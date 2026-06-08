@@ -7,6 +7,9 @@ An automated job scraping system that fetches software development job postings 
 - **Automated Fetching**: Continuously monitors Telegram channels for new job postings
 - **AI-Powered Analysis**: Uses Ollama (Mistral) to analyze messages and extract job/developer information
 - **Real-time Progress**: WebSocket-based progress tracking for analysis operations
+- **Token Usage Monitoring**: Real-time token usage tracking for Ollama API calls
+- **Stop Analysis**: Gracefully stop ongoing analysis operations with visual feedback
+- **Concurrent Processing**: Batch processing with configurable concurrency for faster analysis
 - **Modern UI**: Clean, responsive interface built with React, TypeScript, and shadcn/ui
 - **Multi-language Support**: Analyzes job postings in multiple languages (English, Chinese, etc.)
 - **Smart Filtering**: Automatically filters out non-software-development content
@@ -331,9 +334,11 @@ Now the frontend will connect to your backend through the ngrok tunnel.
 2. **Select Account**: When fetching channels, select which Telegram account to use (if you have multiple)
 3. **Fetch Messages**: Click "Fetch" to retrieve recent messages from channels
 4. **Analyze**: Click "Analyze" to process messages with AI and extract job/developer info
-5. **View Results**: Browse Jobs and Developers pages to see extracted information
-6. **Track Progress**: Use the status indicators to mark jobs as applied or developers as contacted
-7. **Continuous Scanning**: Enable the cron job for automatic periodic fetching
+5. **Stop Analysis**: Click "Stop" to gracefully stop an ongoing analysis operation (shows "Stopping..." state)
+6. **Monitor Progress**: View real-time progress including token usage (🤖 X.Xk tokens, ⬆input ⬇output)
+7. **View Results**: Browse Jobs and Developers pages to see extracted information
+8. **Track Progress**: Use the status indicators to mark jobs as applied or developers as contacted
+9. **Continuous Scanning**: Enable the cron job for automatic periodic fetching
 
 ## API Endpoints
 
@@ -367,7 +372,8 @@ Now the frontend will connect to your backend through the ngrok tunnel.
 ### Actions
 - `POST /api/fetch/{channel_id}` - Fetch messages from a channel
 - `POST /api/analyze/{channel_id}` - Analyze messages in a channel
-- `POST /api/search/{channel_id}` - Fetch and analyze in one operation
+- `POST /api/fetch-analyze/{channel_id}` - Fetch and analyze in one operation
+- `POST /api/stop-analyze?channel_id={id}` - Stop ongoing analysis for a channel
 - `POST /api/cron/start` - Start continuous scanner
 - `POST /api/cron/stop` - Stop continuous scanner
 
@@ -428,10 +434,18 @@ The application supports managing multiple Telegram accounts through the web UI 
 Get your API credentials from [my.telegram.org/apps](https://my.telegram.org/apps). You can create multiple applications if needed for different accounts.
 
 ### Ollama Configuration
-- Default model: `mistral`
+- Default model: `mistral` (or `qwen2.5:7b-instruct-q4_K_M` recommended)
 - Can be configured to use remote Ollama instance
 - Supports GPU acceleration for faster processing
+- Concurrent processing with semaphore (default: 3 concurrent requests)
+- Batch processing (default: 3 messages per batch)
+- Real-time token usage tracking (input/output/total tokens)
 - Configure via `OLLAMA_BASE_URL` and `OLLAMA_MODEL` in `.env`
+- Advanced options in `ollama_service.py`:
+  - `num_predict`: Maximum tokens to generate (default: 2048)
+  - `num_ctx`: Context window size (default: 2048)
+  - `num_gpu`: GPU layers to offload (default: 99)
+  - `keep_alive`: Keep model in memory (default: -1)
 
 ### Database
 - PostgreSQL with async support

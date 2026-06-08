@@ -21,59 +21,82 @@ async def is_ollama_available() -> bool:
         return False
 
 
-SYSTEM_PROMPT = """You are a Telegram message analyzer for tech job boards. Analyze the message and categorize it. The message may be in any language — always respond in English JSON only.
+SYSTEM_PROMPT = """You are a Telegram message classifier for tech job boards. Always respond in English JSON only. No markdown, no code blocks, no explanation.
 
 CATEGORIES:
-1. "job_posting" - Software development/engineering job posting ONLY (frontend, backend, fullstack, devops, mobile, blockchain, smart_contract, QA, data engineer, ML/AI engineer, etc.)
-2. "personal_info" - Personal information of software developers/engineers (skills, experience, portfolio, looking for work, etc.)
-3. "other" - Everything else
+- "job_posting": Offering a software engineering role (frontend, backend, fullstack, devops, mobile, blockchain, smart_contract, qa, data, ml_ai, security, systems, embedded)
+- "personal_info": A software developer describing themselves, skills, or seeking work
+- "other": Anything non-engineering — design, marketing, HR, sales, product, content, ops, finance, support, recruiting, admin, translation, data entry, VA, community management
 
 RULES:
-- ALWAYS translate the message to English in the "translated_text" field
-- For job_posting: Extract job details (title, company, location, remote status, role type, skills, contact)
-- For personal_info: Extract developer details (name, skills, experience, portfolio, github, linkedin, contact, looking_for_work)
-- SKIP as "other" if: ANY non-software development role including: design (UI/UX, graphic), marketing, sales, HR, product management, community management, content writing, accounting, customer support, business development, operations, data entry, translation, virtual assistant, etc.
-- ONLY include pure software development/engineering roles: frontend, backend, fullstack, devops, mobile, blockchain, smart_contract, QA, data engineer, ML/AI engineer, security, systems programming, embedded systems
-- For skills: Split long skill strings into individual skills. Example: "DeFi protocols (prediction markets, perpetual contracts DEX, cross-chain aggregation trading engine, lending, staking/re-staking)" should become ["DeFi protocols", "prediction markets", "perpetual contracts DEX", "cross-chain aggregation trading engine", "lending", "staking", "re-staking"]
+- Translate the full message to English in "translated_text"
+- Split ALL skills into individual array items — never comma-separated strings in one item
+- Unknown/unmentioned fields: null (not "", not "N/A")
+- "is_remote": true/false/null — true only if remote/wfh/anywhere explicitly mentioned
+- "contacts": array of all contact methods found — null if none found
+- "confidence": high/medium/low
+- "looking_for_work": true if actively seeking, false if just sharing info, null if unclear
 
-FIELD RULES:
-- If a field is unknown or not mentioned, use null (not "", not "N/A", not "unknown")
-- "is_remote": true if remote/wfh/anywhere/居家/远程 mentioned, false if on-site only, null if not mentioned
-- "skills": always an array, empty array [] if none found
-- "contact": extract @username, email, or URL. If none found, null
-- "contact_type": only fill if contact is found, otherwise null
-- "confidence": "high" if category is clear, "medium" if somewhat ambiguous, "low" if guessing
-- "looking_for_work": true if person is actively seeking work, false if just sharing info, null if unclear
+CONTACT TYPE DETECTION:
+- "telegram": starts with @ or t.me/
+- "email": contains @domain.tld
+- "linkedin": linkedin.com URL or "LinkedIn: name"
+- "twitter": twitter.com, x.com, or @handle labeled as Twitter/X
+- "discord": discord.gg/ or username#1234 or labeled as Discord
+- "wechat": labeled as WeChat, 微信, or starts with wechat ID
+- "whatsapp": labeled as WhatsApp or wa.me/
+- "line": labeled as LINE or line.me/
+- "github": github.com URL
+- "website": any other URL
+- "other": any other labeled contact method
 
-Return ONLY a raw JSON object. No markdown, no explanation, no code blocks. Exact format:
+OUTPUT: Return only the relevant block for the detected category.
+
+job_posting →
 {
-  "category": "job_posting | personal_info | other",
+  "category": "job_posting",
   "confidence": "high | medium | low",
-  "translated_text": "Full English translation of the original message",
+  "translated_text": "...",
   "job_posting": {
-    "title": "",
-    "company": "",
-    "company_link": "",
-    "location": "",
-    "is_remote": true/false/null,
+    "title": null,
+    "company": null,
+    "company_link": null,
+    "location": null,
+    "is_remote": null,
     "role_type": "frontend | backend | fullstack | devops | mobile | blockchain | smart_contract | data | ml_ai | qa | security | systems | embedded | other_tech",
-    "skills": ["skill1", "skill2"],
-    "contact": "",
-    "contact_type": "telegram | email | linkedin | twitter | discord | other",
-    "summary": ""
-  },
-  "personal_info": {
-    "name": "",
-    "skills": ["skill1", "skill2"],
-    "experience": "",
-    "portfolio": "",
-    "github": "",
-    "linkedin": "",
-    "contact": "",
-    "contact_type": "telegram | email | linkedin | twitter | discord | other",
-    "looking_for_work": true/false/null,
-    "summary": ""
+    "skills": [],
+    "contacts": [
+      {"type": "telegram | email | linkedin | twitter | discord | wechat | whatsapp | line | github | website | other", "value": "..."}
+    ],
+    "summary": null
   }
+}
+
+personal_info →
+{
+  "category": "personal_info",
+  "confidence": "high | medium | low",
+  "translated_text": "...",
+  "personal_info": {
+    "name": null,
+    "skills": [],
+    "experience": null,
+    "portfolio": null,
+    "github": null,
+    "linkedin": null,
+    "contacts": [
+      {"type": "telegram | email | linkedin | twitter | discord | wechat | whatsapp | line | github | website | other", "value": "..."}
+    ],
+    "looking_for_work": null,
+    "summary": null
+  }
+}
+
+other →
+{
+  "category": "other",
+  "confidence": "high | medium | low",
+  "translated_text": "..."
 }"""
 
 RECOMMENDED_MODEL = "qwen2.5:7b-instruct-q4_K_M"
@@ -87,7 +110,7 @@ class AsyncOllamaAnalyzer:
 
     async def analyze_message(self, message_text: str) -> dict[str, Any]:
         if not message_text or len(message_text.strip()) < 10:
-            return {"category": "other"}
+            return {"category": "other", "usage": {"input_tokens": 0, "output_tokens": 0, "total_tokens": 0}}
 
         clean_text = " ".join(message_text.split())[:2000]
 
@@ -102,24 +125,42 @@ class AsyncOllamaAnalyzer:
                         options={
                             "temperature": 0.0,
                             "num_predict": 2048,
-                            "num_ctx": 4096,
+                            "num_ctx": 2048,
                             "low_vram": True,
-                            "num_gpu": 50,
+                            "num_gpu": 99,
+                            "keep_alive": -1
                         }
                     ),
                     timeout=600.0
                 )
 
                 response_text = response['response']
+
+                # Extract token usage from Ollama response
+                usage = {
+                    "input_tokens": response.get('prompt_eval_count', 0),
+                    "output_tokens": response.get('eval_count', 0),
+                    "total_tokens": (response.get('prompt_eval_count', 0) + response.get('eval_count', 0)),
+                    "prompt_eval_duration": response.get('prompt_eval_duration', 0),
+                    "eval_duration": response.get('eval_duration', 0),
+                    "total_duration": response.get('total_duration', 0),
+                }
+
                 try:
-                    return json.loads(response_text)
+                    result = json.loads(response_text)
+                    result['usage'] = usage
+                    return result
                 except json.JSONDecodeError:
                     if "```json" in response_text:
                         json_part = response_text.split("```json")[1].split("```")[0]
-                        return json.loads(json_part.strip())
+                        result = json.loads(json_part.strip())
+                        result['usage'] = usage
+                        return result
                     elif "```" in response_text:
                         json_part = response_text.split("```")[1].split("```")[0]
-                        return json.loads(json_part.strip())
+                        result = json.loads(json_part.strip())
+                        result['usage'] = usage
+                        return result
                     else:
                         logger.error(f"[Ollama] JSON parse failed, raw: {response_text[:300]}")
                         raise

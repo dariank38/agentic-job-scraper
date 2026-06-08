@@ -40,6 +40,9 @@ interface WebSocketProgressContextType {
   isConnected: boolean;
   channelProgress: Record<string, { current: number; total: number }>;
   operations: Record<string, { type: string; status: string }>;
+  stoppingChannels: Record<string, boolean>;
+  tokenUsage: Record<string, { input: number; output: number; total: number }>;
+  requestStop: (channelId: number, channelUsername: string) => void;
 }
 
 const WebSocketProgressContext = createContext<WebSocketProgressContextType | null>(null);
@@ -88,8 +91,14 @@ const WebSocketProgressProvider = ({ children }: { children: React.ReactNode }) 
   const [progress, setProgress] = useState<ProgressUpdate | null>(null);
   const [channelProgress, setChannelProgress] = useState<Record<string, { current: number; total: number }>>({});
   const [operations, setOperations] = useState<Record<string, { type: string; status: string }>>({});
+  const [stoppingChannels, setStoppingChannels] = useState<Record<string, boolean>>({});
+  const [tokenUsage, setTokenUsage] = useState<Record<string, { input: number; output: number; total: number }>>({});
   const wsRef = useRef<WebSocket | null>(null);
   const pollIntervalRef = useRef<number | null>(null);
+
+  const requestStop = (channelId: number, channelUsername: string) => {
+    setStoppingChannels(prev => ({ ...prev, [channelId]: true, [channelUsername]: true }));
+  };
 
   // Poll operations API as fallback when WebSocket is disconnected
   useEffect(() => {
@@ -98,24 +107,15 @@ const WebSocketProgressProvider = ({ children }: { children: React.ReactNode }) 
         const api = (await import('../services/api')).default;
         const data = await api.getOperations();
         if (data.operations && data.operations.length > 0) {
-          // Get running channel usernames from database
-          const runningChannels = new Set<string>();
+          // Build operations state from running database operations
+          const newOperations: Record<string, { type: string; status: string }> = {};
           data.operations.forEach((op: any) => {
             if (op.status === 'running' && op.channel_username) {
-              runningChannels.add(op.channel_username);
+              const opType = op.operation_type === 'analyze' ? 'analyze' : 'fetch';
+              newOperations[op.channel_username] = { type: opType, status: 'running' };
             }
           });
-
-          // Update operations state - only keep operations that are still running
-          setOperations(prev => {
-            const newOperations: Record<string, { type: string; status: string }> = {};
-            Object.keys(prev).forEach(channel => {
-              if (runningChannels.has(channel)) {
-                newOperations[channel] = prev[channel];
-              }
-            });
-            return newOperations;
-          });
+          setOperations(newOperations);
 
           // Update channel progress for running operations
           data.operations.forEach((op: any) => {
@@ -228,8 +228,15 @@ const WebSocketProgressProvider = ({ children }: { children: React.ReactNode }) 
                   total: data.total || 0,
                 }
               }));
+              // Update token usage
+              if (data.tokens) {
+                setTokenUsage(prev => ({
+                  ...prev,
+                  [channel]: data.tokens!
+                }));
+              }
             } else if (channel && (data.type === 'analyze_complete' || data.type === 'fetch_complete' || data.type === 'error')) {
-              // End operation
+              // End operation - also clear stopping state
               setOperations(prev => {
                 const newOps = { ...prev };
                 delete newOps[channel];
@@ -239,6 +246,17 @@ const WebSocketProgressProvider = ({ children }: { children: React.ReactNode }) 
                 const newProgress = { ...prev };
                 delete newProgress[channel];
                 return newProgress;
+              });
+              setStoppingChannels(prev => {
+                const newStopping = { ...prev };
+                delete newStopping[channel];
+                return newStopping;
+              });
+              // Clear token usage for completed channel
+              setTokenUsage(prev => {
+                const newTokens = { ...prev };
+                delete newTokens[channel];
+                return newTokens;
               });
             }
           } catch (e) {
@@ -270,7 +288,7 @@ const WebSocketProgressProvider = ({ children }: { children: React.ReactNode }) 
   }, []);
 
   return (
-    <WebSocketProgressContext.Provider value={{ progress, isConnected, channelProgress, operations }}>
+    <WebSocketProgressContext.Provider value={{ progress, isConnected, channelProgress, operations, stoppingChannels, tokenUsage, requestStop }}>
       {children}
     </WebSocketProgressContext.Provider>
   );

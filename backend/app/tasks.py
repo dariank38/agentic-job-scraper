@@ -10,7 +10,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.connection import AsyncSessionLocal, get_db, manager
-from app.models import AnalysisRun, Channel, Developer, Job, Message, TelegramAccount
+from app.models import AnalysisRun, Channel, Developer, Job, Message, Operation, TelegramAccount
 from telegram_processor import TelegramClientManager, fetch_messages
 from services.ollama_service import get_analyzer, is_ollama_available
 
@@ -445,8 +445,13 @@ async def analyze_messages(
         analyzed_count = 0
         stopped_count = 0
         total_messages = len(messages)
-        batch_size = 1
+        batch_size = 3
         total_batches = (total_messages + batch_size - 1) // batch_size
+
+        # Token usage tracking
+        total_input_tokens = 0
+        total_output_tokens = 0
+        total_tokens = 0
 
         logger.info(f"Analyzing {total_messages} messages in {total_batches} batches of {batch_size} with stop support")
 
@@ -484,6 +489,16 @@ async def analyze_messages(
                     skipped_count += 1
                     message.analysis_status = "skipped"
                     continue
+
+                # Track token usage from this message
+                usage = result.get("usage", {})
+                msg_input_tokens = usage.get("input_tokens", 0)
+                msg_output_tokens = usage.get("output_tokens", 0)
+                msg_total_tokens = usage.get("total_tokens", 0)
+
+                total_input_tokens += msg_input_tokens
+                total_output_tokens += msg_output_tokens
+                total_tokens += msg_total_tokens
 
                 category = result.get("category")
                 confidence = result.get("confidence")
@@ -640,6 +655,11 @@ async def analyze_messages(
                 "jobs": jobs_added,
                 "developers": devs_added,
                 "operation_id": operation_id,
+                "tokens": {
+                    "input": total_input_tokens,
+                    "output": total_output_tokens,
+                    "total": total_tokens,
+                }
             })
             await update_operation(db, operation_id, current=batch_num, analyzed=analyzed_count, jobs_found=jobs_added, developers_found=devs_added)
 
@@ -674,6 +694,11 @@ async def analyze_messages(
             "stopped": stopped_count > 0,
             "remaining": stopped_count,
             "operation_id": operation_id,
+            "tokens": {
+                "input": total_input_tokens,
+                "output": total_output_tokens,
+                "total": total_tokens,
+            }
         })
         await update_operation(db, operation_id, status=status, analyzed=analyzed_count, jobs_found=jobs_added, developers_found=devs_added)
 

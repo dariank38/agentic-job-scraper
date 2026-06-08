@@ -308,8 +308,8 @@ const api = {
     return response.json();
   },
 
-  stopAnalyze: async (): Promise<any> => {
-    const response = await fetch(`${API_BASE}/api/stop-analyze`, { method: 'POST' });
+  stopAnalyze: async (channelId: number): Promise<any> => {
+    const response = await fetch(`${API_BASE}/api/stop-analyze?channel_id=${channelId}`, { method: 'POST' });
     return response.json();
   },
 

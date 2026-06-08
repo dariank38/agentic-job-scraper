@@ -1,5 +1,11 @@
 import { useEffect, useRef, useState } from 'react';
 
+export interface TokenUsage {
+  input: number;
+  output: number;
+  total: number;
+}
+
 export interface ProgressUpdate {
   type: 'fetch_start' | 'fetch_progress' | 'fetch_complete' | 'analyze_start' | 'analyze_progress' | 'analyze_complete' | 'error';
   channel?: string;
@@ -16,6 +22,7 @@ export interface ProgressUpdate {
   developers?: number;
   developers_found?: number;
   error?: string;
+  tokens?: TokenUsage;
 }
 
 export const useWebSocket = (url: string) => {
