@@ -522,7 +522,7 @@ const Channels = () => {
                 <option value="">Select Account</option>
                 {telegramAccounts.map(acc => (
                   <option key={acc.id} value={acc.id}>
-                    {acc.phone_number} {acc.is_authenticated ? '✓' : '(not authenticated)'}
+                    {acc.username ? `@${acc.username}` : acc.phone_number} {acc.is_authenticated ? '✓' : '(not authenticated)'}
                   </option>
                 ))}
               </select>
