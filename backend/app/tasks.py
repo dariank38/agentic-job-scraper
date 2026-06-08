@@ -10,7 +10,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.connection import AsyncSessionLocal, get_db, manager
-from app.models import AnalysisRun, Channel, Developer, Job, Message, Operation, TelegramAccount
+from app.models import AnalysisRun, Channel, Developer, Job, Message, Operation, TelegramAccount, WebsiteSource
 from telegram_processor import TelegramClientManager, fetch_messages
 from services.ollama_service import get_analyzer, is_ollama_available, should_analyze_message
 
@@ -905,6 +905,215 @@ async def continuous_scanner(
             logger.error(f"Cron outer error: {e}")
 
         await asyncio.sleep(sleep_interval_seconds)
+
+
+async def analyze_website_posts(
+    db: AsyncSession,
+    website_source: WebsiteSource,
+    bulk_operation_id: Optional[str] = None,
+) -> dict:
+    """Analyze unanalyzed website posts with AI using concurrent pipeline."""
+    # Capture primitives immediately
+    source_id = website_source.id
+    source_name = website_source.name
+    source_url = website_source.url
+
+    if not await is_ollama_available():
+        return {"success": False, "error": "Ollama not available"}
+
+    try:
+        messages_result = await db.execute(
+            select(Message).filter(
+                Message.website_source_id == source_id,
+                Message.analysis_status == "pending",
+            )
+        )
+        messages = messages_result.scalars().all()
+        total_messages = len(messages)
+
+        operation_id = await create_operation(db, "analyze", None, total_messages=total_messages, bulk_operation_id=bulk_operation_id)
+        await update_operation(db, operation_id, channel_username=source_name, total_messages=total_messages)
+
+        if len(messages) == 0:
+            await update_operation(db, operation_id, status="completed")
+            return {"success": True, "analyzed": 0, "jobs_found": 0, "developers_found": 0, "skipped": 0}
+
+        analyzer = get_analyzer()
+
+        jobs_added = 0
+        devs_added = 0
+        skipped_count = 0
+        analyzed_count = 0
+        stopped_count = 0
+        batch_size = 3
+        total_batches = (total_messages + batch_size - 1) // batch_size
+
+        consecutive_failures = 0
+        max_consecutive_failures = 5
+
+        logger.info(f"[ANALYZE WEBSITE] Source: {source_name} | Messages: {total_messages} | Batches: {total_batches}")
+
+        for batch_num in range(total_batches):
+            if consecutive_failures >= max_consecutive_failures:
+                logger.error(f"[ANALYZE WEBSITE CIRCUIT BREAKER] Source: {source_name} - Stopping after {consecutive_failures} consecutive batch failures")
+                stopped_count = total_messages - (batch_num * batch_size)
+                break
+
+            batch_start = batch_num * batch_size
+            batch_end = min(batch_start + batch_size, total_messages)
+            filtered_messages = messages[batch_start:batch_end]
+
+            logger.info(f"[ANALYZE WEBSITE BATCH] Source: {source_name} | Batch {batch_num + 1}/{total_batches} | Messages {batch_start + 1}-{batch_end}")
+
+            for message in filtered_messages:
+                if not await should_analyze_message(message.text):
+                    message.analysis_status = "skipped"
+                    skipped_count += 1
+                    continue
+
+                try:
+                    result = await analyzer.analyze(message.text)
+                    category = result.get("category")
+
+                    if category == "job_posting":
+                        job_data = result.get("job_posting") or {}
+
+                        is_remote = job_data.get("is_remote")
+                        if is_remote is False:
+                            skipped_count += 1
+                            message.analysis_status = "skipped"
+                            continue
+
+                        title = _to_str(job_data.get("title"))
+                        company = _to_str(job_data.get("company"))
+                        location = job_data.get("location")
+                        role_str = _to_str(job_data.get("role_type"))
+                        contact, contact_type = _resolve_contact(job_data.get("contacts"), message)
+
+                        job = Job(
+                            message_id=message.id,
+                            website_source_id=source_id,
+                            channel_name=source_name,
+                            confidence=_to_str(job_data.get("confidence")),
+                            translated_text=_to_str(job_data.get("translated_text")),
+                            title=title,
+                            company=company,
+                            company_link=_to_str(job_data.get("company_link")),
+                            location=location,
+                            is_remote=is_remote,
+                            role_type=role_str,
+                            skills=job_data.get("skills", []),
+                            contact=contact,
+                            contact_type=contact_type,
+                            summary=_to_str(job_data.get("summary")),
+                        )
+                        db.add(job)
+                        jobs_added += 1
+
+                    elif category == "personal_info":
+                        pi_data = result.get("personal_info") or {}
+
+                        name = _to_str(pi_data.get("name"))
+                        contact, contact_type = _resolve_contact(pi_data.get("contacts"), message)
+
+                        portfolio = _to_str(pi_data.get("portfolio"))
+                        github = _to_str(pi_data.get("github"))
+                        linkedin = _to_str(pi_data.get("linkedin"))
+
+                        exp_val = pi_data.get("experience")
+                        if isinstance(exp_val, list):
+                            exp_str = "\n".join(str(item) for item in exp_val)
+                        else:
+                            exp_str = str(exp_val) if exp_val else None
+
+                        developer = Developer(
+                            message_id=message.id,
+                            website_source_id=source_id,
+                            confidence=_to_str(pi_data.get("confidence")),
+                            translated_text=_to_str(pi_data.get("translated_text")),
+                            name=name,
+                            skills=pi_data.get("skills", []),
+                            experience=exp_str,
+                            portfolio=portfolio,
+                            github=github,
+                            linkedin=linkedin,
+                            contact=contact,
+                            contact_type=contact_type,
+                            looking_for_work=pi_data.get("looking_for_work"),
+                            summary=_to_str(pi_data.get("summary")),
+                        )
+                        db.add(developer)
+                        devs_added += 1
+
+                    message.analysis_status = "analyzed"
+                    analyzed_count += 1
+
+                except Exception as e:
+                    logger.error(f"[ANALYZE WEBSITE] Error analyzing message {message.id}: {e}", exc_info=True)
+                    message.analysis_status = "error"
+                    continue
+
+            batch_message_results = []
+            batch_has_errors = any(r.get("status") in ["failed", "db_error"] for r in batch_message_results)
+            if batch_has_errors:
+                consecutive_failures += 1
+            else:
+                consecutive_failures = 0
+
+            await broadcast_progress("analyze_progress", {
+                "channel": source_name,
+                "channel_id": source_id,
+                "current": batch_num + 1,
+                "total": total_batches,
+                "analyzed": analyzed_count,
+                "total_messages": total_messages,
+                "jobs": jobs_added,
+                "developers": devs_added,
+                "operation_id": operation_id,
+            })
+
+            try:
+                await update_operation(db, operation_id, current=batch_num + 1, analyzed=analyzed_count, jobs_found=jobs_added, developers_found=devs_added)
+            except Exception as e:
+                logger.warning(f"[ANALYZE WEBSITE] Failed to update operation progress: {e}")
+
+            try:
+                await db.commit()
+            except Exception as e:
+                logger.error(f"[ANALYZE WEBSITE BATCH COMMIT ERROR] Source: {source_name} | Batch {batch_num + 1} commit failed: {e}")
+                await db.rollback()
+
+        try:
+            await db.commit()
+            logger.info(f"[ANALYZE WEBSITE] Commit OK — jobs: {jobs_added}, devs: {devs_added}")
+        except Exception as e:
+            await db.rollback()
+            logger.error(f"[ANALYZE WEBSITE COMMIT ERROR] Source: {source_name} | DB commit failed: {e}")
+            return {
+                "success": True,
+                "jobs_found": jobs_added,
+                "developers_found": devs_added,
+                "analyzed": analyzed_count,
+                "stopped": stopped_count > 0,
+                "remaining": stopped_count,
+                "warning": f"Commit failed: {str(e)[:100]}",
+            }
+
+        status = "stopped" if stopped_count > 0 else "completed"
+        await update_operation(db, operation_id, status=status)
+
+        return {
+            "success": True,
+            "jobs_found": jobs_added,
+            "developers_found": devs_added,
+            "analyzed": analyzed_count,
+            "skipped": skipped_count,
+            "stopped": stopped_count > 0,
+        }
+
+    except Exception as e:
+        logger.error(f"[ANALYZE WEBSITE] Error analyzing source {source_name}: {e}", exc_info=True)
+        return {"success": False, "error": str(e)}
 
 
 # ── LIFESPAN ──────────────────────────────────────────────────────────────────

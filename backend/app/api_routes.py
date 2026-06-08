@@ -9,6 +9,7 @@ from app.routes.operations import register_operations_routes
 from app.routes.stats import register_stats_routes
 from app.routes.telegram_accounts import register_telegram_account_routes
 from app.routes.websocket import register_websocket_routes
+from app.routes.website_sources import register_website_source_routes
 
 
 def register_api_routes(app):
@@ -22,3 +23,4 @@ def register_api_routes(app):
     register_action_routes(app)
     register_operations_routes(app)
     register_telegram_account_routes(app)
+    register_website_source_routes(app)

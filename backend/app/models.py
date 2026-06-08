@@ -64,13 +64,16 @@ class Channel(Base):
 
 
 class Message(Base):
-    """Raw message from Telegram channel."""
+    """Raw message from Telegram channel or website."""
 
     __tablename__ = "messages"
 
     id = Column(Integer, primary_key=True)
-    telegram_id = Column(BigInteger, nullable=False, index=True)
-    channel_id = Column(Integer, ForeignKey("channels.id"), nullable=False)
+    telegram_id = Column(BigInteger, nullable=True, index=True)  # Null for website sources
+    website_post_id = Column(String, nullable=True, index=True)  # For website sources
+    channel_id = Column(Integer, ForeignKey("channels.id"), nullable=True)  # Null for website sources
+    website_source_id = Column(Integer, ForeignKey("website_sources.id"), nullable=True)  # For website sources
+    source_type = Column(String, default="telegram")  # 'telegram' or 'website'
     date = Column(DateTime, nullable=True)
     text = Column(Text, nullable=True)
     sender_id = Column(BigInteger, nullable=True)
@@ -84,6 +87,7 @@ class Message(Base):
 
     # Relationships
     channel = relationship("Channel", back_populates="messages")
+    website_source = relationship("WebsiteSource", back_populates="messages")
     job = relationship("Job", back_populates="message", uselist=False, cascade="all, delete-orphan")
     developer = relationship("Developer", back_populates="message", uselist=False)
 
@@ -118,8 +122,9 @@ class Job(Base):
 
     id = Column(Integer, primary_key=True)
     message_id = Column(Integer, ForeignKey("messages.id"), unique=True, nullable=False)
-    channel_id = Column(Integer, ForeignKey("channels.id"), nullable=False)
-    channel_name = Column(String, nullable=True)  # Store channel name for reference
+    channel_id = Column(Integer, ForeignKey("channels.id"), nullable=True)  # Null for website sources
+    website_source_id = Column(Integer, ForeignKey("website_sources.id"), nullable=True)  # For website sources
+    channel_name = Column(String, nullable=True)  # Store channel/source name for reference
 
     # AI Analysis results
     confidence = Column(String, nullable=True)  # high, medium, low
@@ -147,6 +152,7 @@ class Job(Base):
     # Relationships
     message = relationship("Message", back_populates="job")
     channel = relationship("Channel", back_populates="jobs")
+    website_source = relationship("WebsiteSource", back_populates="jobs")
 
     def __repr__(self) -> str:
         return f"<Job {self.id} title={self.title}>"
@@ -185,7 +191,8 @@ class Developer(Base):
 
     id = Column(Integer, primary_key=True)
     message_id = Column(Integer, ForeignKey("messages.id"), unique=True, nullable=True)
-    channel_id = Column(Integer, ForeignKey("channels.id"), nullable=False)
+    channel_id = Column(Integer, ForeignKey("channels.id"), nullable=True)  # Null for website sources
+    website_source_id = Column(Integer, ForeignKey("website_sources.id"), nullable=True)  # For website sources
 
     # AI Analysis results
     confidence = Column(String, nullable=True)  # high, medium, low
@@ -213,6 +220,7 @@ class Developer(Base):
     # Relationships
     message = relationship("Message", back_populates="developer")
     channel = relationship("Channel", back_populates="developers")
+    website_source = relationship("WebsiteSource", back_populates="developers")
 
     def __repr__(self) -> str:
         return f"<Developer {self.id} name={self.name}>"
@@ -261,6 +269,30 @@ class AnalysisRun(Base):
 
     def __repr__(self) -> str:
         return f"<AnalysisRun {self.id} {self.status}>"
+
+
+class WebsiteSource(Base):
+    """Website source configuration for job crawling."""
+
+    __tablename__ = "website_sources"
+
+    id = Column(Integer, primary_key=True)
+    name = Column(String, nullable=False)  # e.g., "V2EX", "电鸭社区"
+    url = Column(String, nullable=False, unique=True)  # Base URL
+    site_type = Column(String, nullable=False)  # 'v2ex', 'eleduck', etc.
+    is_active = Column(Boolean, default=True)
+    last_fetch_new_count = Column(Integer, default=0)  # Number of new posts from last fetch
+    last_fetch_at = Column(DateTime, nullable=True)  # Timestamp of last fetch
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    # Relationships
+    messages = relationship("Message", back_populates="website_source", cascade="all, delete-orphan")
+    jobs = relationship("Job", back_populates="website_source", cascade="all, delete-orphan")
+    developers = relationship("Developer", back_populates="website_source", cascade="all, delete-orphan")
+
+    def __repr__(self) -> str:
+        return f"<WebsiteSource {self.name} ({self.site_type})>"
 
 
 class TelegramAccount(Base):
