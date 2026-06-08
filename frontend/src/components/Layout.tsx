@@ -98,15 +98,28 @@ const WebSocketProgressProvider = ({ children }: { children: React.ReactNode }) 
         const api = (await import('../services/api')).default;
         const data = await api.getOperations();
         if (data.operations && data.operations.length > 0) {
-          // Update operations state
-          const newOperations: Record<string, { type: string; status: string }> = {};
+          // Get running channel usernames from database
+          const runningChannels = new Set<string>();
           data.operations.forEach((op: any) => {
             if (op.status === 'running' && op.channel_username) {
-              newOperations[op.channel_username] = {
-                type: op.operation_type,
-                status: op.status,
-              };
-              // Also update channel progress
+              runningChannels.add(op.channel_username);
+            }
+          });
+
+          // Update operations state - only keep operations that are still running
+          setOperations(prev => {
+            const newOperations: Record<string, { type: string; status: string }> = {};
+            Object.keys(prev).forEach(channel => {
+              if (runningChannels.has(channel)) {
+                newOperations[channel] = prev[channel];
+              }
+            });
+            return newOperations;
+          });
+
+          // Update channel progress for running operations
+          data.operations.forEach((op: any) => {
+            if (op.status === 'running' && op.channel_username) {
               setChannelProgress(prev => ({
                 ...prev,
                 [op.channel_username]: {
@@ -116,7 +129,10 @@ const WebSocketProgressProvider = ({ children }: { children: React.ReactNode }) 
               }));
             }
           });
-          setOperations(newOperations);
+        } else {
+          // No running operations, clear all
+          setOperations({});
+          setChannelProgress({});
         }
       } catch (e) {
         // Silently ignore polling errors

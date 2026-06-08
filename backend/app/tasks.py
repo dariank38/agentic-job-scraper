@@ -31,7 +31,6 @@ def reset_stop_event(channel_id: int):
 def stop_analysis(channel_id: int):
     if channel_id in analysis_stop_events:
         analysis_stop_events[channel_id].set()
-        print(f"[Analyze] Stop signal received for channel {channel_id}")
 
 
 def is_analysis_stopped(channel_id: int) -> bool:
@@ -48,7 +47,6 @@ def start_cron_task() -> bool:
         return False
     cron_running = True
     cron_task = asyncio.create_task(continuous_scanner())
-    print("[Cron] Started continuous scanner")
     return True
 
 
@@ -60,17 +58,15 @@ def stop_cron_task() -> bool:
     if cron_task:
         cron_task.cancel()
         cron_task = None
-    print("[Cron] Stopped continuous scanner")
     return True
 
 
 async def broadcast_progress(event_type: str, data: dict):
     try:
         message = {"type": event_type, **data}
-        print(f"[Broadcast] Sending: {message}")
         await manager.broadcast(message)
     except Exception as e:
-        print(f"[Broadcast] Error sending progress: {e}")
+        pass
 
 
 async def create_operation(
@@ -126,96 +122,97 @@ async def update_operation(
 
 
 # ── PRE-FILTER ────────────────────────────────────────────────────────────────
+# DISABLED: Pre-filtering disabled to analyze all messages with Ollama
 
-def should_analyze_message(text: str) -> bool:
-    text_lower = text.lower()
-
-    exclusion_keywords = [
-        "marketing", "seo", "digital marketing", "growth hacker",
-        "advertising", "dropshipping", "mlm",
-        "crypto investment", "forex", "trading signal",
-        "airdrop", "casino", "gambling", "betting",
-        "medical", "healthcare", "nursing", "doctor", "pharmacist",
-        "accountant", "accounting", "finance manager", "auditor",
-        "graphic designer", "visual designer",
-        "content writer", "copywriter", "journalist",
-        "community manager", "social media manager",
-        "community moderator",
-        "real estate", "property agent", "construction worker",
-        "driver", "delivery rider", "cleaning",
-        "customer service", "customer support", "call center",
-        "recruiter", "talent acquisition", "headhunter",
-        "hr manager", "human resources",
-        "product manager", "project manager",
-        "teacher", "tutor", "professor",
-        # Chinese
-        "营销", "推广", "广告", "销售", "微商",
-        "投资", "外汇", "赌博", "博彩",
-        "医疗", "护士", "医生", "会计", "财务",
-        "人力资源", "人事", "招聘专员", "猎头",
-        "社群运营", "新媒体运营", "内容运营", "运营专员", "运营经理",
-        "文案", "编辑", "平面设计", "客服",
-        "产品经理", "项目经理", "商务",
-        "房产", "建筑工", "司机", "快递员",
-        "ui设计", "ux设计", "视觉设计",
-    ]
-
-    for keyword in exclusion_keywords:
-        if keyword in text_lower:
-            return False
-
-    role_keywords = [
-        "software engineer", "software developer", "software programmer",
-        "backend", "frontend", "front-end", "front end",
-        "fullstack", "full-stack", "full stack",
-        "devops", "platform engineer", "site reliability", "sre",
-        "mobile developer", "ios developer", "android developer",
-        "ml engineer", "ai engineer", "data engineer", "data scientist",
-        "blockchain developer", "smart contract", "web3 developer",
-        "qa engineer", "test engineer", "automation engineer",
-        "security engineer", "cloud engineer", "infrastructure engineer",
-        "tech lead", "team lead", "staff engineer", "principal engineer",
-        "solutions architect", "software architect", "cto",
-        "junior developer", "senior developer", "junior engineer", "senior engineer",
-        "web developer", "programmer", "coder",
-        # Chinese roots
-        "前端", "后端", "全栈", "运维",
-        "移动开发", "安卓", "鸿蒙",
-        "区块链", "智能合约",
-        "数据工程", "算法", "机器学习", "人工智能", "大模型",
-        "爬虫", "研发", "架构师", "技术负责人", "小程序",
-        "测试工程",
-    ]
-
-    stack_keywords = [
-        "python", "javascript", "typescript",
-        "golang", "rust", "java", "kotlin", "swift", "scala", "elixir",
-        "php", "ruby", "c++", "c#",
-        "react", "vue", "angular", "next.js", "nuxt", "svelte",
-        "h5", "uni-app", "uniapp", "taro",
-        "antd", "ant design", "element ui", "element plus",
-        "webpack", "vite",
-        "django", "flask", "fastapi", "laravel", "rails",
-        "spring boot", "springboot", "spring cloud", "mybatis", "dubbo",
-        "node.js", "nodejs", "express", "nestjs",
-        "flutter", "react native",
-        "docker", "kubernetes", "k8s", "terraform", "jenkins",
-        "ci/cd", "cicd", "github actions",
-        "aws", "gcp", "azure", "阿里云", "腾讯云", "华为云",
-        "linux",
-        "postgresql", "mongodb", "redis", "mysql", "elasticsearch",
-        "flink", "spark", "hadoop", "kafka",
-        "graphql", "microservices",
-        "分布式", "高并发", "中间件",
-        "solidity", "web3.js", "ethers.js",
-        "llm", "rag", "langchain",
-    ]
-
-    has_role = any(kw in text_lower for kw in role_keywords)
-    has_stack = any(kw in text_lower for kw in stack_keywords)
-
-    # role or stack keywords indicate software development content
-    return has_role or has_stack
+# def should_analyze_message(text: str) -> bool:
+#     text_lower = text.lower()
+#
+#     exclusion_keywords = [
+#         "marketing", "seo", "digital marketing", "growth hacker",
+#         "advertising", "dropshipping", "mlm",
+#         "crypto investment", "forex", "trading signal",
+#         "airdrop", "casino", "gambling", "betting",
+#         "medical", "healthcare", "nursing", "doctor", "pharmacist",
+#         "accountant", "accounting", "finance manager", "auditor",
+#         "graphic designer", "visual designer",
+#         "content writer", "copywriter", "journalist",
+#         "community manager", "social media manager",
+#         "community moderator",
+#         "real estate", "property agent", "construction worker",
+#         "driver", "delivery rider", "cleaning",
+#         "customer service", "customer support", "call center",
+#         "recruiter", "talent acquisition", "headhunter",
+#         "hr manager", "human resources",
+#         "product manager", "project manager",
+#         "teacher", "tutor", "professor",
+#         # Chinese
+#         "营销", "推广", "广告", "销售", "微商",
+#         "投资", "外汇", "赌博", "博彩",
+#         "医疗", "护士", "医生", "会计", "财务",
+#         "人力资源", "人事", "招聘专员", "猎头",
+#         "社群运营", "新媒体运营", "内容运营", "运营专员", "运营经理",
+#         "文案", "编辑", "平面设计", "客服",
+#         "产品经理", "项目经理", "商务",
+#         "房产", "建筑工", "司机", "快递员",
+#         "ui设计", "ux设计", "视觉设计",
+#     ]
+#
+#     for keyword in exclusion_keywords:
+#         if keyword in text_lower:
+#             return False
+#
+#     role_keywords = [
+#         "software engineer", "software developer", "software programmer",
+#         "backend", "frontend", "front-end", "front end",
+#         "fullstack", "full-stack", "full stack",
+#         "devops", "platform engineer", "site reliability", "sre",
+#         "mobile developer", "ios developer", "android developer",
+#         "ml engineer", "ai engineer", "data engineer", "data scientist",
+#         "blockchain developer", "smart contract", "web3 developer",
+#         "qa engineer", "test engineer", "automation engineer",
+#         "security engineer", "cloud engineer", "infrastructure engineer",
+#         "tech lead", "team lead", "staff engineer", "principal engineer",
+#         "solutions architect", "software architect", "cto",
+#         "junior developer", "senior developer", "junior engineer", "senior engineer",
+#         "web developer", "programmer", "coder",
+#         # Chinese roots
+#         "前端", "后端", "全栈", "运维",
+#         "移动开发", "安卓", "鸿蒙",
+#         "区块链", "智能合约",
+#         "数据工程", "算法", "机器学习", "人工智能", "大模型",
+#         "爬虫", "研发", "架构师", "技术负责人", "小程序",
+#         "测试工程",
+#     ]
+#
+#     stack_keywords = [
+#         "python", "javascript", "typescript",
+#         "golang", "rust", "java", "kotlin", "swift", "scala", "elixir",
+#         "php", "ruby", "c++", "c#",
+#         "react", "vue", "angular", "next.js", "nuxt", "svelte",
+#         "h5", "uni-app", "uniapp", "taro",
+#         "antd", "ant design", "element ui", "element plus",
+#         "webpack", "vite",
+#         "django", "flask", "fastapi", "laravel", "rails",
+#         "spring boot", "springboot", "spring cloud", "mybatis", "dubbo",
+#         "node.js", "nodejs", "express", "nestjs",
+#         "flutter", "react native",
+#         "docker", "kubernetes", "k8s", "terraform", "jenkins",
+#         "ci/cd", "cicd", "github actions",
+#         "aws", "gcp", "azure", "阿里云", "腾讯云", "华为云",
+#         "linux",
+#         "postgresql", "mongodb", "redis", "mysql", "elasticsearch",
+#         "flink", "spark", "hadoop", "kafka",
+#         "graphql", "microservices",
+#         "分布式", "高并发", "中间件",
+#         "solidity", "web3.js", "ethers.js",
+#         "llm", "rag", "langchain",
+#     ]
+#
+#     has_role = any(kw in text_lower for kw in role_keywords)
+#     has_stack = any(kw in text_lower for kw in stack_keywords)
+#
+#     # role or stack keywords indicate software development content
+#     return has_role or has_stack
 
 
 # ── FETCH ─────────────────────────────────────────────────────────────────────
@@ -262,18 +259,15 @@ async def fetch_and_store_messages(
     operation_id = await create_operation(db, "fetch", channel)
 
     try:
-        print(f"[Fetch] Starting fetch for {channel.username} (days_back={days_back})")
         await broadcast_progress("fetch_start", {"channel": channel.username, "days_back": days_back, "operation_id": operation_id})
         await telegram_manager.connect()
 
-        print(f"[Fetch] Fetching messages from {channel.username}...")
         await broadcast_progress("fetch_progress", {"channel": channel.username, "status": "fetching", "operation_id": operation_id})
         messages = await fetch_messages(
             telegram_manager.client,
             channel.username,
             days_back=days_back,
         )
-        print(f"[Fetch] Fetched {len(messages)} messages from {channel.username}")
         await broadcast_progress("fetch_progress", {"channel": channel.username, "status": "fetched", "count": len(messages), "operation_id": operation_id})
 
         new_count = 0
@@ -309,7 +303,6 @@ async def fetch_and_store_messages(
                     new_count += 1
 
                 if (i + 1) % 10 == 0:
-                    print(f"[Fetch] Processed {i + 1}/{len(messages)} messages for {channel.username}, {new_count} new")
                     await broadcast_progress("fetch_progress", {
                         "channel": channel.username,
                         "processed": i + 1,
@@ -320,11 +313,9 @@ async def fetch_and_store_messages(
                     await update_operation(db, operation_id, current=i + 1, total=len(messages))
 
             except Exception as e:
-                print(f"[Fetch] Error storing message {msg_data.get('id')}: {e}")
                 continue
 
         await db.commit()
-        print(f"[Fetch] Stored {new_count} new messages for {channel.username}")
 
         channel.last_fetch_new_count = new_count
         channel.last_fetch_at = datetime.utcnow()
@@ -341,7 +332,6 @@ async def fetch_and_store_messages(
                     run.messages_fetched += len(messages)
                     await db.commit()
             except Exception as e:
-                print(f"[Fetch] Error updating run stats: {e}")
                 await db.rollback()
 
         return {
@@ -360,16 +350,13 @@ async def fetch_and_store_messages(
         ]
 
         if any(err in error_msg for err in invalid_channel_errors):
-            print(f"[Fetch] Channel {channel.username} is invalid/non-existent, removing from DB")
             try:
                 await db.delete(channel)
                 await db.commit()
             except Exception as delete_error:
-                print(f"[Fetch] Error deleting channel: {delete_error}")
                 await db.rollback()
             return {"success": False, "error": f"Channel removed: {str(e)}", "channel_removed": True}
 
-        print(f"[Fetch] Error fetching {channel.username}: {e}")
         return {"success": False, "error": str(e)}
 
     finally:
@@ -390,10 +377,8 @@ async def _analyze_single(analyzer, message):
         )
         return message, result, None
     except asyncio.TimeoutError:
-        print(f"[Analyze] Timeout analyzing message {message.id}")
         return message, None, Exception("Analysis timeout")
     except Exception as e:
-        print(f"[Analyze] Error analyzing message {message.id}: {e}")
         return message, None, e
 
 
@@ -404,13 +389,11 @@ async def analyze_messages(
 ) -> dict:
     """Analyze unanalyzed messages with AI using concurrent pipeline."""
     if not await is_ollama_available():
-        print(f"[Analyze] Ollama not available, skipping {channel.username}")
         return {"success": False, "error": "Ollama not available"}
 
     operation_id = await create_operation(db, "analyze", channel)
 
     try:
-        print(f"[Analyze] Starting concurrent analysis for {channel.username}")
         reset_stop_event(channel.id)
         await broadcast_progress("analyze_start", {"channel": channel.username, "channel_id": channel.id, "operation_id": operation_id})
 
@@ -424,7 +407,6 @@ async def analyze_messages(
             )
         )
         messages = messages_result.scalars().all()
-        print(f"[Analyze] Found {len(messages)} unanalyzed messages for {channel.username}")
         await broadcast_progress("analyze_progress", {"channel": channel.username, "status": "found", "total": len(messages), "operation_id": operation_id})
         await update_operation(db, operation_id, total=len(messages))
 
@@ -447,31 +429,27 @@ async def analyze_messages(
 
         for batch_num, batch_start in enumerate(range(0, total_messages, batch_size), 1):
             if is_analysis_stopped(channel.id):
-                print(f"[Analyze] Stop requested for channel {channel.id}, halting after batch {batch_num}")
                 stopped_count = total_messages - batch_start
                 break
 
             batch = messages[batch_start:batch_start + batch_size]
-            print(f"[Analyze] Processing batch {batch_num}/{total_batches}: messages {batch_start + 1}-{min(batch_start + batch_size, total_messages)}")
 
             filtered_messages = []
             for msg in batch:
-                if msg.text and should_analyze_message(msg.text):
+                # Pre-filtering disabled - analyze all messages with Ollama
+                if msg.text:  # and should_analyze_message(msg.text):
                     filtered_messages.append(msg)
                 else:
                     skipped_count += 1
                     msg.analysis_status = "skipped"
 
             if not filtered_messages:
-                print(f"[Analyze] Batch {batch_num}/{total_batches}: all messages filtered out")
                 await broadcast_progress("analyze_progress", {"channel": channel.username, "current": batch_num, "total": total_batches, "operation_id": operation_id})
                 await update_operation(db, operation_id, current=batch_num)
                 continue
 
-            print(f"[Analyze] Starting analysis for {len(filtered_messages)} messages in batch {batch_num}")
             tasks = [_analyze_single(analyzer, msg) for msg in filtered_messages]
             completed = await asyncio.gather(*tasks)
-            print(f"[Analyze] Completed analysis for batch {batch_num}, got {len(completed)} results")
 
             for message, result, error in completed:
                 if error:
@@ -494,7 +472,6 @@ async def analyze_messages(
 
                     is_remote = job_data.get("is_remote")
                     if is_remote is False:
-                        print(f"[Analyze] Skipping on-site job: {job_data.get('title', 'unknown')}")
                         skipped_count += 1
                         message.analysis_status = "skipped"
                         continue
@@ -529,7 +506,6 @@ async def analyze_messages(
                             )
                         )
                         if existing_job_result.scalar_one_or_none():
-                            print(f"[Analyze] Skipping duplicate job: {title} at {company}")
                             skipped_count += 1
                             message.analysis_status = "skipped"
                             continue
@@ -554,7 +530,6 @@ async def analyze_messages(
                     db.add(job)
                     jobs_added += 1
                     message.analysis_status = "analyzed"
-                    print(f"[Analyze] Staged job: {title}")
 
                 # ── PERSONAL INFO ─────────────────────────────────────────────
                 elif category == "personal_info":
@@ -603,7 +578,6 @@ async def analyze_messages(
                                 select(Developer).filter(*conditions)
                             )
                             if existing_dev_result.scalar_one_or_none():
-                                print(f"[Analyze] Skipping duplicate developer: {name}")
                                 skipped_count += 1
                                 message.analysis_status = "skipped"
                                 continue
@@ -627,7 +601,6 @@ async def analyze_messages(
                     db.add(developer)
                     devs_added += 1
                     message.analysis_status = "analyzed"
-                    print(f"[Analyze] Staged developer: {name}")
 
                 else:
                     skipped_count += 1
@@ -668,7 +641,6 @@ async def analyze_messages(
                 await db.rollback()
 
         stop_note = f" (stopped {stopped_count} remaining)" if stopped_count > 0 else ""
-        print(f"[Analyze] Completed analysis for {channel.username}{stop_note}: {analyzed_count} analyzed, {jobs_added} jobs, {devs_added} developers, {skipped_count} skipped")
         status = "stopped" if stopped_count > 0 else "completed"
         await broadcast_progress("analyze_complete", {
             "channel": channel.username,
@@ -695,7 +667,6 @@ async def analyze_messages(
     except Exception as e:
         await db.rollback()
         await update_operation(db, operation_id, status="error", error_message=str(e))
-        print(f"[Analyze] Error in analyze_messages for {channel.username}: {e}")
         return {"success": False, "error": str(e)}
 
 
@@ -707,7 +678,6 @@ async def continuous_scanner(
 ) -> None:
     """Continuously fetch and analyze messages from channels."""
     global cron_running
-    print("[Cron] Starting continuous scanner")
 
     channel_index = 0
     last_fetch_time: dict[int, datetime] = {}
@@ -720,7 +690,6 @@ async def continuous_scanner(
                     channels = channels_result.scalars().all()
 
                     if not channels:
-                        print("[Cron] No active channels configured, waiting...")
                         await asyncio.sleep(sleep_interval_seconds)
                         continue
 
@@ -732,49 +701,31 @@ async def continuous_scanner(
                     due = last is None or (now - last).total_seconds() >= fetch_interval_minutes * 60
 
                     if due:
-                        print(f"[Cron] Fetching {channel.username}...")
                         try:
-                            # Run fetch in thread pool to avoid async context conflicts with Telethon
-                            from app.connection import AsyncSessionLocal
-
-                            def _fetch_in_thread():
-                                async def _do_fetch():
-                                    async with AsyncSessionLocal() as new_db:
-                                        return await fetch_and_store_messages(new_db, channel, days_back=1)
-                                return asyncio.run(_do_fetch())
-
-                            fetch_result = await asyncio.to_thread(_fetch_in_thread)
+                            fetch_result = await fetch_and_store_messages(db, channel, days_back=1)
                             if fetch_result["success"]:
                                 last_fetch_time[channel.id] = now
-                                print(f"[Cron] {channel.username}: fetched {fetch_result['fetched']}, new {fetch_result['new_stored']}")
 
                                 if fetch_result["new_stored"] > 0:
-                                    print(f"[Cron] {channel.username}: analyzing {fetch_result['new_stored']} new messages...")
                                     try:
                                         analyze_result = await analyze_messages(db, channel)
-                                        print(f"[Cron] {channel.username}: jobs={analyze_result.get('jobs_found')}, devs={analyze_result.get('developers_found')}")
                                     except Exception as e:
-                                        print(f"[Cron] {channel.username}: analyze EXCEPTION - {e}")
-                            else:
-                                print(f"[Cron] {channel.username}: fetch ERROR - {fetch_result.get('error', 'unknown')}")
+                                        pass
                         except Exception as e:
-                            print(f"[Cron] {channel.username}: fetch EXCEPTION - {e}")
+                            pass
                     else:
                         mins_left = int((fetch_interval_minutes * 60 - (now - last).total_seconds()) / 60)
-                        print(f"[Cron] {channel.username}: next fetch in ~{mins_left}m, nothing to do")
+                        pass
 
                 except Exception as e:
-                    print(f"[Cron] Loop ERROR: {e}")
+                    pass
 
         except asyncio.CancelledError:
-            print("[Cron] Task cancelled")
             break
         except Exception as e:
-            print(f"[Cron] CRITICAL ERROR: {e}")
+            pass
 
         await asyncio.sleep(sleep_interval_seconds)
-
-    print("[Cron] Continuous scanner stopped")
 
 
 # ── LIFESPAN ──────────────────────────────────────────────────────────────────
@@ -783,9 +734,7 @@ async def continuous_scanner(
 async def lifespan(app):
     """Startup and shutdown events."""
     # Cron job no longer starts automatically - must be started manually via API
-    print("[Lifespan] App started (cron job disabled)")
     try:
         yield
     finally:
         stop_cron_task()  # Clean up on app shutdown
-        print("[Lifespan] Cron stopped")

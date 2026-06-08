@@ -70,10 +70,8 @@ class TelegramClientManager:
         await self._client.connect()
 
         if auto_start:
-            # BUG FIX: Old code always called client.start(), which would block waiting for
-            # phone/code input in terminal if session file doesn't exist or not authenticated.
-            # Fix: Check is_user_authorized() first, only call start() if already authenticated.
-            # If not authenticated, raise clear error for caller to handle.
+            # BUG FIX: Check if session is already authorized before attempting to start
+            # If not authenticated, raise error instead of blocking on input
             if not await self._client.is_user_authorized():
                 await self._client.disconnect()
                 self._client = None
@@ -81,8 +79,8 @@ class TelegramClientManager:
                     f"Telegram account '{self.session_name}' is not authenticated. "
                     "Please complete the authentication flow before using this account."
                 )
-            # Valid session exists, so start() returns immediately without blocking input
-            await asyncio.to_thread(self._client.start, phone=self.phone)
+            # Session is already authorized, connect() is sufficient to resume it
+            # No need to call start() which is for first-time authentication
 
         return self._client
 

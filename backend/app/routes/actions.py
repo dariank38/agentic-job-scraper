@@ -18,9 +18,6 @@ def register_action_routes(app):
     async def fetch_channel(channel_id: int, account_id: Optional[int] = None, db: AsyncSession = Depends(get_db)):
         """Fetch messages from a Telegram channel."""
         try:
-            import asyncio
-            from app.connection import AsyncSessionLocal
-
             result = await db.execute(select(Channel).filter(Channel.id == channel_id))
             channel = result.scalar_one_or_none()
             if not channel:
@@ -30,19 +27,12 @@ def register_action_routes(app):
             from telegram_processor.config import DEFAULT_DAYS_BACK
             days_back = DEFAULT_DAYS_BACK
 
-            # Run fetch in thread pool with fresh async session to avoid context conflicts
-            def _fetch_in_thread():
-                async def _do_fetch():
-                    async with AsyncSessionLocal() as new_db:
-                        return await fetch_and_store_messages(
-                            new_db,
-                            channel,
-                            days_back=days_back,
-                            account_id=account_id
-                        )
-                return asyncio.run(_do_fetch())
-
-            result = await asyncio.to_thread(_fetch_in_thread)
+            result = await fetch_and_store_messages(
+                db,
+                channel,
+                days_back=days_back,
+                account_id=account_id
+            )
 
             return {
                 "success": result.get("success", True),
@@ -633,25 +623,19 @@ def register_action_routes(app):
             result = await db.execute(select(Channel.username))
             existing_usernames = set(row[0].lower() for row in result.all() if row[0])
 
-            # Run Telegram operations in thread pool to avoid event loop conflicts
-            def _get_dialogs_in_thread():
-                async def _do_get_dialogs():
-                    # Create Telegram client with account credentials
-                    telegram_manager = TelegramClientManager(
-                        api_id=account.api_id,
-                        api_hash=account.api_hash,
-                        phone_number=account.phone_number,
-                        session_name=account.session_name,
-                    )
+            # Create Telegram client with account credentials
+            telegram_manager = TelegramClientManager(
+                api_id=account.api_id,
+                api_hash=account.api_hash,
+                phone_number=account.phone_number,
+                session_name=account.session_name,
+            )
 
-                    await telegram_manager.connect()
-                    try:
-                        return await get_dialogs(telegram_manager.client)
-                    finally:
-                        await telegram_manager.disconnect()
-                return asyncio.run(_do_get_dialogs())
-
-            dialogs = await asyncio.to_thread(_get_dialogs_in_thread)
+            await telegram_manager.connect()
+            try:
+                dialogs = await get_dialogs(telegram_manager.client)
+            finally:
+                await telegram_manager.disconnect()
 
             # Filter out existing channels
             filtered_dialogs = []
