@@ -1,10 +1,11 @@
 # Agentic Job Scraper
 
-An automated job scraping system that fetches software development job postings from Telegram channels, analyzes them using AI (Ollama), and presents them in a modern web interface.
+An automated job scraping system that fetches software development job postings from Telegram channels and RSS feeds (e.g., V2EX, 电鸭社区), analyzes them using AI (Ollama), and presents them in a modern web interface.
 
 ## Features
 
 - **Automated Fetching**: Continuously monitors Telegram channels for new job postings
+- **Website Source Support**: Fetch and analyze job postings from RSS feeds (e.g., V2EX, 电鸭社区)
 - **AI-Powered Analysis**: Uses Ollama (qwen2.5 recommended) to analyze messages and extract job/developer information
 - **Real-time Progress**: WebSocket-based progress tracking for analysis operations
 - **Token Usage Monitoring**: Real-time token usage tracking for Ollama API calls
@@ -18,12 +19,12 @@ An automated job scraping system that fetches software development job postings 
 - **Smart Filtering**: Spam pre-filter before sending to Ollama for faster processing
 - **Remote Jobs Focus**: Prioritizes remote/work-from-home opportunities
 - **Multi-Account Support**: Manage multiple Telegram accounts dynamically through the UI with interactive authentication
+- **Custom Extraction Prompts**: Customize Ollama prompts per website source for better extraction accuracy
 
 ## Planned Features
 
-- **Web Scraping from Job Boards**: Support for scraping jobs from popular job board URLs (LinkedIn, Indeed, etc.) with AI analysis
-- **Source Tracking**: Distinguish between Telegram-sourced and web-sourced job postings
 - **Extended Job Board Support**: Add more job boards and career sites based on user demand
+- **Smart Content Fetching**: Use Playwright to fetch full content from job posting detail pages for better analysis
 
 ## Screenshots
 
@@ -334,16 +335,18 @@ Now the frontend will connect to your backend through the ngrok tunnel.
 ### Using the Application
 
 1. **Add Channels**: Go to the Channels page and add Telegram channels to monitor
-2. **Select Account**: When fetching channels, select which Telegram account to use (if you have multiple)
-3. **Fetch Messages**: Click "Fetch" to retrieve recent messages from channels
-4. **Analyze**: Click "Analyze" to process messages with AI and extract job/developer info
-5. **Stop Analysis**: Click "Stop" to gracefully stop an ongoing analysis operation (shows "Stopping..." state)
-6. **Monitor Progress**: View real-time progress including token usage and per-message status (success/cutoff/failed)
-7. **View Results**: Browse Jobs and Developers pages to see extracted information
-8. **Track Progress**: Use the status indicators to mark jobs as applied or developers as contacted
-9. **Continuous Scanning**: Enable the cron job for automatic periodic fetching
-10. **Analytics**: View daily charts on the Dashboard for job postings by channel, developers contacted, and jobs applied
-11. **Cleanup**: Use "Cleanup Old Messages" in Quick Actions to remove messages older than N days
+2. **Add Website Sources**: Go to the Websites page and add RSS feed URLs (e.g., V2EX, 电鸭社区)
+3. **Select Account**: When fetching channels, select which Telegram account to use (if you have multiple)
+4. **Fetch Messages**: Click "Fetch" to retrieve recent messages from channels or RSS feeds
+5. **Analyze**: Click "Analyze" to process messages with AI and extract job/developer info
+6. **Stop Analysis**: Click "Stop" to gracefully stop an ongoing analysis operation (shows "Stopping..." state)
+7. **Monitor Progress**: View real-time progress including token usage and per-message status (success/cutoff/failed)
+8. **View Results**: Browse Jobs and Developers pages to see extracted information
+9. **Track Progress**: Use the status indicators to mark jobs as applied or developers as contacted
+10. **Continuous Scanning**: Enable the cron job for automatic periodic fetching
+11. **Analytics**: View daily charts on the Dashboard for job postings by channel, developers contacted, and jobs applied
+12. **Cleanup**: Use "Cleanup Old Messages" in Quick Actions to remove messages older than N days
+13. **Custom Prompts**: Customize extraction prompts per website source for better accuracy
 
 ## API Endpoints
 
@@ -360,6 +363,17 @@ Now the frontend will connect to your backend through the ngrok tunnel.
 - `POST /api/telegram-accounts/authenticate` - Start authentication process (sends code to phone)
 - `POST /api/telegram-accounts/verify-code` - Verify authentication code
 - `POST /api/telegram-accounts/verify-password` - Verify 2FA password
+
+### Website Sources
+- `GET /api/website-sources` - List all website sources
+- `POST /api/website-sources` - Add a new website source (RSS feed)
+- `DELETE /api/website-sources/{id}` - Delete a website source
+- `PUT /api/website-sources/{id}` - Update a website source (including custom extraction prompt)
+- `POST /api/website-sources/{id}/fetch` - Fetch RSS content from a website source
+- `POST /api/website-sources/fetch-all` - Fetch from all active website sources
+- `POST /api/website-sources/{id}/analyze` - Analyze messages from a website source
+- `POST /api/website-sources/analyze-all` - Analyze messages from all website sources
+- `POST /api/website-sources/{id}/stop` - Stop ongoing operation for a website source
 
 ### Messages
 - `GET /api/messages` - List messages with pagination
@@ -404,6 +418,11 @@ agentic-job-scraper/
 │   ├── services/
 │   │   └── ollama_service.py  # AI analysis service
 │   ├── telegram_processor/    # Telegram client
+│   ├── web_crawler/           # RSS feed crawler and extractor
+│   │   ├── rss_fetcher.py     # RSS feed fetching
+│   │   ├── rss_extractor.py   # Ollama-based extraction
+│   │   ├── models.py          # Pydantic models for extraction
+│   │   └── prompts.py         # Extraction prompts
 │   └── web_app.py             # FastAPI entry point
 ├── frontend/
 │   ├── src/
@@ -483,6 +502,21 @@ psql -U your_username -d job_scraper -f backend/migrations/add_phone_code_hash.s
 **Make developer.message_id nullable (required for message cleanup feature):**
 ```bash
 psql -U your_username -d job_scraper -f backend/migrations/make_developer_message_id_nullable.sql
+```
+
+**Add Website Sources Table (for RSS feed support):**
+```bash
+psql -U your_username -d job_scraper -f backend/migrate_website_crawler.sql
+```
+
+**Make telegram_id nullable in messages table (for website sources):**
+```bash
+psql -U your_username -d job_scraper -f backend/migrate_make_telegram_id_nullable.sql
+```
+
+**Add extraction_prompt column to website_sources table:**
+```bash
+psql -U your_username -d job_scraper -f backend/migrate_add_extraction_prompt.sql
 ```
 
 Or run all migrations at once:
