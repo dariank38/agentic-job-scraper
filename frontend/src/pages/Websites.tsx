@@ -117,30 +117,12 @@ const Websites = () => {
     }
   };
 
-  const analyzeWebsiteSource = async (id: number) => {
-    try {
-      const data = await api.analyzeWebsiteSource(id);
-      if (data.success) {
-        showToast('success', 'Analysis started');
-      } else {
-        showToast('error', 'Error: ' + (data.error || 'Unknown'));
-      }
-    } catch (e: any) {
-      showToast('error', 'Error: ' + e.message);
-    }
+  const analyzeWebsiteSource = async (_id: number) => {
+    showToast('warning', 'Website analysis is under maintenance');
   };
 
   const analyzeAllWebsiteSources = async () => {
-    try {
-      const data = await api.analyzeAllWebsiteSources();
-      if (data.success) {
-        showToast('success', `Analysis started for ${data.sources} website source(s)`);
-      } else {
-        showToast('error', 'Error: ' + (data.error || 'Unknown'));
-      }
-    } catch (e: any) {
-      showToast('error', 'Error: ' + e.message);
-    }
+    showToast('warning', 'Website analysis is under maintenance');
   };
 
   const handleDeleteClick = (id: number) => {

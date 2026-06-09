@@ -1,7 +1,9 @@
 import { useEffect, useState } from 'react';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import api from '@/services/api';
-import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
+import { ChevronDown } from 'lucide-react';
 
 interface DailyJobsData {
   date: string;
@@ -75,21 +77,38 @@ export const DailyJobsChart = ({ days = 30 }: DailyJobsChartProps) => {
   return (
     <div>
       {channels.length > 1 && (
-        <div className="flex flex-wrap gap-1 mb-3">
-          {channels.map((channel, index) => {
-            const hidden = hiddenChannels.has(channel);
-            return (
-              <Badge
-                key={channel}
-                variant={hidden ? 'outline' : 'default'}
-                className="cursor-pointer text-xs"
-                style={!hidden ? { backgroundColor: colors[index % colors.length], border: 'none' } : { borderColor: colors[index % colors.length], color: colors[index % colors.length] }}
-                onClick={() => toggleChannel(channel)}
-              >
-                {channel}
-              </Badge>
-            );
-          })}
+        <div className="mb-3">
+          <Popover>
+            <PopoverTrigger asChild>
+              <Button variant="outline" size="sm">
+                <ChevronDown size={14} className="mr-2" />
+                Select Channels ({channels.length - hiddenChannels.size} selected)
+              </Button>
+            </PopoverTrigger>
+            <PopoverContent className="w-56 p-3" align="start">
+              <div className="space-y-2 max-h-48 overflow-y-auto">
+                {channels.map((channel, index) => {
+                  const hidden = hiddenChannels.has(channel);
+                  return (
+                    <label key={channel} className="flex items-center space-x-2 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={!hidden}
+                        onChange={() => toggleChannel(channel)}
+                        className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                      />
+                      <span
+                        className="text-sm"
+                        style={{ color: colors[index % colors.length] }}
+                      >
+                        {channel}
+                      </span>
+                    </label>
+                  );
+                })}
+              </div>
+            </PopoverContent>
+          </Popover>
         </div>
       )}
       <ResponsiveContainer width="100%" height={260}>
