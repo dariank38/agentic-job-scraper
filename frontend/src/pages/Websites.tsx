@@ -38,7 +38,7 @@ const Websites = () => {
       setInitialLoading(false);
     } catch (e: any) {
       setInitialLoading(false);
-      showToast('error', 'Error: ' + (e.message || 'Failed to load website sources'));
+      showToast('error', `${t('common.error')}: ${e.message || t('common.failedToLoad')} ${t('websites.title')}`);
     }
   };
 
@@ -49,16 +49,16 @@ const Websites = () => {
       formData.append('url', newWebsiteUrl);
       const data = await api.addWebsiteSource(formData);
       if (data.success) {
-        showToast('success', 'Website source added');
+        showToast('success', t('websites.sourceAdded'));
         setAddWebsiteDialogOpen(false);
         setNewWebsiteName('');
         setNewWebsiteUrl('');
         loadWebsiteSources();
       } else {
-        showToast('error', 'Error: ' + (data.error || 'Unknown'));
+        showToast('error', `${t('common.error')}: ${data.error || t('common.error')}`);
       }
     } catch (e: any) {
-      showToast('error', 'Error: ' + e.message);
+      showToast('error', `${t('common.error')}: ${e.message}`);
     }
   };
 
@@ -66,13 +66,13 @@ const Websites = () => {
     try {
       const data = await api.deleteWebsiteSource(id);
       if (data.success) {
-        showToast('success', 'Website source deleted');
+        showToast('success', t('websites.sourceDeleted'));
         loadWebsiteSources();
       } else {
-        showToast('error', 'Error: ' + (data.error || 'Unknown'));
+        showToast('error', `${t('common.error')}: ${data.error || t('common.error')}`);
       }
     } catch (e: any) {
-      showToast('error', 'Error: ' + e.message);
+      showToast('error', `${t('common.error')}: ${e.message}`);
     }
   };
 
@@ -81,13 +81,13 @@ const Websites = () => {
       setLoadingActions(prev => new Set(prev).add(`fetch-${id}`));
       const data = await api.fetchWebsiteSource(id);
       if (data.success) {
-        showToast('success', `Fetched ${data.new_messages} new messages (${data.fetch_method})`);
+        showToast('success', t('websites.fetchedMessages', { count: data.new_messages, method: data.fetch_method }));
         loadWebsiteSources();
       } else {
-        showToast('error', 'Error: ' + (data.error || 'Unknown'));
+        showToast('error', `${t('common.error')}: ` + (data.error || t('common.unknown')));
       }
     } catch (e: any) {
-      showToast('error', 'Error: ' + e.message);
+      showToast('error', `${t('common.error')}: ` + e.message);
     } finally {
       setLoadingActions(prev => {
         const newSet = new Set(prev);
@@ -103,13 +103,13 @@ const Websites = () => {
       const data = await api.fetchAllWebsiteSources();
       if (data.success) {
         const methods = data.fetch_methods?.join(', ') || 'mixed';
-        showToast('success', `Fetched ${data.new_messages} new messages from ${data.sources_fetched} source(s) (${methods})`);
+        showToast('success', t('websites.fetchedAllMessages', { count: data.new_messages, sources: data.sources_fetched, methods }));
         loadWebsiteSources();
       } else {
-        showToast('error', 'Error: ' + (data.error || 'Unknown'));
+        showToast('error', `${t('common.error')}: ` + (data.error || t('common.unknown')));
       }
     } catch (e: any) {
-      showToast('error', 'Error: ' + e.message);
+      showToast('error', `${t('common.error')}: ` + e.message);
     } finally {
       setLoadingActions(prev => {
         const newSet = new Set(prev);
@@ -120,11 +120,11 @@ const Websites = () => {
   };
 
   const analyzeWebsiteSource = async (_id: number) => {
-    showToast('warning', 'Website analysis is under maintenance');
+    showToast('warning', t('websites.underMaintenance'));
   };
 
   const analyzeAllWebsiteSources = async () => {
-    showToast('warning', 'Website analysis is under maintenance');
+    showToast('warning', t('websites.underMaintenance'));
   };
 
   const handleDeleteClick = (id: number) => {
@@ -153,14 +153,14 @@ const Websites = () => {
       formData.append('extraction_prompt', editPrompt);
       const data = await api.updateWebsiteSource(editingSource.id, formData);
       if (data.success) {
-        showToast('success', 'Extraction prompt updated');
+        showToast('success', t('websites.promptUpdated'));
         setEditDialogOpen(false);
         loadWebsiteSources();
       } else {
-        showToast('error', 'Error: ' + (data.error || 'Unknown'));
+        showToast('error', `${t('common.error')}: ` + (data.error || t('common.unknown')));
       }
     } catch (e: any) {
-      showToast('error', 'Error: ' + e.message);
+      showToast('error', `${t('common.error')}: ` + e.message);
     }
   };
 
@@ -168,12 +168,12 @@ const Websites = () => {
     try {
       const data = await api.stopWebsiteSource(sourceId);
       if (data.success) {
-        showToast('success', `Stop signal sent for ${sourceName}`);
+        showToast('success', t('websites.stopSignalSent', { name: sourceName }));
       } else {
-        showToast('error', 'Error: ' + (data.message || 'Unknown'));
+        showToast('error', `${t('common.error')}: ` + (data.message || t('common.unknown')));
       }
     } catch (e: any) {
-      showToast('error', 'Error: ' + e.message);
+      showToast('error', `${t('common.error')}: ` + e.message);
     }
   };
 
@@ -293,7 +293,7 @@ const Websites = () => {
                         onClick={() => handleEditPrompt(source)}
                       >
                         <Edit size={12} className="mr-1" />
-                        Prompt
+                        {t('websites.prompt')}
                       </Button>
                       <Button
                         size="sm"
@@ -340,7 +340,7 @@ const Websites = () => {
               <p className="text-sm text-gray-500 mb-4">{t('websites.noWebsites')}</p>
               <Button variant="outline" onClick={() => setAddWebsiteDialogOpen(true)}>
                 <Plus size={14} className="mr-2" />
-                Add your first website source
+                {t('websites.addWebsite')}
               </Button>
             </div>
           )}
@@ -353,7 +353,7 @@ const Websites = () => {
           <DialogHeader>
             <DialogTitle>{t('websites.addWebsite')}</DialogTitle>
             <DialogDescription>
-              Add a new website source to crawl for job postings.
+              {t('websites.addWebsiteHint')}
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4">
@@ -376,15 +376,15 @@ const Websites = () => {
               />
             </div>
             <p className="text-xs text-gray-500">
-              Enter the full RSS feed URL (e.g., /feed.xml, /rss, /atom.xml)
+              {t('websites.rssFeedHint')}
             </p>
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setAddWebsiteDialogOpen(false)}>
-              Cancel
+              {t('common.cancel')}
             </Button>
             <Button onClick={addWebsiteSource}>
-              Add Source
+              {t('websites.addWebsite')}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -401,10 +401,10 @@ const Websites = () => {
           </DialogHeader>
           <DialogFooter>
             <Button variant="outline" onClick={() => setDeleteDialogOpen(false)}>
-              Cancel
+              {t('common.cancel')}
             </Button>
             <Button variant="destructive" onClick={confirmDelete}>
-              Delete
+              {t('common.delete')}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -414,7 +414,7 @@ const Websites = () => {
       <Dialog open={editDialogOpen} onOpenChange={setEditDialogOpen}>
         <DialogContent className="max-w-2xl">
           <DialogHeader>
-            <DialogTitle>Edit Extraction Prompt</DialogTitle>
+            <DialogTitle>{t('common.edit')} {t('websites.customPrompt')}</DialogTitle>
             <DialogDescription>
               {t('websites.customPromptHint', { name: editingSource?.name })}
             </DialogDescription>
@@ -425,20 +425,20 @@ const Websites = () => {
               <Textarea
                 value={editPrompt}
                 onChange={(e) => setEditPrompt(e.target.value)}
-                placeholder="Enter custom extraction prompt..."
+                placeholder={t('websites.customPrompt') + '...'}
                 className="mt-1 min-h-[200px] font-mono text-sm"
               />
             </div>
             <p className="text-xs text-gray-500">
-              The prompt should instruct Ollama to extract job postings in JSON format. See the default prompts in web_crawler/prompts.py for reference.
+              {t('websites.promptHint')}
             </p>
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setEditDialogOpen(false)}>
-              Cancel
+              {t('common.cancel')}
             </Button>
             <Button onClick={savePrompt}>
-              Save Prompt
+              {t('common.save')}
             </Button>
           </DialogFooter>
         </DialogContent>

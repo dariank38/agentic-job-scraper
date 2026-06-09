@@ -95,7 +95,7 @@ const Messages = () => {
       setMessages(data.messages);
       setTotal(data.total);
     } catch (e: any) {
-      let errorMessage = 'Failed to load messages';
+      let errorMessage = `${t('common.failedToLoad')} ${t('messages.title')}`;
       if (e.response) {
         const errorData = await e.response.json().catch(() => ({}));
         errorMessage = errorData.detail || errorMessage;
@@ -126,7 +126,7 @@ const Messages = () => {
         loadMessages();
       }
     } catch (e: any) {
-      let errorMessage = 'Failed to re-analyze message';
+      let errorMessage = `${t('common.failedToAnalyze')} ${t('messages.title')}`;
       if (e.response) {
         const errorData = await e.response.json().catch(() => ({}));
         errorMessage = errorData.detail || errorMessage;
@@ -309,7 +309,7 @@ const Messages = () => {
                             <div className="flex items-center gap-3 text-xs text-gray-500 mb-1.5">
                               <span className="flex items-center gap-1">
                                 <Calendar className="w-3 h-3" />
-                                {msg.date ? new Date(msg.date).toLocaleString() : 'Unknown'}
+                                {msg.date ? new Date(msg.date).toLocaleString() : t('common.unknown')}
                               </span>
                               {(msg.sender_username || msg.sender_first_name) && (
                                 <span className="flex items-center gap-1">
@@ -355,10 +355,10 @@ const Messages = () => {
               variant="outline"
               size="sm"
             >
-              Previous
+              {t('common.previous')}
             </Button>
             <span className="flex items-center text-sm text-gray-500">
-              {offset + 1}-{Math.min(offset + limit, total)} of {total}
+              {offset + 1}-{Math.min(offset + limit, total)} / {total}
             </span>
             <Button
               onClick={handleNext}
@@ -366,7 +366,7 @@ const Messages = () => {
               variant="outline"
               size="sm"
             >
-              Next
+              {t('common.next')}
             </Button>
           </div>
         </>

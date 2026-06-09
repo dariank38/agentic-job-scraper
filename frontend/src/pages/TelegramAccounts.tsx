@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { useTranslation } from 'react-i18next';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -10,6 +11,7 @@ import type { TelegramAccount } from '@/services/api';
 import { useToast } from '@/components/Layout';
 
 const TelegramAccounts = () => {
+  const { t } = useTranslation();
   const [accounts, setAccounts] = useState<TelegramAccount[]>([]);
   const [loading, setLoading] = useState(false);
   const [showAddForm, setShowAddForm] = useState(false);
@@ -28,7 +30,7 @@ const TelegramAccounts = () => {
       const data = await api.getTelegramAccounts();
       setAccounts(data);
     } catch (error) {
-      showToast('error', 'Failed to load Telegram accounts');
+      showToast('error', `${t('common.failedToLoad')} ${t('telegramAccounts.title')}`);
     } finally {
       setLoading(false);
     }
@@ -46,33 +48,33 @@ const TelegramAccounts = () => {
         api_hash: newAccount.api_hash,
         phone_number: newAccount.phone_number,
       });
-      showToast('success', 'Telegram account added successfully');
+      showToast('success', t('telegramAccounts.addedSuccessfully'));
       setNewAccount({ api_id: '', api_hash: '', phone_number: '' });
       setShowAddForm(false);
       loadAccounts();
     } catch (error) {
-      showToast('error', 'Failed to add Telegram account');
+      showToast('error', `${t('common.failedToAdd')} ${t('telegramAccounts.title')}`);
     }
   };
 
   const handleDeleteAccount = async (id: number) => {
-    if (!confirm('Are you sure you want to delete this account?')) return;
+    if (!confirm(t('telegramAccounts.deleteConfirm'))) return;
     try {
       await api.deleteTelegramAccount(id);
-      showToast('success', 'Telegram account deleted');
+      showToast('success', t('telegramAccounts.deletedSuccessfully'));
       loadAccounts();
     } catch (error) {
-      showToast('error', 'Failed to delete Telegram account');
+      showToast('error', `${t('common.failedToDelete')} ${t('telegramAccounts.title')}`);
     }
   };
 
   const handleToggleActive = async (id: number) => {
     try {
       await api.toggleTelegramAccountActive(id);
-      showToast('success', 'Account status updated');
+      showToast('success', t('telegramAccounts.statusUpdated'));
       loadAccounts();
     } catch (error) {
-      showToast('error', 'Failed to update account status');
+      showToast('error', `${t('common.failedToUpdate')} ${t('telegramAccounts.title')} status`);
     }
   };
 
@@ -93,7 +95,7 @@ const TelegramAccounts = () => {
         showToast('success', result.message);
       }
     } catch (e: any) {
-      let errorMessage = 'Failed to send code';
+      let errorMessage = t('common.failedToSend');
       if (e.response) {
         const errorData = await e.response.json().catch(() => ({}));
         errorMessage = errorData.detail || errorMessage;
@@ -120,7 +122,7 @@ const TelegramAccounts = () => {
         showToast('info', result.message);
       }
     } catch (e: any) {
-      let errorMessage = 'Failed to verify code';
+      let errorMessage = `${t('common.failedToVerify')} ${t('telegramAccounts.verificationCode')}`;
       if (e.response) {
         const errorData = await e.response.json().catch(() => ({}));
         errorMessage = errorData.detail || errorMessage;
@@ -144,7 +146,7 @@ const TelegramAccounts = () => {
         loadAccounts();
       }
     } catch (e: any) {
-      let errorMessage = 'Failed to verify password';
+      let errorMessage = `${t('common.failedToVerify')} ${t('telegramAccounts.twoFactorPassword')}`;
       if (e.response) {
         const errorData = await e.response.json().catch(() => ({}));
         errorMessage = errorData.detail || errorMessage;
@@ -161,24 +163,24 @@ const TelegramAccounts = () => {
     <div className="max-w-4xl mx-auto">
       <div className="flex items-center justify-between mb-6">
         <div>
-          <h1 className="text-2xl font-bold">Telegram Accounts</h1>
-          <p className="text-muted-foreground">Manage your Telegram accounts for fetching messages</p>
+          <h1 className="text-2xl font-bold">{t('telegramAccounts.title')}</h1>
+          <p className="text-muted-foreground">{t('telegramAccounts.manageAccountsHint')}</p>
         </div>
         <Button onClick={() => setShowAddForm(!showAddForm)}>
           <Plus className="w-4 h-4 mr-2" />
-          Add Account
+          {t('telegramAccounts.addAccount')}
         </Button>
       </div>
 
       {showAddForm && (
         <Card className="mb-6">
           <CardHeader>
-            <CardTitle>Add New Telegram Account</CardTitle>
+            <CardTitle>{t('telegramAccounts.addAccount')}</CardTitle>
           </CardHeader>
           <CardContent>
             <form onSubmit={handleAddAccount} className="space-y-4">
               <div>
-                <label className="text-sm font-medium mb-1 block">API ID</label>
+                <label className="text-sm font-medium mb-1 block">{t('telegramAccounts.apiId')}</label>
                 <Input
                   type="number"
                   placeholder="Enter API ID from my.telegram.org"
@@ -188,7 +190,7 @@ const TelegramAccounts = () => {
                 />
               </div>
               <div>
-                <label className="text-sm font-medium mb-1 block">API Hash</label>
+                <label className="text-sm font-medium mb-1 block">{t('telegramAccounts.apiHash')}</label>
                 <Input
                   type="password"
                   placeholder="Enter API Hash from my.telegram.org"
@@ -198,7 +200,7 @@ const TelegramAccounts = () => {
                 />
               </div>
               <div>
-                <label className="text-sm font-medium mb-1 block">Phone Number</label>
+                <label className="text-sm font-medium mb-1 block">{t('telegramAccounts.phone')}</label>
                 <Input
                   type="tel"
                   placeholder="+1234567890"
@@ -208,9 +210,9 @@ const TelegramAccounts = () => {
                 />
               </div>
               <div className="flex gap-2">
-                <Button type="submit">Add Account</Button>
+                <Button type="submit">{t('telegramAccounts.addAccount')}</Button>
                 <Button type="button" variant="outline" onClick={() => setShowAddForm(false)}>
-                  Cancel
+                  {t('common.cancel')}
                 </Button>
               </div>
             </form>
@@ -225,7 +227,7 @@ const TelegramAccounts = () => {
       ) : accounts.length === 0 ? (
         <Card>
           <CardContent className="py-8 text-center text-muted-foreground">
-            No Telegram accounts configured. Add an account to start fetching messages.
+            {t('telegramAccounts.noAccountsHint')}
           </CardContent>
         </Card>
       ) : (
@@ -238,26 +240,26 @@ const TelegramAccounts = () => {
                     <div className="flex items-center gap-2 mb-2">
                       <h3 className="font-semibold">{account.username ? `@${account.username}` : account.phone_number}</h3>
                       <Badge variant={account.is_active ? 'default' : 'secondary'}>
-                        {account.is_active ? 'Active' : 'Inactive'}
+                        {account.is_active ? t('telegramAccounts.active') : t('telegramAccounts.inactive')}
                       </Badge>
                       {account.is_authenticated ? (
                         <Badge variant="outline" className="border-green-500 text-green-700">
                           <CheckCircle className="w-3 h-3 mr-1" />
-                          Authenticated
+                          {t('telegramAccounts.authenticated')}
                         </Badge>
                       ) : (
                         <Badge variant="outline" className="border-yellow-500 text-yellow-700">
                           <XCircle className="w-3 h-3 mr-1" />
-                          Not Authenticated
+                          {t('telegramAccounts.notAuthenticated')}
                         </Badge>
                       )}
                     </div>
                     <div className="text-sm text-muted-foreground space-y-1">
-                      <p>API ID: {account.api_id}</p>
-                      <p>Session: {account.session_name}</p>
-                      <p>Added: {new Date(account.created_at).toLocaleDateString()}</p>
+                      <p>{t('telegramAccounts.apiIdLabel')}: {account.api_id}</p>
+                      <p>{t('telegramAccounts.sessionLabel')}: {account.session_name}</p>
+                      <p>{t('telegramAccounts.addedLabel')}: {new Date(account.created_at).toLocaleDateString()}</p>
                       {account.last_used_at && (
-                        <p>Last used: {new Date(account.last_used_at).toLocaleString()}</p>
+                        <p>{t('telegramAccounts.lastUsedLabel')}: {new Date(account.last_used_at).toLocaleString()}</p>
                       )}
                     </div>
                   </div>
@@ -269,7 +271,7 @@ const TelegramAccounts = () => {
                         onClick={() => handleStartAuth(account.id)}
                       >
                         <Key className="w-4 h-4 mr-1" />
-                        Authenticate
+                        {t('telegramAccounts.authenticate')}
                       </Button>
                     )}
                     <Button
@@ -277,7 +279,7 @@ const TelegramAccounts = () => {
                       size="sm"
                       onClick={() => handleToggleActive(account.id)}
                     >
-                      {account.is_active ? 'Deactivate' : 'Activate'}
+                      {account.is_active ? t('telegramAccounts.deactivate') : t('telegramAccounts.activate')}
                     </Button>
                     <Button
                       variant="destructive"
@@ -298,35 +300,35 @@ const TelegramAccounts = () => {
         <DialogContent>
           <DialogHeader>
             <DialogTitle>
-              {authStep === 'code' ? 'Enter Verification Code' : 'Enter 2FA Password'}
+              {authStep === 'code' ? t('telegramAccounts.enterVerificationCode') : t('telegramAccounts.enter2faPassword')}
             </DialogTitle>
           </DialogHeader>
           <div className="space-y-4 py-4">
             {authStep === 'code' ? (
               <>
                 <p className="text-sm text-muted-foreground">
-                  A verification code has been sent to your phone. Enter it below to authenticate your account.
+                  {t('telegramAccounts.verificationCodeHint')}
                 </p>
                 <div className="flex gap-2">
                   <Input
-                    placeholder="Enter code"
+                    placeholder={t('telegramAccounts.enterCodePlaceholder')}
                     value={authCode}
                     onChange={(e) => setAuthCode(e.target.value)}
                     onKeyDown={(e) => e.key === 'Enter' && handleVerifyCode()}
                   />
                   <Button onClick={handleSendCode} disabled={authLoading}>
-                    Resend Code
+                    {t('telegramAccounts.resendCode')}
                   </Button>
                 </div>
               </>
             ) : (
               <>
                 <p className="text-sm text-muted-foreground">
-                  Your account has two-factor authentication enabled. Enter your 2FA password below.
+                  {t('telegramAccounts.twoFaHint')}
                 </p>
                 <Input
                   type="password"
-                  placeholder="Enter 2FA password"
+                  placeholder={t('telegramAccounts.enter2faPlaceholder')}
                   value={authPassword}
                   onChange={(e) => setAuthPassword(e.target.value)}
                   onKeyDown={(e) => e.key === 'Enter' && handleVerifyPassword()}
@@ -336,10 +338,10 @@ const TelegramAccounts = () => {
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setAuthDialogOpen(false)}>
-              Cancel
+              {t('common.cancel')}
             </Button>
             <Button onClick={authStep === 'code' ? handleVerifyCode : handleVerifyPassword} disabled={authLoading}>
-              {authLoading ? 'Verifying...' : authStep === 'code' ? 'Verify Code' : 'Verify Password'}
+              {authLoading ? t('telegramAccounts.authenticating') : authStep === 'code' ? t('telegramAccounts.submit') : t('telegramAccounts.submit')}
             </Button>
           </DialogFooter>
         </DialogContent>

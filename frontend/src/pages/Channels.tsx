@@ -59,14 +59,14 @@ const Channels = () => {
         setSelectedAccountId(activeAccount.id);
       }
     } catch (e: any) {
-      let errorMessage = 'Failed to load Telegram accounts';
+      let errorMessage = `${t('common.failedToLoad')} ${t('telegramAccounts.title')}`;
       if (e.response) {
         const errorData = await e.response.json().catch(() => ({}));
         errorMessage = errorData.detail || errorMessage;
       } else if (e.message) {
         errorMessage = e.message;
       }
-      showToast('error', 'Error: ' + errorMessage);
+      showToast('error', `${t('common.error')}: ${errorMessage}`);
     }
   };
 
@@ -75,14 +75,14 @@ const Channels = () => {
       const data = await api.getStats();
       setStats(data);
     } catch (e: any) {
-      let errorMessage = 'Failed to load stats';
+      let errorMessage = `${t('common.failedToLoad')} stats`;
       if (e.response) {
         const errorData = await e.response.json().catch(() => ({}));
         errorMessage = errorData.detail || errorMessage;
       } else if (e.message) {
         errorMessage = e.message;
       }
-      showToast('error', 'Error: ' + errorMessage);
+      showToast('error', `${t('common.error')}: ${errorMessage}`);
     }
   };
 
@@ -96,14 +96,14 @@ const Channels = () => {
       setChannels(data.channels);
       setTotal(data.total || 0);
     } catch (e: any) {
-      let errorMessage = 'Failed to load channels';
+      let errorMessage = `${t('common.failedToLoad')} ${t('channels.title')}`;
       if (e.response) {
         const errorData = await e.response.json().catch(() => ({}));
         errorMessage = errorData.detail || errorMessage;
       } else if (e.message) {
         errorMessage = e.message;
       }
-      showToast('error', 'Error: ' + errorMessage);
+      showToast('error', `${t('common.error')}: ${errorMessage}`);
     }
   };
 
@@ -142,18 +142,18 @@ const Channels = () => {
         setShowDialogs(true);
         filterDialogsLocally(data.dialogs);
       } else {
-        showToast('error', 'Error: ' + (data.error || 'Failed to load dialogs'));
+        showToast('error', `${t('common.error')}: ${data.error || t('common.failedToLoad')} dialogs`);
       }
     } catch (e: any) {
       // Try to extract error message from response
-      let errorMessage = 'Failed to load dialogs';
+      let errorMessage = `${t('common.failedToLoad')} dialogs`;
       if (e.response) {
         const errorData = await e.response.json().catch(() => ({}));
         errorMessage = errorData.detail || errorMessage;
       } else if (e.message) {
         errorMessage = e.message;
       }
-      showToast('error', 'Error: ' + errorMessage);
+      showToast('error', `${t('common.error')}: ${errorMessage}`);
     }
   };
 
@@ -180,7 +180,7 @@ const Channels = () => {
 
     try {
       await withLoading(`add-${username}`, () => api.addChannel(data));
-      showToast('success', 'Channel added successfully!');
+      showToast('success', t('channels.addedSuccessfully'));
       setAddedUsernames(prev => new Set(prev).add(username));
       setTimeout(() => {
         loadChannels();
@@ -188,14 +188,14 @@ const Channels = () => {
         filterDialogsLocally();
       }, 100);
     } catch (e: any) {
-      let errorMessage = 'Failed to add channel';
+      let errorMessage = `${t('common.failedToAdd')} ${t('channels.title')}`;
       if (e.response) {
         const errorData = await e.response.json().catch(() => ({}));
         errorMessage = errorData.detail || errorMessage;
       } else if (e.message) {
         errorMessage = e.message;
       }
-      showToast('error', 'Error: ' + errorMessage);
+      showToast('error', `${t('common.error')}: ${errorMessage}`);
     }
   };
 
@@ -211,7 +211,7 @@ const Channels = () => {
 
     try {
       await withLoading('add-channel', () => api.addChannel(data));
-      showToast('success', 'Channel added successfully!');
+      showToast('success', t('channels.addedSuccessfully'));
       setFormData({ username: '', name: '', description: '' });
       setAddedUsernames(prev => new Set(prev).add(formData.username));
       setTimeout(() => {
@@ -220,14 +220,14 @@ const Channels = () => {
         filterDialogsLocally();
       }, 100);
     } catch (e: any) {
-      let errorMessage = 'Failed to add channel';
+      let errorMessage = `${t('common.failedToAdd')} ${t('channels.title')}`;
       if (e.response) {
         const errorData = await e.response.json().catch(() => ({}));
         errorMessage = errorData.detail || errorMessage;
       } else if (e.message) {
         errorMessage = e.message;
       }
-      showToast('error', 'Error: ' + errorMessage);
+      showToast('error', `${t('common.error')}: ${errorMessage}`);
     }
   };
 
@@ -235,26 +235,26 @@ const Channels = () => {
     try {
       // Check if Ollama is available before attempting analysis (fetch-analyze includes analysis)
       if (!stats?.ollama_available) {
-        showToast('error', 'Ollama is not available. Please check if Ollama is running.');
+        showToast('error', t('channels.ollamaUnavailable'));
         return;
       }
 
       const data = await withLoading(`fetch-analyze-${channelId}`, () => api.fetchAnalyzeChannel(channelId, selectedAccountId || undefined));
       if (data.success) {
-        showToast('success', `Fetched ${data.total_new_messages} new messages, found ${data.total_jobs} jobs (${data.days_back_used}d window)`);
+        showToast('success', t('channels.fetchAnalyzeComplete', { messages: data.total_new_messages, jobs: data.total_jobs, days: data.days_back_used }));
         setTimeout(() => loadChannels(), 1500);
       } else {
-        showToast('error', 'Error: ' + (data.error || 'Unknown error'));
+        showToast('error', `${t('common.error')}: ${data.error || t('common.error')}`);
       }
     } catch (e: any) {
-      let errorMessage = 'Failed to fetch and analyze channel';
+      let errorMessage = `${t('common.failedToFetch')} and ${t('common.failedToAnalyze')} ${t('channels.title')}`;
       if (e.response) {
         const errorData = await e.response.json().catch(() => ({}));
         errorMessage = errorData.detail || errorMessage;
       } else if (e.message) {
         errorMessage = e.message;
       }
-      showToast('error', 'Error: ' + errorMessage);
+      showToast('error', `${t('common.error')}: ${errorMessage}`);
     }
   };
 
@@ -264,12 +264,12 @@ const Channels = () => {
       requestStop(channelId, channelUsername);
       const data = await api.stopAnalyze(channelId);
       if (data.success) {
-        showToast('success', 'Stop signal sent - finishing current message...');
+        showToast('success', t('channels.stopSignalSent'));
       } else {
-        showToast('warning', data.message || 'No active analysis to stop');
+        showToast('warning', data.message || t('channels.noActiveAnalysis'));
       }
     } catch (e: any) {
-      showToast('error', 'Error: ' + e.message);
+      showToast('error', `${t('common.error')}: ` + e.message);
     }
   };
 
@@ -278,14 +278,14 @@ const Channels = () => {
       await withLoading(`toggle-${channelId}`, () => api.toggleChannel(channelId));
       loadChannels();
     } catch (e: any) {
-      let errorMessage = 'Failed to toggle channel';
+      let errorMessage = `${t('common.failedToToggle')} ${t('channels.title')}`;
       if (e.response) {
         const errorData = await e.response.json().catch(() => ({}));
         errorMessage = errorData.detail || errorMessage;
       } else if (e.message) {
         errorMessage = e.message;
       }
-      showToast('error', 'Error: ' + errorMessage);
+      showToast('error', `${t('common.error')}: ${errorMessage}`);
     }
   };
 
@@ -295,14 +295,14 @@ const Channels = () => {
       loadChannels();
       setDeleteDialogOpen(false);
     } catch (e: any) {
-      let errorMessage = 'Failed to delete channel';
+      let errorMessage = `${t('common.failedToDelete')} ${t('channels.title')}`;
       if (e.response) {
         const errorData = await e.response.json().catch(() => ({}));
         errorMessage = errorData.detail || errorMessage;
       } else if (e.message) {
         errorMessage = e.message;
       }
-      showToast('error', 'Error: ' + errorMessage);
+      showToast('error', `${t('common.error')}: ${errorMessage}`);
     }
   };
 
@@ -332,7 +332,7 @@ const Channels = () => {
             <div className="relative flex-1">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
               <Input
-                placeholder="Search channels..."
+                placeholder={t('channels.searchPlaceholder')}
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 className="pl-9"
@@ -349,7 +349,7 @@ const Channels = () => {
             </select>
             {(searchQuery || activeFilter !== 'all') && (
               <Button variant="ghost" size="sm" onClick={() => { setSearchQuery(''); setActiveFilter('all'); }}>
-                Clear
+                {t('common.clear')}
               </Button>
             )}
           </div>
@@ -378,7 +378,7 @@ const Channels = () => {
                         )}
                         {(channel.pending_count || 0) > 0 && (
                           <span className="ml-2 inline-flex items-center px-1.5 py-0.5 rounded-full text-xs font-medium bg-orange-100 text-orange-800">
-                            {channel.pending_count} pending
+                            {channel.pending_count} {t('channels.pending')}
                           </span>
                         )}
                       </p>
@@ -386,7 +386,7 @@ const Channels = () => {
                         <div className="mt-2">
                           <div className="flex justify-between text-xs mb-1">
                             <span className={stoppingChannels[channel.username] ? 'text-orange-600 font-medium' : ''}>
-                              {stoppingChannels[channel.username] ? '⚠ Stopping...' : t('channels.analyzing')}
+                              {stoppingChannels[channel.username] ? t('channels.stopping') : t('channels.analyzing')}
                             </span>
                             <span>{channelProgress[channel.username].analyzed}/{channelProgress[channel.username].total}</span>
                           </div>
@@ -429,7 +429,7 @@ const Channels = () => {
                           size="sm"
                           variant="destructive"
                           onClick={() => stopAnalyzeChannel(channel.id, channel.username)}
-                          title="Stop analysis"
+                          title={t('channels.stopAnalysis')}
                           disabled={stoppingChannels[channel.id] || stoppingChannels[channel.username]}
                         >
                           <Square size={12} className="mr-1" />
@@ -441,7 +441,7 @@ const Channels = () => {
                         onClick={() => toggleChannel(channel.id)}
                         disabled={loadingActions.has(`toggle-${channel.id}`) || !!(loadingActions.has(`fetch-analyze-${channel.id}`) || !!operations[channel.username])}
                       >
-                        {loadingActions.has(`toggle-${channel.id}`) ? 'Toggling...' : (channel.is_active ? t('channels.disable') : t('channels.enable'))}
+                        {loadingActions.has(`toggle-${channel.id}`) ? t('channels.toggling') : (channel.is_active ? t('channels.disable') : t('channels.enable'))}
                       </Button>
                       <Button
                         variant="destructive"
@@ -462,10 +462,10 @@ const Channels = () => {
                   onClick={handlePrevious}
                   disabled={offset === 0}
                 >
-                  Previous
+                  {t('common.previous')}
                 </Button>
                 <span className="text-sm text-muted-foreground">
-                  Page {Math.floor(offset / limit) + 1} of {Math.ceil(total / limit)} ({offset + 1}-{Math.min(offset + limit, total)} of {total})
+                  {t('common.page')} {Math.floor(offset / limit) + 1} / {Math.ceil(total / limit)} ({offset + 1}-{Math.min(offset + limit, total)} / {total})
                 </span>
                 <Button
                   variant="outline"
@@ -473,7 +473,7 @@ const Channels = () => {
                   onClick={handleNext}
                   disabled={offset + limit >= total}
                 >
-                  Next
+                  {t('common.next')}
                 </Button>
               </div>
             </>
@@ -494,7 +494,7 @@ const Channels = () => {
           </p>
           <div className="flex gap-2 justify-end mt-4">
             <Button variant="outline" onClick={() => setDeleteDialogOpen(false)}>
-              Cancel
+              {t('common.cancel')}
             </Button>
             <Button
               variant="destructive"
@@ -511,20 +511,20 @@ const Channels = () => {
       <Dialog open={addDialogOpen} onOpenChange={setAddDialogOpen}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Add New Channel</DialogTitle>
+            <DialogTitle>{t('channels.addChannel')}</DialogTitle>
           </DialogHeader>
           {telegramAccounts.length > 0 && (
             <div className="mb-4">
-              <label className="block mb-1 font-medium text-sm">Select Telegram Account</label>
+              <label className="block mb-1 font-medium text-sm">{t('telegramAccounts.title')}</label>
               <select
                 value={selectedAccountId || ''}
                 onChange={(e) => setSelectedAccountId(e.target.value ? parseInt(e.target.value) : null)}
                 className="w-full px-3 py-2 rounded-md border border-gray-200 text-sm bg-white"
               >
-                <option value="">Select Account</option>
+                <option value="">{t('telegramAccounts.selectAccount')}</option>
                 {telegramAccounts.map(acc => (
                   <option key={acc.id} value={acc.id}>
-                    {acc.username ? `@${acc.username}` : acc.phone_number} {acc.is_authenticated ? '✓' : '(not authenticated)'}
+                    {acc.username ? `@${acc.username}` : acc.phone_number} {acc.is_authenticated ? '✓' : `(${t('telegramAccounts.notAuthenticated')})`}
                   </option>
                 ))}
               </select>
@@ -535,64 +535,64 @@ const Channels = () => {
             onClick={loadTelegramDialogs}
             disabled={loadingActions.has('load-dialogs') || !selectedAccountId}
           >
-            {loadingActions.has('load-dialogs') ? 'Loading...' : 'Load from Telegram Account'}
+            {loadingActions.has('load-dialogs') ? t('channels.loading') : t('channels.loadFromTelegram')}
           </Button>
           {showDialogs && (
             <div className="mb-4">
-              <h3 className="text-sm font-semibold mb-2">Available Channels & Groups</h3>
+              <h3 className="text-sm font-semibold mb-2">{t('channels.availableChannels')}</h3>
               <div className="max-h-[300px] overflow-y-auto border border-gray-200 p-2 mb-2">
                 {dialogs.length === 0 ? (
-                  <p className="text-sm">No channels or groups found in your Telegram account.</p>
+                  <p className="text-sm">{t('channels.noDialogsFound')}</p>
                 ) : (
                   dialogs.map((dialog, idx) => (
                       <div key={idx} className="p-2 border-b border-gray-100">
                         <div className="flex justify-between items-center">
                           <div>
-                            <p className="font-bold">{dialog.type === 'channel' ? 'Channel' : 'Group'}</p>
+                            <p className="font-bold">{dialog.type === 'channel' ? t('channels.typeChannel') : t('channels.typeGroup')}</p>
                             <p>{dialog.name}</p>
-                            <p className="text-sm text-gray-500">{dialog.username || '(no username)'}</p>
+                            <p className="text-sm text-gray-500">{dialog.username || t('channels.noUsername')}</p>
                           </div>
                           <Button
                             size="sm"
                             onClick={() => addChannelDirect(dialog.username || '', dialog.name)}
                             disabled={loadingActions.has(`add-${dialog.username}`)}
                           >
-                            {loadingActions.has(`add-${dialog.username}`) ? 'Adding...' : 'Add'}
+                            {loadingActions.has(`add-${dialog.username}`) ? t('common.adding') : t('channels.addChannel')}
                           </Button>
                         </div>
                       </div>
                     ))
                 )}
                 {dialogs.filter(dialog => !addedUsernames.has(dialog.username || '')).length === 0 && dialogs.length > 0 && (
-                  <p className="text-gray-500 text-sm">All channels have been added.</p>
+                  <p className="text-gray-500 text-sm">{t('channels.allChannelsAdded')}</p>
                 )}
               </div>
             </div>
           )}
           <form onSubmit={addChannel}>
             <div className="mb-3">
-              <label className="block mb-1 font-medium text-sm">Channel Username *</label>
+              <label className="block mb-1 font-medium text-sm">{t('channels.channelUsernameLabel')}</label>
               <Input
                 value={formData.username}
                 onChange={(e) => setFormData({ ...formData, username: e.target.value })}
-                placeholder="@channelname or channelname"
+                placeholder={t('channels.channelUsernamePlaceholder')}
                 required
               />
             </div>
             <div className="mb-3">
-              <label className="block mb-1 font-medium text-sm">Name (optional)</label>
+              <label className="block mb-1 font-medium text-sm">{t('channels.nameOptional')}</label>
               <Input
                 value={formData.name}
                 onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                placeholder="Display name"
+                placeholder={t('channels.nameOptionalPlaceholder')}
               />
             </div>
             <div className="mb-3">
-              <label className="block mb-1 font-medium text-sm">Description (optional)</label>
+              <label className="block mb-1 font-medium text-sm">{t('channels.descriptionOptional')}</label>
               <Textarea
                 value={formData.description}
                 onChange={(e) => setFormData({ ...formData, description: e.target.value })}
-                placeholder="Brief description"
+                placeholder={t('channels.descriptionOptionalPlaceholder')}
                 rows={2}
               />
             </div>
@@ -602,13 +602,13 @@ const Channels = () => {
                 variant="outline"
                 onClick={() => setAddDialogOpen(false)}
               >
-                Cancel
+                {t('common.cancel')}
               </Button>
               <Button
                 type="submit"
                 disabled={loadingActions.has('add-channel')}
               >
-                {loadingActions.has('add-channel') ? 'Adding...' : 'Add Channel'}
+                {loadingActions.has('add-channel') ? t('common.adding') : t('channels.addChannel')}
               </Button>
             </div>
           </form>

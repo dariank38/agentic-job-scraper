@@ -130,13 +130,13 @@ const Dashboard = () => {
     try {
       const data = await withLoading(`fetch-${channelId}`, () => api.fetchChannel(channelId));
       if (data.success) {
-        showToast('success', `Fetched ${data.new_messages} new messages from channel (${data.days_back_used}d window)`);
+        showToast('success', t('dashboard.fetchedMessages', { count: data.new_messages, days: data.days_back_used }));
         loadData();
       } else {
-        showToast('error', 'Error: ' + (data.error || 'Unknown'));
+        showToast('error', `${t('common.error')}: ` + (data.error || t('common.unknown')));
       }
     } catch (e: any) {
-      showToast('error', 'Error: ' + e.message);
+      showToast('error', `${t('common.error')}: ` + e.message);
     }
   };
 
@@ -144,7 +144,7 @@ const Dashboard = () => {
     try {
       // Check if Ollama is available before attempting analysis
       if (!stats?.ollama_available) {
-        showToast('error', 'Ollama is not available. Please check if Ollama is running.');
+        showToast('error', t('dashboard.ollamaUnavailable'));
         return;
       }
 
@@ -154,17 +154,17 @@ const Dashboard = () => {
           // Background task started
           showToast('success', data.message);
         } else if (data.stopped) {
-          showToast('info', `Stopped! Analyzed ${data.analyzed} msgs, ${data.jobs_found} jobs (${data.remaining} remaining)`);
+          showToast('info', t('dashboard.analyzeStopped', { analyzed: data.analyzed, jobs: data.jobs_found, remaining: data.remaining }));
         } else {
-          showToast('success', `Analyzed: ${data.analyzed} msgs, ${data.jobs_found} jobs, ${data.developers_found} devs`);
+          showToast('success', t('dashboard.analyzeComplete', { analyzed: data.analyzed, jobs: data.jobs_found, devs: data.developers_found }));
         }
         // Reload data after a delay to see results
         setTimeout(() => loadData(), 3000);
       } else {
-        showToast('error', 'Error: ' + (data.error || data.message || 'Unknown'));
+        showToast('error', `${t('common.error')}: ` + (data.error || data.message || t('common.unknown')));
       }
     } catch (e: any) {
-      showToast('error', 'Error: ' + e.message);
+      showToast('error', `${t('common.error')}: ` + e.message);
     }
   };
 
@@ -174,12 +174,12 @@ const Dashboard = () => {
       requestStop(channelId, channelUsername);
       const data = await api.stopAnalyze(channelId);
       if (data.success) {
-        showToast('success', 'Stop signal sent - finishing current message...');
+        showToast('success', t('dashboard.stopSignalSent'));
       } else {
-        showToast('warning', data.message || 'No active analysis to stop');
+        showToast('warning', data.message || t('dashboard.noActiveAnalysis'));
       }
     } catch (e: any) {
-      showToast('error', 'Error: ' + e.message);
+      showToast('error', `${t('common.error')}: ` + e.message);
     }
   };
 
@@ -200,21 +200,21 @@ const Dashboard = () => {
         const data = await api.stopCron();
         if (data.success) {
           setCronRunning(false);
-          showToast('success', 'Cron job stopped');
+          showToast('success', t('dashboard.cronStopped'));
         } else {
-          showToast('error', 'Error: ' + (data.message || 'Unknown'));
+          showToast('error', `${t('common.error')}: ` + (data.message || t('common.unknown')));
         }
       } else {
         const data = await api.startCron();
         if (data.success) {
           setCronRunning(true);
-          showToast('success', 'Cron job started - fetching messages every 30 minutes');
+          showToast('success', t('dashboard.cronStarted'));
         } else {
-          showToast('error', 'Error: ' + (data.message || 'Unknown'));
+          showToast('error', `${t('common.error')}: ` + (data.message || t('common.unknown')));
         }
       }
     } catch (e: any) {
-      showToast('error', 'Error: ' + e.message);
+      showToast('error', `${t('common.error')}: ` + e.message);
     }
   };
 
@@ -223,12 +223,12 @@ const Dashboard = () => {
       const data = await withLoading('fetch-all', () => api.fetchAll());
       if (data.success) {
         const total = data.results.reduce((s: number, r: any) => s + (r.new_messages || 0), 0);
-        showToast('success', `Fetched ${total} new messages across all channels`);
+        showToast('success', t('dashboard.fetchedAllMessages', { count: total }));
       } else {
-        showToast('error', 'Error: ' + (data.error || 'Unknown'));
+        showToast('error', `${t('common.error')}: ` + (data.error || t('common.unknown')));
       }
     } catch (e: any) {
-      showToast('error', 'Error: ' + e.message);
+      showToast('error', `${t('common.error')}: ` + e.message);
     }
   };
 
@@ -236,7 +236,7 @@ const Dashboard = () => {
     try {
       // Check if Ollama is available before attempting analysis
       if (!stats?.ollama_available) {
-        showToast('error', 'Ollama is not available. Please check if Ollama is running.');
+        showToast('error', t('dashboard.ollamaUnavailable'));
         return;
       }
 
@@ -245,30 +245,30 @@ const Dashboard = () => {
         if (data.operation_id) {
           setBulkOperation({ id: data.operation_id, type: 'analyze-all' });
         }
-        showToast('success', `Analysis started for ${data.channels} channel(s)`);
+        showToast('success', t('dashboard.analysisStarted', { count: data.channels }));
       } else {
-        showToast('error', 'Error: ' + (data.error || 'Unknown'));
+        showToast('error', `${t('common.error')}: ` + (data.error || t('common.unknown')));
       }
     } catch (e: any) {
-      showToast('error', 'Error: ' + e.message);
+      showToast('error', `${t('common.error')}: ` + e.message);
     }
   };
 
   const cleanupOldMessages = async () => {
-    if (!confirm(`Delete messages older than ${cleanupDays} days?\n\nThis will also delete associated jobs, but developers will be kept.`)) {
+    if (!confirm(t('dashboard.deleteMessagesOlder', { days: cleanupDays }))) {
       return;
     }
     try {
       const data = await withLoading('cleanup', () => api.cleanupOldMessages(cleanupDays));
       if (data.success) {
-        showToast('success', data.message || `Deleted ${data.deleted} messages`);
+        showToast('success', data.message || t('dashboard.deletedMessages', { count: data.deleted }));
         loadData();
         setCleanupDialogOpen(false);
       } else {
-        showToast('error', 'Error: ' + (data.message || 'Unknown'));
+        showToast('error', `${t('common.error')}: ` + (data.message || t('common.unknown')));
       }
     } catch (e: any) {
-      showToast('error', 'Error: ' + e.message);
+      showToast('error', `${t('common.error')}: ` + e.message);
     }
   };
 
@@ -276,7 +276,7 @@ const Dashboard = () => {
     try {
       // Check if Ollama is available before attempting analysis (fetch-analyze includes analysis)
       if (!stats?.ollama_available) {
-        showToast('error', 'Ollama is not available. Please check if Ollama is running.');
+        showToast('error', t('dashboard.ollamaUnavailable'));
         return;
       }
 
@@ -285,31 +285,31 @@ const Dashboard = () => {
         if (data.operation_id) {
           setBulkOperation({ id: data.operation_id, type: 'fetch-analyze-all' });
         }
-        showToast('success', `Fetch+analyze started for ${data.channels} channel(s)`);
+        showToast('success', t('dashboard.fetchAnalyzeStarted', { count: data.channels }));
       } else {
-        showToast('error', 'Error: ' + (data.error || 'Unknown'));
+        showToast('error', `${t('common.error')}: ` + (data.error || t('common.unknown')));
       }
     } catch (e: any) {
-      showToast('error', 'Error: ' + e.message);
+      showToast('error', `${t('common.error')}: ` + e.message);
     }
   };
 
   const reanalyzeSkipped = async () => {
     try {
       if (!stats?.ollama_available) {
-        showToast('error', 'Ollama is not available. Please check if Ollama is running.');
+        showToast('error', t('dashboard.ollamaUnavailable'));
         return;
       }
 
       const data = await withLoading('reanalyze-skipped', () => api.reanalyzeSkipped());
       if (data.success) {
-        showToast('success', 'Re-analysis started for skipped messages');
+        showToast('success', t('dashboard.reanalysisStartedSkipped'));
         setTimeout(() => loadData(), 2000);
       } else {
-        showToast('error', 'Error: ' + (data.error || 'Unknown'));
+        showToast('error', `${t('common.error')}: ` + (data.error || t('common.unknown')));
       }
     } catch (e: any) {
-      showToast('error', 'Error: ' + e.message);
+      showToast('error', `${t('common.error')}: ` + e.message);
     }
   };
 
@@ -317,19 +317,19 @@ const Dashboard = () => {
     try {
       // Check if Ollama is available before attempting analysis
       if (!stats?.ollama_available) {
-        showToast('error', 'Ollama is not available. Please check if Ollama is running.');
+        showToast('error', t('dashboard.ollamaUnavailable'));
         return;
       }
 
       const data = await withLoading('reanalyze', () => api.reanalyzeMessages());
       if (data.success) {
-        showToast('success', `Re-analysis complete! Processed ${data.reanalyzed} messages`);
+        showToast('success', t('dashboard.reanalysisComplete', { count: data.reanalyzed }));
         setTimeout(() => loadData(), 1500);
       } else {
-        showToast('error', 'Error: ' + (data.error || 'Unknown'));
+        showToast('error', `${t('common.error')}: ` + (data.error || t('common.unknown')));
       }
     } catch (e: any) {
-      showToast('error', 'Error: ' + e.message);
+      showToast('error', `${t('common.error')}: ` + e.message);
     }
   };
 
@@ -339,13 +339,13 @@ const Dashboard = () => {
     try {
       const data = await api.stopBulkOperation(targetBulkOp.id);
       if (data.success) {
-        showToast('success', 'Stop signal sent for bulk operation');
+        showToast('success', t('dashboard.stopBulkSignalSent'));
         setBulkOperation(null);
       } else {
-        showToast('error', 'Error: ' + (data.message || 'Unknown'));
+        showToast('error', `${t('common.error')}: ` + (data.message || t('common.unknown')));
       }
     } catch (e: any) {
-      showToast('error', 'Error: ' + e.message);
+      showToast('error', `${t('common.error')}: ` + e.message);
     }
   };
 
@@ -405,7 +405,7 @@ const Dashboard = () => {
           {/* Stats */}
           <Card>
             <CardHeader className="px-4 py-3 pb-2">
-              <CardTitle className="text-sm">Statistics</CardTitle>
+              <CardTitle className="text-sm">{t('dashboard.statistics')}</CardTitle>
             </CardHeader>
             <CardContent className="px-4 pb-4 pt-0">
               <div className="grid grid-cols-2 gap-2">
@@ -429,12 +429,12 @@ const Dashboard = () => {
             <CardHeader className="px-4 py-3 pb-2">
               <CardTitle className="flex items-center gap-1.5 text-sm">
                 <Zap size={14} className="text-yellow-500" />
-                Quick Actions
+                {t('dashboard.quickActions')}
               </CardTitle>
             </CardHeader>
             <CardContent className="px-4 pb-4 pt-0 space-y-3">
               <div>
-                <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-1.5">All Channels</p>
+                <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-1.5">{t('dashboard.allChannels')}</p>
                 <div className="flex flex-col gap-2">
                   <Button
                     className="w-full justify-start"
@@ -442,7 +442,7 @@ const Dashboard = () => {
                     disabled={loadingActions.has('fetch-all') || Object.keys(operations).length > 0 || effectiveBulkOperation !== null}
                   >
                     <RefreshCw size={14} className="mr-2" />
-                    {loadingActions.has('fetch-all') ? 'Fetching...' : (Object.keys(operations).length > 0 || effectiveBulkOperation) ? 'Operation in progress...' : 'Fetch All'}
+                    {loadingActions.has('fetch-all') ? t('dashboard.fetching') : (Object.keys(operations).length > 0 || effectiveBulkOperation) ? t('dashboard.operationInProgress') : t('dashboard.fetchAll')}
                   </Button>
                   <Button
                     className="w-full justify-start"
@@ -451,7 +451,7 @@ const Dashboard = () => {
                     disabled={loadingActions.has('analyze-all') || Object.keys(operations).length > 0 || effectiveBulkOperation !== null}
                   >
                     <Bot size={14} className="mr-2" />
-                    {loadingActions.has('analyze-all') ? 'Analyzing...' : (Object.keys(operations).length > 0 || effectiveBulkOperation) ? 'Operation in progress...' : 'Analyze All'}
+                    {loadingActions.has('analyze-all') ? t('dashboard.analyzing') : (Object.keys(operations).length > 0 || effectiveBulkOperation) ? t('dashboard.operationInProgress') : t('dashboard.analyzeAll')}
                   </Button>
                   <Button
                     className="w-full justify-start"
@@ -460,7 +460,7 @@ const Dashboard = () => {
                     disabled={loadingActions.has('fetch-analyze-all') || Object.keys(operations).length > 0 || effectiveBulkOperation !== null}
                   >
                     <Zap size={14} className="mr-2" />
-                    {loadingActions.has('fetch-analyze-all') ? 'Processing...' : (Object.keys(operations).length > 0 || effectiveBulkOperation) ? 'Operation in progress...' : 'Fetch + Analyze All'}
+                    {loadingActions.has('fetch-analyze-all') ? t('dashboard.processing') : (Object.keys(operations).length > 0 || effectiveBulkOperation) ? t('dashboard.operationInProgress') : t('dashboard.fetchAnalyzeAll')}
                   </Button>
                   {effectiveBulkOperation && (
                     <Button
@@ -469,7 +469,7 @@ const Dashboard = () => {
                       onClick={() => stopBulkOperation()}
                     >
                       <Square size={14} className="mr-2" />
-                      Stop {effectiveBulkOperation.type === 'analyze-all' ? 'Analyze All' : 'Fetch + Analyze All'}
+                      {effectiveBulkOperation.type === 'analyze-all' ? t('dashboard.stopAnalyzeAll') : t('dashboard.stopFetchAnalyzeAll')}
                     </Button>
                   )}
                 </div>
@@ -478,11 +478,11 @@ const Dashboard = () => {
               <Separator />
 
               <div>
-                <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-1.5">Cron Job</p>
+                <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-1.5">{t('dashboard.cronJob')}</p>
                 <div className="flex items-center justify-between p-3 rounded-lg bg-gray-50 border mb-2">
                   <div className="flex items-center gap-2">
                     <Timer size={14} className={cronRunning ? 'text-green-500' : 'text-gray-400'} />
-                    <span className="text-sm font-medium">{cronRunning ? 'Running' : 'Stopped'}</span>
+                    <span className="text-sm font-medium">{cronRunning ? t('dashboard.running') : t('dashboard.stopped')}</span>
                     {cronRunning && (
                       <span className="w-2 h-2 rounded-full bg-green-400 animate-pulse" />
                     )}
@@ -497,14 +497,14 @@ const Dashboard = () => {
                   onClick={() => toggleCron()}
                 >
                   {cronRunning ? <Square size={14} className="mr-2" /> : <Play size={14} className="mr-2" />}
-                  {cronRunning ? 'Stop Cron Job' : 'Start Cron Job'}
+                  {cronRunning ? t('dashboard.stopCronJob') : t('dashboard.startCronJob')}
                 </Button>
               </div>
 
               <Separator />
 
               <div>
-                <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-1.5">Other</p>
+                <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-1.5">{t('dashboard.other')}</p>
                 <div className="flex flex-col gap-2">
                   <Button
                     className="w-full justify-start"
@@ -513,7 +513,7 @@ const Dashboard = () => {
                     disabled={loadingActions.has('reanalyze-skipped')}
                   >
                     <RotateCcw size={14} className="mr-2" />
-                    {loadingActions.has('reanalyze-skipped') ? 'Re-analyzing...' : 'Re-analyze Skipped'}
+                    {loadingActions.has('reanalyze-skipped') ? t('dashboard.reanalyzing') : t('dashboard.reanalyzeSkipped')}
                   </Button>
                   <Button
                     className="w-full justify-start"
@@ -522,7 +522,7 @@ const Dashboard = () => {
                     disabled={loadingActions.has('reanalyze')}
                   >
                     <RefreshCw size={14} className="mr-2" />
-                    {loadingActions.has('reanalyze') ? 'Re-analyzing...' : 'Re-analyze All'}
+                    {loadingActions.has('reanalyze') ? t('dashboard.reanalyzing') : t('dashboard.reanalyzeAll')}
                   </Button>
                   <Button
                     className="w-full justify-start"
@@ -531,7 +531,7 @@ const Dashboard = () => {
                     disabled={loadingActions.has('cleanup')}
                   >
                     <Trash2 size={14} className="mr-2" />
-                    {loadingActions.has('cleanup') ? 'Cleaning...' : 'Cleanup Old Messages'}
+                    {loadingActions.has('cleanup') ? t('common.cleaning') : t('dashboard.cleanupOldMessages')}
                   </Button>
                 </div>
               </div>
@@ -547,10 +547,10 @@ const Dashboard = () => {
               <div className="flex justify-between items-center">
                 <CardTitle className="flex items-center gap-1.5 text-sm">
                   <Radio size={14} className="text-blue-500" />
-                  Channels ({total})
+                  {t('dashboard.channels')} ({total})
                 </CardTitle>
                 <Button asChild variant="ghost" size="sm">
-                  <Link to="/channels" className="text-xs">Manage <ChevronRight size={12} className="inline" /></Link>
+                  <Link to="/channels" className="text-xs">{t('dashboard.manage')} <ChevronRight size={12} className="inline" /></Link>
                 </Button>
               </div>
             </CardHeader>
@@ -558,7 +558,7 @@ const Dashboard = () => {
               {initialLoading ? (
                 <div className="px-4 py-8 text-center">
                   <Loader2 className="w-5 h-5 text-gray-400 animate-spin mx-auto mb-2" />
-                  <p className="text-sm text-gray-500">Loading channels...</p>
+                  <p className="text-sm text-gray-500">{t('dashboard.loadingChannels')}</p>
                 </div>
               ) : channels.length > 0 ? (
                 <>
@@ -569,7 +569,7 @@ const Dashboard = () => {
                           <div className="flex items-center gap-2 mb-0.5">
                             <p className="font-semibold text-gray-900 truncate">{channel.username}</p>
                             <Badge variant={channel.is_active ? 'default' : 'secondary'} className="text-xs">
-                              {channel.is_active ? 'Active' : 'Inactive'}
+                              {channel.is_active ? t('channels.active') : t('channels.inactive')}
                             </Badge>
                           </div>
                           {channel.name && <p className="text-xs text-gray-500 truncate">{channel.name}</p>}
@@ -577,12 +577,12 @@ const Dashboard = () => {
                             {(channel.message_count || 0).toLocaleString()} msgs &bull; {(channel.job_count || 0).toLocaleString()} jobs
                             {(channel.last_fetch_new_count || 0) > 0 && (
                               <span className="ml-2 inline-flex items-center px-1.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
-                                +{channel.last_fetch_new_count} fetched
+                                +{channel.last_fetch_new_count} {t('websites.fetched')}
                               </span>
                             )}
                             {(channel.pending_count || 0) > 0 && (
                               <span className="ml-2 inline-flex items-center px-1.5 py-0.5 rounded-full text-xs font-medium bg-orange-100 text-orange-800">
-                                {channel.pending_count} pending
+                                {channel.pending_count} {t('dashboard.pendingAnalysis')}
                               </span>
                             )}
                           </p>
@@ -590,7 +590,7 @@ const Dashboard = () => {
                             <div className="mt-2">
                               <div className="flex justify-between text-xs mb-1">
                                 <span className={stoppingChannels[channel.username] ? 'text-orange-600 font-medium' : ''}>
-                                  {stoppingChannels[channel.username] ? '⚠ Stopping... (finishing current)' : 'Analyzing...'}
+                                  {stoppingChannels[channel.username] ? t('dashboard.stoppingProgress') : t('dashboard.analyzingProgress')}
                                 </span>
                                 <span>{channelProgress[channel.username].analyzed}/{channelProgress[channel.username].total}</span>
                               </div>
@@ -629,7 +629,7 @@ const Dashboard = () => {
                                 disabled={loadingActions.has(`fetch-${channel.id}`)}
                               >
                                 <RefreshCw size={12} className="mr-1" />
-                                {loadingActions.has(`fetch-${channel.id}`) ? 'Fetching...' : 'Fetch'}
+                                {loadingActions.has(`fetch-${channel.id}`) ? t('dashboard.fetching') : t('channels.fetch')}
                               </Button>
                               <Button
                                 size="sm"
@@ -637,7 +637,7 @@ const Dashboard = () => {
                                 disabled={loadingActions.has(`analyze-${channel.id}`)}
                               >
                                 <Bot size={12} className="mr-1" />
-                                {loadingActions.has(`analyze-${channel.id}`) ? 'Analyzing...' : 'Analyze'}
+                                {loadingActions.has(`analyze-${channel.id}`) ? t('dashboard.analyzing') : t('channels.analyze')}
                               </Button>
                             </>
                           )}
@@ -646,11 +646,11 @@ const Dashboard = () => {
                               size="sm"
                               variant="destructive"
                               onClick={() => stopAnalyzeChannel(channel.id, channel.username)}
-                              title="Stop analysis"
+                              title={t('common.stop')}
                               disabled={stoppingChannels[channel.id] || stoppingChannels[channel.username]}
                             >
                               <Square size={12} className="mr-1" />
-                              {stoppingChannels[channel.id] || stoppingChannels[channel.username] ? 'Stopping...' : 'Stop'}
+                              {stoppingChannels[channel.id] || stoppingChannels[channel.username] ? t('channels.stopping') : t('common.stop')}
                             </Button>
                           )}
                         </div>
@@ -665,7 +665,7 @@ const Dashboard = () => {
                       onClick={handlePrevious}
                       disabled={offset === 0}
                     >
-                      Previous
+                      {t('common.previous')}
                     </Button>
                     <span className="text-sm text-muted-foreground">
                       Page {Math.floor(offset / limit) + 1} of {Math.ceil(total / limit)} ({offset + 1}-{Math.min(offset + limit, total)} of {total})
@@ -676,16 +676,16 @@ const Dashboard = () => {
                       onClick={handleNext}
                       disabled={offset + limit >= total}
                     >
-                      Next
+                      {t('common.next')}
                     </Button>
                   </div>
                 </>
               ) : (
                 <div className="px-4 py-8 text-center">
                   <Radio size={32} className="text-gray-200 mx-auto mb-3" />
-                  <p className="text-sm text-gray-500">No channels configured.</p>
+                  <p className="text-sm text-gray-500">{t('dashboard.noChannelsConfigured')}</p>
                   <Button asChild variant="outline" size="sm" className="mt-3">
-                    <Link to="/channels">Add your first channel</Link>
+                    <Link to="/channels">{t('dashboard.addFirstChannel')}</Link>
                   </Button>
                 </div>
               )}
@@ -698,14 +698,14 @@ const Dashboard = () => {
       <Dialog open={cleanupDialogOpen} onOpenChange={setCleanupDialogOpen}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Cleanup Old Messages</DialogTitle>
+            <DialogTitle>{t('dashboard.cleanupOldMessages')}</DialogTitle>
             <DialogDescription>
-              Delete messages older than {cleanupDays} days. This will also delete associated jobs, but developers will be kept.
+              {t('dashboard.deleteMessagesOlder', { days: cleanupDays })}
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4">
             <div>
-              <label className="text-sm font-medium">Days to keep</label>
+              <label className="text-sm font-medium">{t('common.daysToKeep')}</label>
               <input
                 type="number"
                 min="1"
@@ -717,10 +717,10 @@ const Dashboard = () => {
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setCleanupDialogOpen(false)}>
-              Cancel
+              {t('common.cancel')}
             </Button>
             <Button variant="destructive" onClick={cleanupOldMessages} disabled={loadingActions.has('cleanup')}>
-              {loadingActions.has('cleanup') ? 'Cleaning...' : 'Delete Messages'}
+              {loadingActions.has('cleanup') ? t('common.cleaning') : t('common.cleanupOldMessages')}
             </Button>
           </DialogFooter>
         </DialogContent>
