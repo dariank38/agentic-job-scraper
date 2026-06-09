@@ -105,7 +105,12 @@ def register_developer_routes(app):
     ):
         """Toggle developer contacted status with optional notes."""
         try:
-            result = await db.execute(select(Developer).filter(Developer.id == developer_id))
+            result = await db.execute(
+                select(Developer).options(
+                    selectinload(Developer.channel),
+                    selectinload(Developer.message)
+                ).filter(Developer.id == developer_id)
+            )
             developer = result.scalar_one_or_none()
             if not developer:
                 raise HTTPException(status_code=404, detail="Developer not found")
@@ -119,8 +124,9 @@ def register_developer_routes(app):
                 developer.contacted_at = None
                 developer.notes = None
             await db.commit()
+            await db.refresh(developer)
 
-            return {"success": True, "is_contacted": developer.is_contacted}
+            return {"success": True, "is_contacted": developer.is_contacted, "developer": developer.to_dict()}
         except HTTPException:
             await db.rollback()
             raise

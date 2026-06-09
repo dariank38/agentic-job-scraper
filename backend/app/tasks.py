@@ -324,6 +324,17 @@ def _to_str(value) -> Optional[str]:
     return str(value)
 
 
+def _to_bool(value) -> Optional[bool]:
+    """Convert list or value to boolean. If list, return True if any element is truthy."""
+    if value is None:
+        return None
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, list):
+        return any(v if isinstance(v, bool) else bool(v) for v in value)
+    return bool(value)
+
+
 def _resolve_contact(contacts, message) -> tuple[Optional[str], Optional[str]]:
     """Return (contact_value, contact_type), falling back to sender info."""
     contact = _first_contact(contacts)
@@ -339,7 +350,7 @@ def _resolve_contact(contacts, message) -> tuple[Optional[str], Optional[str]]:
 async def fetch_and_store_messages(
     db: AsyncSession,
     channel: Channel,
-    days_back: int = 10,
+    days_back: int = 15,
     run_id: Optional[int] = None,
     account_id: Optional[int] = None,
     bulk_operation_id: Optional[str] = None,
@@ -688,7 +699,7 @@ async def analyze_messages(
                 if category == "job_posting":
                     job_data = result.get("job_posting") or {}
 
-                    is_remote = job_data.get("is_remote")
+                    is_remote = _to_bool(job_data.get("is_remote"))
                     if is_remote is False:
                         # On-site only — not relevant for this board
                         skipped_count += 1
@@ -732,7 +743,7 @@ async def analyze_messages(
                             location=location,
                             is_remote=is_remote,
                             role_type=role_str,
-                            skills=job_data.get("skills", []),
+                            skills=job_data.get("skills"),
                             contact=contact,
                             contact_type=contact_type,
                             summary=_to_str(job_data.get("summary")),
@@ -793,7 +804,7 @@ async def analyze_messages(
                             confidence=confidence,
                             translated_text=translated_text,
                             name=name,
-                            skills=pi_data.get("skills", []),
+                            skills=pi_data.get("skills"),
                             experience=exp_str,
                             portfolio=portfolio,
                             github=github,

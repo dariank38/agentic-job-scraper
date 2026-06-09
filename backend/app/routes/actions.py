@@ -12,7 +12,7 @@ from app.connection import get_db, AsyncSessionLocal
 
 logger = logging.getLogger(__name__)
 from app.models import AnalysisRun, Channel, Message, Operation
-from app.tasks import analyze_messages, fetch_and_store_messages, reset_bulk_stop_event, is_bulk_operation_stopped, cleanup_bulk_stop_event, stop_bulk_operation
+from app.tasks import analyze_messages, fetch_and_store_messages, reset_bulk_stop_event, is_bulk_operation_stopped, cleanup_bulk_stop_event, stop_bulk_operation, _to_str, _to_bool
 
 
 def register_action_routes(app):
@@ -219,10 +219,10 @@ def register_action_routes(app):
                             analyze_result = await analyze_messages(db, channel, bulk_operation_id=operation_id)
                             if analyze_result.get("success"):
                                 success_count += 1
-                                logger.info(f"[BULK ANALYZE] ✓ @{channel.username} complete: {analyze_result.get('jobs_found', 0)} jobs")
+                                logger.info(f"[BULK ANALYZE] ✓ Channel {channel_id} complete: {analyze_result.get('jobs_found', 0)} jobs")
                             else:
                                 error_count += 1
-                                logger.warning(f"[BULK ANALYZE] ✗ @{channel.username} failed: {analyze_result.get('error', 'unknown')}")
+                                logger.warning(f"[BULK ANALYZE] ✗ Channel {channel_id} failed: {analyze_result.get('error', 'unknown')}")
                         else:
                             logger.warning(f"[BULK ANALYZE] Channel {channel_id} not found")
                     except Exception as e:
@@ -367,9 +367,9 @@ def register_action_routes(app):
                             job.title = job_data.get("title")
                             job.company = job_data.get("company")
                             job.location = job_data.get("location")
-                            job.is_remote = job_data.get("is_remote")
-                            job.role_type = job_data.get("role_type")
-                            job.skills = job_data.get("skills", [])
+                            job.is_remote = _to_bool(job_data.get("is_remote"))
+                            job.role_type = _to_str(job_data.get("role_type"))
+                            job.skills = job_data.get("skills")
                             job.contact = job_data.get("contact")
                             job.summary = job_data.get("summary")
                             job.translated_text = analysis.get("translated_text")
@@ -384,9 +384,9 @@ def register_action_routes(app):
                                 title=job_data.get("title"),
                                 company=job_data.get("company"),
                                 location=job_data.get("location"),
-                                is_remote=job_data.get("is_remote"),
-                                role_type=job_data.get("role_type"),
-                                skills=job_data.get("skills", []),
+                                is_remote=_to_bool(job_data.get("is_remote")),
+                                role_type=_to_str(job_data.get("role_type")),
+                                skills=job_data.get("skills"),
                                 contact=job_data.get("contact"),
                                 summary=job_data.get("summary"),
                                 translated_text=analysis.get("translated_text"),
@@ -403,7 +403,7 @@ def register_action_routes(app):
 
                         if dev:
                             dev.name = dev_data.get("name")
-                            dev.skills = dev_data.get("skills", [])
+                            dev.skills = dev_data.get("skills")
                             dev.experience = dev_data.get("experience")
                             dev.contact = dev_data.get("contact")
                             dev.looking_for_work = dev_data.get("looking_for_work")
@@ -417,7 +417,7 @@ def register_action_routes(app):
                                 message_id=message.id,
                                 channel_id=message.channel_id,
                                 name=dev_data.get("name"),
-                                skills=dev_data.get("skills", []),
+                                skills=dev_data.get("skills"),
                                 experience=dev_data.get("experience"),
                                 contact=dev_data.get("contact"),
                                 looking_for_work=dev_data.get("looking_for_work"),
@@ -570,7 +570,7 @@ def register_action_routes(app):
 
             if category == "job_posting" and result.get("job_posting"):
                 job_data = result.get("job_posting", {})
-                is_remote = job_data.get("is_remote")
+                is_remote = _to_bool(job_data.get("is_remote"))
                 if is_remote is False:
                     message.analysis_status = "skipped"
                     await db.commit()
