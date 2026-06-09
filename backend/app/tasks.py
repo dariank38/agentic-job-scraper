@@ -3,7 +3,7 @@
 import asyncio
 import logging
 from contextlib import asynccontextmanager
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from typing import Optional
 
 from sqlalchemy import select
@@ -125,6 +125,60 @@ def cleanup_old_stop_events(max_age_seconds: int = 3600):
     stale_bulk = [oid for oid, e in list(bulk_stop_events.items()) if e.is_set()]
     for oid in stale_bulk:
         bulk_stop_events.pop(oid, None)
+
+
+async def cleanup_stale_operations():
+    """Mark stale 'running' operations as 'stopped' on backend startup.
+    Stale operations are those that have been running for more than 1 hour
+    or whose stop events are not in memory (indicating a crash).
+    """
+    async with AsyncSessionLocal() as db:
+        try:
+            # Find all operations with status 'running'
+            result = await db.execute(
+                select(Operation).filter(Operation.status == "running")
+            )
+            stale_ops = result.scalars().all()
+
+            if not stale_ops:
+                logger.info("[CLEANUP] No stale operations found")
+                return
+
+            stale_count = 0
+            for op in stale_ops:
+                # Check if operation is stale:
+                # 1. Running for more than 1 hour, OR
+                # 2. No corresponding stop event in memory (crash scenario)
+                is_stale = False
+
+                if op.created_at:
+                    age = datetime.now(timezone.utc) - op.created_at
+                    if age > timedelta(hours=1):
+                        is_stale = True
+                        logger.info(f"[CLEANUP] Operation {op.id} stale: running for {age}")
+
+                # Check if stop event exists in memory
+                if op.channel_id and op.channel_id not in analysis_stop_events:
+                    is_stale = True
+                    logger.info(f"[CLEANUP] Operation {op.id} stale: no stop event for channel {op.channel_id}")
+
+                if op.bulk_operation_id and op.bulk_operation_id not in bulk_stop_events:
+                    is_stale = True
+                    logger.info(f"[CLEANUP] Operation {op.id} stale: no stop event for bulk {op.bulk_operation_id}")
+
+                if is_stale:
+                    op.status = "stopped"
+                    stale_count += 1
+
+            if stale_count > 0:
+                await db.commit()
+                logger.info(f"[CLEANUP] Marked {stale_count} stale operations as stopped")
+            else:
+                logger.info(f"[CLEANUP] Found {len(stale_ops)} running operations, none are stale")
+
+        except Exception as e:
+            logger.error(f"[CLEANUP] Failed to cleanup stale operations: {e}")
+            await db.rollback()
 
 
 def is_cron_running() -> bool:
@@ -1170,6 +1224,8 @@ async def analyze_website_posts(
 @asynccontextmanager
 async def lifespan(app):
     """Startup and shutdown events."""
+    # Cleanup stale operations on startup
+    await cleanup_stale_operations()
     try:
         yield
     finally:

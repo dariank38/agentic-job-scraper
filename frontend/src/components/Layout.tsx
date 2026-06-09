@@ -5,6 +5,7 @@ import { Button } from '@/components/ui/button';
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from '@/components/ui/sheet';
 import Footer from '@/components/Footer';
 import type { ProgressUpdate } from '@/hooks/useWebSocket';
+import api from '@/services/api';
 import {
   LayoutDashboard,
   Radio,
@@ -109,7 +110,6 @@ const WebSocketProgressProvider = ({ children }: { children: React.ReactNode }) 
   useEffect(() => {
     const pollOperations = async () => {
       try {
-        const api = (await import('../services/api')).default;
         const data = await api.getOperations();
         console.log(`[POLL] Operations: ${data.operations?.length || 0}, BulkOps: ${data.bulk_operations?.length || 0}`);
         if (data.operations && data.operations.length > 0) {

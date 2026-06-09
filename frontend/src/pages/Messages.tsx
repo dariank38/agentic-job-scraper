@@ -317,9 +317,10 @@ const Messages = () => {
                               )}
                             </div>
                             
-                            <p className="text-sm text-gray-600 line-clamp-2">
-                              {msg.text || '<No text content>'}
-                            </p>
+                            <div
+                              className="text-sm text-gray-600 line-clamp-2"
+                              dangerouslySetInnerHTML={{ __html: msg.text || '<No text content>' }}
+                            />
                           </div>
                           
                           <ChevronDown className="w-5 h-5 text-gray-400 transition-transform group-open:rotate-180 shrink-0 mt-1" />
@@ -333,9 +334,10 @@ const Messages = () => {
                         <MessageSquare className="w-3.5 h-3.5" />
                         <span>Full Message</span>
                       </div>
-                      <p className="text-sm leading-relaxed whitespace-pre-wrap break-words">
-                        {msg.text || '<No text content>'}
-                      </p>
+                      <div
+                        className="text-sm leading-relaxed break-words"
+                        dangerouslySetInnerHTML={{ __html: msg.text || '<No text content>' }}
+                      />
                     </CardContent>
                   </Card>
                 </details>

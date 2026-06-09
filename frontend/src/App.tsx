@@ -1,12 +1,14 @@
 import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
+import { lazy, Suspense } from 'react';
 import Layout, { ToastProvider, WebSocketProgressProvider } from '@/components/Layout';
-import Dashboard from '@/pages/Dashboard';
-import Channels from '@/pages/Channels';
-import Jobs from '@/pages/Jobs';
-import Developers from '@/pages/Developers';
-import Messages from '@/pages/Messages';
-import TelegramAccounts from '@/pages/TelegramAccounts';
-import Websites from '@/pages/Websites';
+
+const Dashboard = lazy(() => import('@/pages/Dashboard'));
+const Channels = lazy(() => import('@/pages/Channels'));
+const Jobs = lazy(() => import('@/pages/Jobs'));
+const Developers = lazy(() => import('@/pages/Developers'));
+const Messages = lazy(() => import('@/pages/Messages'));
+const TelegramAccounts = lazy(() => import('@/pages/TelegramAccounts'));
+const Websites = lazy(() => import('@/pages/Websites'));
 
 function App() {
   return (
@@ -14,15 +16,17 @@ function App() {
       <WebSocketProgressProvider>
         <ToastProvider>
           <Layout>
-            <Routes>
-              <Route path="/" element={<Dashboard />} />
-              <Route path="/channels" element={<Channels />} />
-              <Route path="/jobs" element={<Jobs />} />
-              <Route path="/developers" element={<Developers />} />
-              <Route path="/messages" element={<Messages />} />
-              <Route path="/telegram-accounts" element={<TelegramAccounts />} />
-              <Route path="/websites" element={<Websites />} />
-            </Routes>
+            <Suspense fallback={<div className="flex items-center justify-center h-screen">Loading...</div>}>
+              <Routes>
+                <Route path="/" element={<Dashboard />} />
+                <Route path="/channels" element={<Channels />} />
+                <Route path="/jobs" element={<Jobs />} />
+                <Route path="/developers" element={<Developers />} />
+                <Route path="/messages" element={<Messages />} />
+                <Route path="/telegram-accounts" element={<TelegramAccounts />} />
+                <Route path="/websites" element={<Websites />} />
+              </Routes>
+            </Suspense>
           </Layout>
         </ToastProvider>
       </WebSocketProgressProvider>

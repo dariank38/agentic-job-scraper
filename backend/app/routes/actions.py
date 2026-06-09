@@ -165,6 +165,10 @@ def register_action_routes(app):
     async def fetch_all(db: AsyncSession = Depends(get_db)):
         """Fetch messages from all active channels."""
         try:
+            # Cleanup stale operations before starting bulk fetch
+            from app.tasks import cleanup_stale_operations
+            await cleanup_stale_operations()
+
             result = await db.execute(select(Channel).filter(Channel.is_active == True))
             channels = result.scalars().all()
 
@@ -231,6 +235,10 @@ def register_action_routes(app):
     @app.post("/api/analyze-all")
     async def analyze_all(background_tasks: BackgroundTasks, db: AsyncSession = Depends(get_db)):
         """Start analysis for channels with pending messages in the background and return immediately."""
+        # Cleanup stale operations before starting bulk analyze
+        from app.tasks import cleanup_stale_operations
+        await cleanup_stale_operations()
+
         # Find channels that have pending messages to analyze
         channels_result = await db.execute(
             select(Channel.id)
@@ -311,6 +319,10 @@ def register_action_routes(app):
     @app.post("/api/fetch-analyze-all")
     async def fetch_analyze_all(background_tasks: BackgroundTasks, db: AsyncSession = Depends(get_db)):
         """Start fetch+analyze for all active channels in the background and return immediately."""
+        # Cleanup stale operations before starting bulk fetch+analyze
+        from app.tasks import cleanup_stale_operations
+        await cleanup_stale_operations()
+
         result = await db.execute(select(Channel).filter(Channel.is_active == True))
         channels = result.scalars().all()
 
