@@ -40,18 +40,20 @@ const Jobs = () => {
   const [loadingActions, setLoadingActions] = useState<Set<string>>(new Set());
   const [total, setTotal] = useState(0);
   const [jobNotes, setJobNotes] = useState('');
+  const appliedFilter = searchParams.get('is_applied');
   const limit = 10;
   const offset = parseInt(searchParams.get('offset') || '0');
   const { showToast } = useToast();
 
   useEffect(() => {
     loadJobs();
-  }, [offset, searchQuery]);
+  }, [offset, searchQuery, appliedFilter]);
 
   const loadJobs = async () => {
     try {
       const params: any = { limit, offset };
       if (searchQuery) params.search = searchQuery;
+      if (appliedFilter) params.is_applied = appliedFilter;
       const data = await api.getJobs(params);
       setJobs(data.jobs);
       setTotal(data.total || 0);
@@ -71,13 +73,15 @@ const Jobs = () => {
   };
 
   const handleNext = () => {
-    const newOffset = offset + limit;
-    setSearchParams({ offset: newOffset.toString() });
+    const params = new URLSearchParams(searchParams);
+    params.set('offset', (offset + limit).toString());
+    setSearchParams(params);
   };
 
   const handlePrevious = () => {
-    const newOffset = Math.max(0, offset - limit);
-    setSearchParams({ offset: newOffset.toString() });
+    const params = new URLSearchParams(searchParams);
+    params.set('offset', Math.max(0, offset - limit).toString());
+    setSearchParams(params);
   };
 
   const withLoading = async <T,>(
@@ -100,6 +104,14 @@ const Jobs = () => {
     setSearchParams({});
     setSearchQuery('');
     setSearchInput('');
+  };
+
+  const applyAppliedFilter = (value: string) => {
+    const params = new URLSearchParams(searchParams);
+    params.delete('offset');
+    if (value) params.set('is_applied', value);
+    else params.delete('is_applied');
+    setSearchParams(params);
   };
 
   const toggleApplied = async (id: number) => {
@@ -203,15 +215,27 @@ const Jobs = () => {
                     placeholder={t('jobs.searchPlaceholder')}
                     value={searchInput}
                     onChange={(e) => setSearchInput(e.target.value)}
-                    onKeyDown={(e) => { if (e.key === 'Enter') { setSearchParams({}); setSearchQuery(searchInput); } }}
+                    onKeyDown={(e) => { if (e.key === 'Enter') { const p = new URLSearchParams(searchParams); p.delete('offset'); setSearchParams(p); setSearchQuery(searchInput); } }}
                     className="pl-9"
                   />
                 </div>
-                {searchQuery && (
-                  <Button variant="ghost" size="sm" onClick={clearFilters}>
-                    {t('common.clear')}
-                  </Button>
-                )}
+                {/* Filters */}
+                <div className="flex gap-2">
+                  <select
+                    value={appliedFilter || ''}
+                    onChange={(e) => applyAppliedFilter(e.target.value)}
+                    className="flex-1 px-3 py-2 rounded-md border border-gray-200 text-sm bg-white"
+                  >
+                    <option value="">{t('common.allStatus')}</option>
+                    <option value="true">{t('jobs.applied')}</option>
+                    <option value="false">{t('jobs.notApplied')}</option>
+                  </select>
+                  {(appliedFilter || searchQuery) && (
+                    <Button variant="ghost" size="sm" onClick={clearFilters}>
+                      {t('common.clear')}
+                    </Button>
+                  )}
+                </div>
               </div>
             </CardHeader>
             <CardContent className="p-0">

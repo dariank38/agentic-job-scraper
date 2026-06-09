@@ -16,6 +16,7 @@ def register_job_routes(app):
     @app.get("/api/jobs")
     async def api_jobs(
         search: Optional[str] = None,
+        is_applied: Optional[bool] = None,
         limit: int = 10,
         offset: int = 0,
         db: AsyncSession = Depends(get_db),
@@ -24,6 +25,9 @@ def register_job_routes(app):
         from app.models import Channel
 
         query = select(Job).join(Channel).filter(Channel.is_active == True)
+
+        if is_applied is not None:
+            query = query.filter(Job.is_applied == is_applied)
 
         # Apply search filter
         if search:

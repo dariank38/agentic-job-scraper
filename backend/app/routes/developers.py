@@ -16,6 +16,7 @@ def register_developer_routes(app):
     @app.get("/api/developers")
     async def api_developers(
         looking_for_work: Optional[bool] = None,
+        is_contacted: Optional[bool] = None,
         search: Optional[str] = None,
         limit: int = 10,
         offset: int = 0,
@@ -28,6 +29,9 @@ def register_developer_routes(app):
 
         if looking_for_work is not None:
             query = query.filter(Developer.looking_for_work == looking_for_work)
+
+        if is_contacted is not None:
+            query = query.filter(Developer.is_contacted == is_contacted)
 
         # Apply search filter
         if search:

@@ -45,18 +45,20 @@ const Developers = () => {
   const [total, setTotal] = useState(0);
   const [developerNotes, setDeveloperNotes] = useState('');
   const lookingFilter = searchParams.get('looking_for_work');
+  const contactedFilter = searchParams.get('is_contacted');
   const limit = 10;
   const offset = parseInt(searchParams.get('offset') || '0');
   const { showToast } = useToast();
 
   useEffect(() => {
     loadDevelopers();
-  }, [lookingFilter, offset, searchQuery]);
+  }, [lookingFilter, contactedFilter, offset, searchQuery]);
 
   const loadDevelopers = async () => {
     try {
       const params: any = { limit, offset };
       if (lookingFilter) params.looking_for_work = lookingFilter;
+      if (contactedFilter) params.is_contacted = contactedFilter;
       if (searchQuery) params.search = searchQuery;
       const data = await api.getDevelopers(params);
       setDevelopers(data.developers);
@@ -77,19 +79,26 @@ const Developers = () => {
   };
 
   const handleNext = () => {
-    const newOffset = offset + limit;
-    setSearchParams({ offset: newOffset.toString() });
+    const params = new URLSearchParams(searchParams);
+    params.set('offset', (offset + limit).toString());
+    setSearchParams(params);
   };
 
   const handlePrevious = () => {
-    const newOffset = Math.max(0, offset - limit);
-    setSearchParams({ offset: newOffset.toString() });
+    const params = new URLSearchParams(searchParams);
+    params.set('offset', Math.max(0, offset - limit).toString());
+    setSearchParams(params);
   };
 
   const applyFilters = () => {
     const looking = (document.getElementById('looking-filter') as HTMLSelectElement)?.value;
-    const params = new URLSearchParams();
+    const contacted = (document.getElementById('contacted-filter') as HTMLSelectElement)?.value;
+    const params = new URLSearchParams(searchParams);
+    params.delete('offset');
     if (looking) params.set('looking_for_work', looking);
+    else params.delete('looking_for_work');
+    if (contacted) params.set('is_contacted', contacted);
+    else params.delete('is_contacted');
     setSearchParams(params);
   };
 
@@ -208,7 +217,7 @@ const Developers = () => {
                     placeholder={t('developers.searchPlaceholder')}
                     value={searchInput}
                     onChange={(e) => setSearchInput(e.target.value)}
-                    onKeyDown={(e) => { if (e.key === 'Enter') { setSearchParams({}); setSearchQuery(searchInput); } }}
+                    onKeyDown={(e) => { if (e.key === 'Enter') { const p = new URLSearchParams(searchParams); p.delete('offset'); setSearchParams(p); setSearchQuery(searchInput); } }}
                     className="pl-9"
                   />
                 </div>
@@ -224,7 +233,17 @@ const Developers = () => {
                     <option value="true">{t('developers.lookingForWork')}</option>
                     <option value="false">{t('developers.notLooking')}</option>
                   </select>
-                  {(lookingFilter || searchQuery) && (
+                  <select
+                    id="contacted-filter"
+                    defaultValue={contactedFilter || ''}
+                    onChange={applyFilters}
+                    className="flex-1 px-3 py-2 rounded-md border border-gray-200 text-sm bg-white"
+                  >
+                    <option value="">{t('common.allContacted')}</option>
+                    <option value="true">{t('developers.contacted')}</option>
+                    <option value="false">{t('developers.notContacted')}</option>
+                  </select>
+                  {(lookingFilter || contactedFilter || searchQuery) && (
                     <Button variant="ghost" size="sm" onClick={clearFilters}>
                       {t('common.clear')}
                     </Button>
