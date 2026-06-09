@@ -243,7 +243,7 @@ const api = {
     return response.json();
   },
 
-  toggleDeveloperContacted: async (id: number, notes?: string): Promise<{ success: boolean }> => {
+  toggleDeveloperContacted: async (id: number, notes?: string): Promise<{ success: boolean; is_contacted: boolean; developer?: Developer }> => {
     const formData = new FormData();
     if (notes) formData.append('notes', notes);
     const response = await fetch(`${API_BASE}/api/developers/${id}/toggle-contacted`, {

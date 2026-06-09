@@ -143,7 +143,7 @@ class Job(Base):
     location = Column(String, nullable=True)
     is_remote = Column(Boolean, nullable=True)
     role_type = Column(String, nullable=True)
-    skills = Column(JSON, default=list)
+    skills = Column(JSON, nullable=True)
     contact = Column(String, nullable=True)
     contact_type = Column(String, nullable=True)
     summary = Column(Text, nullable=True)
@@ -206,7 +206,7 @@ class Developer(Base):
 
     # Personal info fields
     name = Column(String, nullable=True)
-    skills = Column(JSON, default=list)
+    skills = Column(JSON, nullable=True)
     experience = Column(Text, nullable=True)
     portfolio = Column(String, nullable=True)
     github = Column(String, nullable=True)

@@ -107,8 +107,17 @@ const Developers = () => {
       setSelectedDeveloper(prev => prev ? { ...prev, is_contacted: true } : null);
     }
     try {
-      await api.toggleDeveloperContacted(id, developerNotes);
-      loadDevelopers();
+      const result = await api.toggleDeveloperContacted(id, developerNotes);
+      if (result.developer) {
+        // Update with the returned developer data which includes notes
+        const updatedDeveloper = result.developer;
+        setDevelopers(prevDevs => prevDevs.map(d => d.id === id ? updatedDeveloper : d));
+        if (selectedDeveloper?.id === id) {
+          setSelectedDeveloper(updatedDeveloper);
+        }
+      } else {
+        loadDevelopers();
+      }
       setDeveloperNotes('');
       showToast('success', 'Developer marked as contacted');
     } catch (e: any) {
