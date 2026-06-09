@@ -203,7 +203,7 @@ const api = {
   },
 
   // Jobs
-  getJobs: async (params?: { remote?: string; search?: string; limit?: number; offset?: number }): Promise<{ jobs: Job[]; total: number; limit: number; offset: number }> => {
+  getJobs: async (params?: { is_applied?: string; search?: string; limit?: number; offset?: number }): Promise<{ jobs: Job[]; total: number; limit: number; offset: number }> => {
     const query = new URLSearchParams(params as any).toString();
     const response = await fetch(`${API_BASE}/api/jobs${query ? `?${query}` : ''}`);
     return response.json();
@@ -232,7 +232,7 @@ const api = {
   },
 
   // Developers
-  getDevelopers: async (params?: { looking_for_work?: string; search?: string; limit?: number; offset?: number }): Promise<{ developers: Developer[]; total: number; limit: number; offset: number }> => {
+  getDevelopers: async (params?: { looking_for_work?: string; is_contacted?: string; search?: string; limit?: number; offset?: number }): Promise<{ developers: Developer[]; total: number; limit: number; offset: number }> => {
     const query = new URLSearchParams(params as any).toString();
     const response = await fetch(`${API_BASE}/api/developers${query ? `?${query}` : ''}`);
     return response.json();
