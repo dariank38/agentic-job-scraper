@@ -1,6 +1,7 @@
 import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
 import { lazy, Suspense } from 'react';
 import Layout, { ToastProvider, WebSocketProgressProvider } from '@/components/Layout';
+import './i18n';
 
 const Dashboard = lazy(() => import('@/pages/Dashboard'));
 const Channels = lazy(() => import('@/pages/Channels'));

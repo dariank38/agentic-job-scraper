@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -11,6 +12,7 @@ import type { WebsiteSource } from '@/services/api';
 import { useToast, useWebSocketProgress } from '@/components/Layout';
 
 const Websites = () => {
+  const { t } = useTranslation();
   const [websiteSources, setWebsiteSources] = useState<WebsiteSource[]>([]);
   const [loadingActions, setLoadingActions] = useState<Set<string>>(new Set());
   const { showToast } = useToast();
@@ -178,17 +180,17 @@ const Websites = () => {
   return (
     <div className="space-y-6">
       <div className="flex justify-between items-center">
-        <h1 className="text-2xl font-bold">Website Sources</h1>
+        <h1 className="text-2xl font-bold">{t('websites.title')}</h1>
         <Button onClick={() => setAddWebsiteDialogOpen(true)}>
           <Plus size={16} className="mr-2" />
-          Add Website Source
+          {t('websites.addWebsite')}
         </Button>
       </div>
 
       {/* Bulk Actions */}
       <Card>
         <CardHeader>
-          <CardTitle className="text-sm">Bulk Actions</CardTitle>
+          <CardTitle className="text-sm">{t('websites.bulkActions')}</CardTitle>
         </CardHeader>
         <CardContent>
           <div className="flex gap-2">
@@ -198,13 +200,13 @@ const Websites = () => {
               disabled={loadingActions.has('fetch-all')}
             >
               {loadingActions.has('fetch-all') ? <Loader2 size={14} className="mr-2 animate-spin" /> : <RefreshCw size={14} className="mr-2" />}
-              Fetch All
+              {t('websites.fetchAll')}
             </Button>
             <Button
               onClick={analyzeAllWebsiteSources}
             >
               <Bot size={14} className="mr-2" />
-              Analyze All
+              {t('websites.analyzeAll')}
             </Button>
           </div>
         </CardContent>
@@ -214,7 +216,7 @@ const Websites = () => {
       {Object.keys(operations).length > 0 && (
         <Card className="border-blue-200 bg-blue-50">
           <CardHeader>
-            <CardTitle className="text-sm">Active Operations</CardTitle>
+            <CardTitle className="text-sm">{t('websites.activeOperations')}</CardTitle>
           </CardHeader>
           <CardContent>
             {Object.entries(operations).map(([name, op]) => {
@@ -228,7 +230,7 @@ const Websites = () => {
                   {progress && (
                     <div className="mt-2">
                       <div className="flex justify-between text-xs mb-1">
-                        <span className="text-blue-700">Processing...</span>
+                        <span className="text-blue-700">{t('websites.processing')}</span>
                         <span className="text-blue-700">{(progress as any).analyzed || (progress as any).processed || 0} / {progress.total || 0}</span>
                       </div>
                       <div className="w-full bg-blue-200 rounded-full h-2">
@@ -249,13 +251,13 @@ const Websites = () => {
       {/* Website Sources List */}
       <Card>
         <CardHeader>
-          <CardTitle className="text-sm">All Website Sources ({websiteSources.length})</CardTitle>
+          <CardTitle className="text-sm">{t('websites.title')} ({websiteSources.length})</CardTitle>
         </CardHeader>
         <CardContent>
           {initialLoading ? (
             <div className="py-8 text-center">
               <Loader2 className="w-5 h-5 text-gray-400 animate-spin mx-auto mb-2" />
-              <p className="text-sm text-gray-500">Loading website sources...</p>
+              <p className="text-sm text-gray-500">{t('common.loading')}</p>
             </div>
           ) : websiteSources.length > 0 ? (
             <div className="space-y-2">
@@ -266,7 +268,7 @@ const Websites = () => {
                       <div className="flex items-center gap-2 mb-2">
                         <h3 className="font-semibold text-gray-900">{source.name}</h3>
                         <Badge variant={source.is_active ? 'default' : 'secondary'} className="text-xs">
-                          {source.is_active ? 'Active' : 'Inactive'}
+                          {source.is_active ? t('websites.active') : t('websites.inactive')}
                         </Badge>
                         <Badge variant="outline" className="text-xs">
                           RSS
@@ -276,11 +278,11 @@ const Websites = () => {
                       <div className="flex items-center gap-4 text-xs text-gray-500">
                         {(source.last_fetch_new_count || 0) > 0 && (
                           <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
-                            +{source.last_fetch_new_count} fetched
+                            +{source.last_fetch_new_count} {t('websites.fetched')}
                           </span>
                         )}
                         {source.last_fetch_at && (
-                          <span>Last: {new Date(source.last_fetch_at).toLocaleDateString()}</span>
+                          <span>{t('websites.last')}: {new Date(source.last_fetch_at).toLocaleDateString()}</span>
                         )}
                       </div>
                     </div>
@@ -300,7 +302,7 @@ const Websites = () => {
                         disabled={loadingActions.has(`fetch-${source.id}`) || !!operations[source.name]}
                       >
                         {loadingActions.has(`fetch-${source.id}`) ? <Loader2 size={12} className="mr-1 animate-spin" /> : <RefreshCw size={12} className="mr-1" />}
-                        Fetch
+                        {t('websites.fetch')}
                       </Button>
                       <Button
                         size="sm"
@@ -308,7 +310,7 @@ const Websites = () => {
                         disabled={!!operations[source.name]}
                       >
                         <Bot size={12} className="mr-1" />
-                        Analyze
+                        {t('websites.analyze')}
                       </Button>
                       {operations[source.name] && (
                         <Button
@@ -317,7 +319,7 @@ const Websites = () => {
                           onClick={() => stopWebsiteOperation(source.id, source.name)}
                         >
                           <Square size={12} className="mr-1" />
-                          Stop
+                          {t('common.stop')}
                         </Button>
                       )}
                       <Button
@@ -335,7 +337,7 @@ const Websites = () => {
           ) : (
             <div className="py-12 text-center">
               <Globe size={48} className="text-gray-200 mx-auto mb-4" />
-              <p className="text-sm text-gray-500 mb-4">No website sources configured</p>
+              <p className="text-sm text-gray-500 mb-4">{t('websites.noWebsites')}</p>
               <Button variant="outline" onClick={() => setAddWebsiteDialogOpen(true)}>
                 <Plus size={14} className="mr-2" />
                 Add your first website source
@@ -349,14 +351,14 @@ const Websites = () => {
       <Dialog open={addWebsiteDialogOpen} onOpenChange={setAddWebsiteDialogOpen}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Add Website Source</DialogTitle>
+            <DialogTitle>{t('websites.addWebsite')}</DialogTitle>
             <DialogDescription>
               Add a new website source to crawl for job postings.
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4">
             <div>
-              <label className="text-sm font-medium">Name</label>
+              <label className="text-sm font-medium">{t('websites.name')}</label>
               <Input
                 value={newWebsiteName}
                 onChange={(e) => setNewWebsiteName(e.target.value)}
@@ -365,7 +367,7 @@ const Websites = () => {
               />
             </div>
             <div>
-              <label className="text-sm font-medium">RSS Feed URL</label>
+              <label className="text-sm font-medium">{t('websites.url')}</label>
               <Input
                 value={newWebsiteUrl}
                 onChange={(e) => setNewWebsiteUrl(e.target.value)}
@@ -392,9 +394,9 @@ const Websites = () => {
       <Dialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Delete Website Source</DialogTitle>
+            <DialogTitle>{t('websites.deleteConfirm')}</DialogTitle>
             <DialogDescription>
-              Are you sure you want to delete this website source? This will also delete all associated messages, jobs, and developers.
+              {t('websites.deleteWarning')}
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>
@@ -414,12 +416,12 @@ const Websites = () => {
           <DialogHeader>
             <DialogTitle>Edit Extraction Prompt</DialogTitle>
             <DialogDescription>
-              Customize the Ollama prompt for extracting job data from {editingSource?.name}. Leave empty to use the default prompt for this site type.
+              {t('websites.customPromptHint', { name: editingSource?.name })}
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4">
             <div>
-              <label className="text-sm font-medium">Custom Prompt</label>
+              <label className="text-sm font-medium">{t('websites.customPrompt')}</label>
               <Textarea
                 value={editPrompt}
                 onChange={(e) => setEditPrompt(e.target.value)}

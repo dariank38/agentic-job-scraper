@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import api from '@/services/api';
 import { Button } from '@/components/ui/button';
@@ -15,6 +16,7 @@ interface DailyJobsChartProps {
 }
 
 export const DailyJobsChart = ({ days = 30 }: DailyJobsChartProps) => {
+  const { t } = useTranslation();
   const [data, setData] = useState<DailyJobsData[]>([]);
   const [loading, setLoading] = useState(true);
   const [channels, setChannels] = useState<string[]>([]);
@@ -67,11 +69,11 @@ export const DailyJobsChart = ({ days = 30 }: DailyJobsChartProps) => {
   const colors = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899', '#06b6d4', '#84cc16'];
 
   if (loading) {
-    return <div className="h-64 flex items-center justify-center text-sm text-gray-500">Loading...</div>;
+    return <div className="h-64 flex items-center justify-center text-sm text-gray-500">{t('common.loading')}</div>;
   }
 
   if (data.length === 0) {
-    return <div className="h-64 flex items-center justify-center text-sm text-gray-500">No data available</div>;
+    return <div className="h-64 flex items-center justify-center text-sm text-gray-500">{t('common.noData')}</div>;
   }
 
   return (
@@ -82,7 +84,7 @@ export const DailyJobsChart = ({ days = 30 }: DailyJobsChartProps) => {
             <PopoverTrigger asChild>
               <Button variant="outline" size="sm">
                 <ChevronDown size={14} className="mr-2" />
-                Select Channels ({channels.length - hiddenChannels.size} selected)
+                {t('dashboard.selectChannels')} ({channels.length - hiddenChannels.size} {t('dashboard.selected')})
               </Button>
             </PopoverTrigger>
             <PopoverContent className="w-56 p-3" align="start">

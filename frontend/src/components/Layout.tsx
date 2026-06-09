@@ -1,9 +1,11 @@
 import { Link, useLocation } from 'react-router-dom';
 import { useState, createContext, useContext, useEffect, useRef } from 'react';
+import { useTranslation } from 'react-i18next';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from '@/components/ui/sheet';
 import Footer from '@/components/Footer';
+import { LanguageSwitcher } from '@/components/LanguageSwitcher';
 import type { ProgressUpdate } from '@/hooks/useWebSocket';
 import api from '@/services/api';
 import {
@@ -338,19 +340,20 @@ const WebSocketProgressProvider = ({ children }: { children: React.ReactNode }) 
   );
 };
 
-const navLinks = [
-  { path: '/', label: 'Dashboard', icon: LayoutDashboard },
-  { path: '/channels', label: 'Channels', icon: Radio },
-  { path: '/messages', label: 'Messages', icon: MessageSquare },
-  { path: '/jobs', label: 'Jobs', icon: Briefcase },
-  { path: '/developers', label: 'Developers', icon: Code2 },
-  { path: '/websites', label: 'Websites', icon: Globe },
-  { path: '/telegram-accounts', label: 'Telegram Accounts', icon: Radio },
-];
-
 const Layout = ({ children }: { children: React.ReactNode }) => {
+  const { t } = useTranslation();
   const location = useLocation();
   const [sheetOpen, setSheetOpen] = useState(false);
+
+  const navLinks = [
+    { path: '/', label: t('nav.dashboard'), icon: LayoutDashboard },
+    { path: '/channels', label: t('nav.channels'), icon: Radio },
+    { path: '/messages', label: t('nav.messages'), icon: MessageSquare },
+    { path: '/jobs', label: t('nav.jobs'), icon: Briefcase },
+    { path: '/developers', label: t('nav.developers'), icon: Code2 },
+    { path: '/websites', label: t('nav.websites'), icon: Globe },
+    { path: '/telegram-accounts', label: t('nav.telegramAccounts'), icon: Radio },
+  ];
 
   const isActive = (path: string) =>
     path === '/' ? location.pathname === '/' : location.pathname.startsWith(path);
@@ -390,6 +393,7 @@ const Layout = ({ children }: { children: React.ReactNode }) => {
                 {label}
               </Link>
             ))}
+            <LanguageSwitcher />
           </nav>
 
           {/* Mobile Menu — shadcn Sheet */}
@@ -424,6 +428,9 @@ const Layout = ({ children }: { children: React.ReactNode }) => {
                       </Link>
                     </Button>
                   ))}
+                  <div className="border-t pt-3 mt-3">
+                    <LanguageSwitcher />
+                  </div>
                 </nav>
               </SheetContent>
             </Sheet>

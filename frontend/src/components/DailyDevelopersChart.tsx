@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import api from '@/services/api';
 
@@ -12,6 +13,7 @@ interface DailyDevelopersChartProps {
 }
 
 export const DailyDevelopersChart = ({ days = 30 }: DailyDevelopersChartProps) => {
+  const { t } = useTranslation();
   const [data, setData] = useState<DailyDevelopersData[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -42,11 +44,11 @@ export const DailyDevelopersChart = ({ days = 30 }: DailyDevelopersChartProps) =
   }, [days]);
 
   if (loading) {
-    return <div className="h-64 flex items-center justify-center text-sm text-gray-500">Loading...</div>;
+    return <div className="h-64 flex items-center justify-center text-sm text-gray-500">{t('common.loading')}</div>;
   }
 
   if (data.length === 0) {
-    return <div className="h-64 flex items-center justify-center text-sm text-gray-500">No data available</div>;
+    return <div className="h-64 flex items-center justify-center text-sm text-gray-500">{t('common.noData')}</div>;
   }
 
   return (

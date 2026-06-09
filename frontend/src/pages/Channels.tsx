@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
+import { useTranslation } from 'react-i18next';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -12,6 +13,7 @@ import type { Channel, TelegramAccount } from '@/services/api';
 import { useWebSocketProgress, useToast } from '@/components/Layout';
 
 const Channels = () => {
+  const { t } = useTranslation();
   const [channels, setChannels] = useState<Channel[]>([]);
   const [dialogs, setDialogs] = useState<any[]>([]);
   const [allDialogs, setAllDialogs] = useState<any[]>([]);
@@ -312,19 +314,19 @@ const Channels = () => {
   return (
     <>
       <div className="mb-4 flex justify-between items-center">
-        <h1 className="text-2xl font-bold">Channels</h1>
+        <h1 className="text-2xl font-bold">{t('channels.title')}</h1>
         <Button onClick={() => {
           setAddDialogOpen(true);
           filterDialogsLocally();
         }}>
-          Add Channel
+          {t('channels.addChannel')}
         </Button>
       </div>
 
       <Card>
         <CardHeader>
           <div className="flex justify-between items-center">
-            <CardTitle>Configured Channels ({total})</CardTitle>
+            <CardTitle>{t('channels.title')} ({total})</CardTitle>
           </div>
           <div className="flex gap-2 mt-3">
             <div className="relative flex-1">
@@ -341,9 +343,9 @@ const Channels = () => {
               onChange={(e) => setActiveFilter(e.target.value)}
               className="px-3 py-2 rounded-md border border-gray-200 text-sm bg-white"
             >
-              <option value="all">All Status</option>
-              <option value="active">Active</option>
-              <option value="inactive">Inactive</option>
+              <option value="all">{t('common.allStatus')}</option>
+              <option value="active">{t('channels.active')}</option>
+              <option value="inactive">{t('channels.inactive')}</option>
             </select>
             {(searchQuery || activeFilter !== 'all') && (
               <Button variant="ghost" size="sm" onClick={() => { setSearchQuery(''); setActiveFilter('all'); }}>
@@ -362,7 +364,7 @@ const Channels = () => {
                       <h3 className="font-semibold flex items-center gap-2">
                         {channel.username}
                         <Badge variant={channel.is_active ? 'default' : 'secondary'}>
-                          {channel.is_active ? 'Active' : 'Inactive'}
+                          {channel.is_active ? t('channels.active') : t('channels.inactive')}
                         </Badge>
                       </h3>
                       {channel.name && <p className="font-bold">{channel.name}</p>}
@@ -371,7 +373,7 @@ const Channels = () => {
                         {channel.message_count || 0} messages | {channel.job_count || 0} jobs
                         {(channel.last_fetch_new_count || 0) > 0 && (
                           <span className="ml-2 inline-flex items-center px-1.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
-                            +{channel.last_fetch_new_count} fetched
+                            +{channel.last_fetch_new_count} {t('channels.fetched')}
                           </span>
                         )}
                         {(channel.pending_count || 0) > 0 && (
@@ -384,7 +386,7 @@ const Channels = () => {
                         <div className="mt-2">
                           <div className="flex justify-between text-xs mb-1">
                             <span className={stoppingChannels[channel.username] ? 'text-orange-600 font-medium' : ''}>
-                              {stoppingChannels[channel.username] ? '⚠ Stopping... (finishing current)' : 'Analyzing...'}
+                              {stoppingChannels[channel.username] ? '⚠ Stopping...' : t('channels.analyzing')}
                             </span>
                             <span>{channelProgress[channel.username].analyzed}/{channelProgress[channel.username].total}</span>
                           </div>
@@ -420,7 +422,7 @@ const Channels = () => {
                           onClick={() => fetchAnalyzeChannel(channel.id)}
                           disabled={loadingActions.has(`fetch-analyze-${channel.id}`)}
                         >
-                          Fetch
+                          {t('channels.fetch')}
                         </Button>
                       ) : (
                         <Button
@@ -431,7 +433,7 @@ const Channels = () => {
                           disabled={stoppingChannels[channel.id] || stoppingChannels[channel.username]}
                         >
                           <Square size={12} className="mr-1" />
-                          {stoppingChannels[channel.id] || stoppingChannels[channel.username] ? 'Stopping...' : 'Stop'}
+                          {stoppingChannels[channel.id] || stoppingChannels[channel.username] ? t('channels.stopping') : t('common.stop')}
                         </Button>
                       )}
                       <Button
@@ -439,14 +441,14 @@ const Channels = () => {
                         onClick={() => toggleChannel(channel.id)}
                         disabled={loadingActions.has(`toggle-${channel.id}`) || !!(loadingActions.has(`fetch-analyze-${channel.id}`) || !!operations[channel.username])}
                       >
-                        {loadingActions.has(`toggle-${channel.id}`) ? 'Toggling...' : (channel.is_active ? 'Disable' : 'Enable')}
+                        {loadingActions.has(`toggle-${channel.id}`) ? 'Toggling...' : (channel.is_active ? t('channels.disable') : t('channels.enable'))}
                       </Button>
                       <Button
                         variant="destructive"
                         onClick={() => confirmDelete(channel.id)}
                         disabled={loadingActions.has(`delete-${channel.id}`) || !!(loadingActions.has(`fetch-analyze-${channel.id}`) || !!operations[channel.username])}
                       >
-                        {loadingActions.has(`delete-${channel.id}`) ? 'Deleting...' : 'Delete'}
+                        {loadingActions.has(`delete-${channel.id}`) ? t('channels.deleting') : t('channels.delete')}
                       </Button>
                     </div>
                   </div>
@@ -476,7 +478,7 @@ const Channels = () => {
               </div>
             </>
           ) : (
-            <p>No channels configured yet. Add your first channel above.</p>
+            <p>{t('channels.noChannels')}</p>
           )}
         </CardContent>
       </Card>
@@ -485,10 +487,10 @@ const Channels = () => {
       <Dialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Confirm Delete</DialogTitle>
+            <DialogTitle>{t('channels.deleteConfirm')}</DialogTitle>
           </DialogHeader>
           <p className="text-sm text-gray-600">
-            Are you sure you want to delete this channel? This will also delete all associated messages and jobs.
+            {t('channels.deleteWarning')}
           </p>
           <div className="flex gap-2 justify-end mt-4">
             <Button variant="outline" onClick={() => setDeleteDialogOpen(false)}>
@@ -499,7 +501,7 @@ const Channels = () => {
               onClick={() => channelToDelete && deleteChannel(channelToDelete)}
               disabled={loadingActions.has(`delete-${channelToDelete || 0}`)}
             >
-              {loadingActions.has(`delete-${channelToDelete || 0}`) ? 'Deleting...' : 'Delete'}
+              {loadingActions.has(`delete-${channelToDelete || 0}`) ? t('channels.deleting') : t('channels.delete')}
             </Button>
           </div>
         </DialogContent>

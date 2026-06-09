@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
+import { useTranslation } from 'react-i18next';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -46,6 +47,7 @@ interface Message {
 }
 
 const Messages = () => {
+  const { t } = useTranslation();
   const [messages, setMessages] = useState<Message[]>([]);
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(false);
@@ -141,21 +143,21 @@ const Messages = () => {
     switch (status) {
       case 'analyzed': 
         return { 
-          label: 'Analyzed', 
+          label: t('messages.analyzed'), 
           variant: 'default' as const,
           icon: CheckCircle2,
           color: 'text-green-600 bg-green-100'
         };
       case 'skipped': 
         return { 
-          label: 'Skipped', 
+          label: t('messages.skipped'), 
           variant: 'secondary' as const,
           icon: SkipForward,
           color: 'text-gray-600 bg-gray-100'
         };
       default: 
         return { 
-          label: 'Pending', 
+          label: t('messages.pending'), 
           variant: 'outline' as const,
           icon: Clock,
           color: 'text-yellow-600 bg-yellow-100'
@@ -172,15 +174,15 @@ const Messages = () => {
       {/* Header Bar */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-4">
         <div>
-          <h1 className="text-2xl font-bold tracking-tight">Messages</h1>
+          <h1 className="text-2xl font-bold tracking-tight">{t('messages.title')}</h1>
           <p className="text-sm text-muted-foreground mt-0.5">
-            {total} message{total !== 1 ? 's' : ''} total
+            {total} {t('messages.totalMessages')}
           </p>
         </div>
         <div className="flex gap-2 items-center">
           <Button variant="outline" size="sm" onClick={loadMessages} disabled={loading}>
             <RefreshCw className={`w-4 h-4 mr-1.5 ${loading ? 'animate-spin' : ''}`} />
-            Refresh
+            {t('common.refresh')}
           </Button>
         </div>
       </div>
@@ -222,7 +224,7 @@ const Messages = () => {
             <div className="relative flex-1">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
               <Input
-                placeholder="Search messages..."
+                placeholder={t('messages.searchPlaceholder')}
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 className="pl-9"
@@ -233,10 +235,10 @@ const Messages = () => {
               onChange={(e) => setStatusFilter(e.target.value)}
               className="px-3 py-2 rounded-md border border-gray-200 text-sm bg-white"
             >
-              <option value="all">All Status</option>
-              <option value="analyzed">Analyzed</option>
-              <option value="pending">Pending</option>
-              <option value="skipped">Skipped</option>
+              <option value="all">{t('messages.allStatus')}</option>
+              <option value="analyzed">{t('messages.analyzed')}</option>
+              <option value="pending">{t('messages.pending')}</option>
+              <option value="skipped">{t('messages.skipped')}</option>
             </select>
           </div>
         </CardContent>
@@ -283,7 +285,7 @@ const Messages = () => {
                               {msg.has_image && (
                                 <Badge variant="outline" className="text-xs px-2 py-0.5">
                                   <ImageIcon className="w-3 h-3 mr-1" />
-                                  Image
+                                  {t('messages.image')}
                                 </Badge>
                               )}
                               {msg.analysis_status === 'skipped' && (
@@ -299,7 +301,7 @@ const Messages = () => {
                                   ) : (
                                     <RotateCcw className="w-3 h-3 mr-1" />
                                   )}
-                                  Re-analyze
+                                  {t('messages.reanalyze')}
                                 </Button>
                               )}
                             </div>
@@ -332,7 +334,7 @@ const Messages = () => {
                     <CardContent className="pt-4">
                       <div className="flex items-center gap-2 mb-3 text-xs text-gray-500">
                         <MessageSquare className="w-3.5 h-3.5" />
-                        <span>Full Message</span>
+                        <span>{t('messages.fullMessage')}</span>
                       </div>
                       <div
                         className="text-sm leading-relaxed break-words"
@@ -372,10 +374,10 @@ const Messages = () => {
         <Card>
           <CardContent className="pt-12 pb-12 text-center">
             <MessageSquare className="w-12 h-12 mx-auto mb-3 text-gray-300" />
-            <p className="text-gray-500 mb-1 font-medium">No messages found</p>
-            <p className="text-sm text-gray-400 mb-4">Try fetching from channels first to see messages.</p>
+            <p className="text-gray-500 mb-1 font-medium">{t('messages.noMessages')}</p>
+            <p className="text-sm text-gray-400 mb-4">{t('messages.fetchHint')}</p>
             <Button asChild variant="outline">
-              <a href="/channels">Go to Channels</a>
+              <a href="/channels">{t('messages.goToChannels')}</a>
             </Button>
           </CardContent>
         </Card>

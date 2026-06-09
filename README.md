@@ -26,6 +26,110 @@ An automated job scraping system that fetches software development job postings 
 - **Extended Job Board Support**: Add more job boards and career sites based on user demand
 - **Smart Content Fetching**: Use Playwright to fetch full content from job posting detail pages for better analysis
 
+## Workflow
+
+```mermaid
+graph TD
+    A[Telegram Channels] -->|Telethon| B[Backend FastAPI]
+    C[RSS Feeds<br/>V2EX, 电鸭社区] -->|feedparser| B
+    B -->|Store in PostgreSQL| D[(Database)]
+    B -->|WebSocket| E[Frontend React]
+    F[Ollama LLM] -->|AI Analysis| B
+    B -->|Send to Ollama| F
+    E -->|User Actions| B
+    E -->|Display Data| D
+    
+    style A fill:#3b82f6,color:#fff
+    style C fill:#10b981,color:#fff
+    style B fill:#f59e0b,color:#fff
+    style D fill:#8b5cf6,color:#fff
+    style E fill:#ec4899,color:#fff
+    style F fill:#06b6d4,color:#fff
+```
+
+### Detailed Data Flow
+
+```mermaid
+sequenceDiagram
+    participant User
+    participant Frontend
+    participant Backend
+    participant Telegram
+    participant RSS
+    participant Ollama
+    participant DB
+
+    User->>Frontend: Add Channel/Website
+    Frontend->>Backend: POST /api/channels or /api/website-sources
+    Backend->>DB: Store channel/website info
+
+    User->>Frontend: Click Fetch
+    Frontend->>Backend: POST /api/fetch or /api/website-sources/{id}/fetch
+    Backend->>Telegram: Fetch messages (Telethon)
+    Telegram-->>Backend: Return messages
+    Backend->>RSS: Fetch RSS feed (feedparser)
+    RSS-->>Backend: Return feed entries
+    Backend->>DB: Store messages
+
+    User->>Frontend: Click Analyze
+    Frontend->>Backend: POST /api/analyze or /api/website-sources/{id}/analyze
+    Backend->>DB: Get pending messages
+    loop For each message batch
+        Backend->>Ollama: Send message for analysis
+        Ollama-->>Backend: Return job/developer data
+        Backend->>Frontend: WebSocket progress update
+        Backend->>DB: Store extracted jobs/developers
+    end
+    Backend-->>Frontend: Analysis complete
+    Frontend->>User: Display results
+
+    User->>Frontend: View Dashboard
+    Frontend->>Backend: GET /api/stats, /api/daily-jobs
+    Backend->>DB: Query analytics data
+    Backend-->>Frontend: Return stats
+    Frontend->>User: Display charts
+```
+
+### System Architecture
+
+```mermaid
+graph LR
+    subgraph Frontend
+        A[React UI]
+        B[WebSocket Client]
+        C[API Client]
+    end
+
+    subgraph Backend
+        D[FastAPI Server]
+        E[WebSocket Server]
+        F[Telegram Client]
+        G[RSS Fetcher]
+        H[Ollama Service]
+        I[Task Scheduler]
+    end
+
+    subgraph External Services
+        J[Telegram API]
+        K[RSS Feeds]
+        L[Ollama LLM]
+        M[PostgreSQL]
+    end
+
+    A <--> C
+    A <--> B
+    C <--> D
+    B <--> E
+    F <--> J
+    G <--> K
+    H <--> L
+    D <--> M
+    F --> D
+    G --> D
+    H --> D
+    I --> D
+```
+
 ## Screenshots
 
 ### Dashboard

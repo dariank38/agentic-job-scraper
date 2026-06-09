@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useSearchParams } from 'react-router-dom';
+import { useTranslation } from 'react-i18next';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -33,6 +34,7 @@ import type { Channel, Stats } from '@/services/api';
 import { useWebSocketProgress, useToast } from '@/components/Layout';
 
 const Dashboard = () => {
+  const { t } = useTranslation();
   const [stats, setStats] = useState<Stats | null>(null);
   const [channels, setChannels] = useState<Channel[]>([]);
   const [loadingActions, setLoadingActions] = useState<Set<string>>(new Set());
@@ -348,14 +350,14 @@ const Dashboard = () => {
   };
 
   const statItems = [
-    { icon: MessageSquare, value: stats?.total_messages ?? '-', label: 'Total Messages', color: 'text-cyan-600 bg-cyan-100' },
-    { icon: Clock, value: stats?.pending_messages ?? '-', label: 'Pending Analysis', color: 'text-yellow-600 bg-yellow-100' },
-    { icon: SkipForward, value: stats?.skipped_messages ?? '-', label: 'Skipped', color: 'text-gray-600 bg-gray-100' },
-    { icon: Radio, value: stats?.total_channels ?? '-', label: 'Channels', color: 'text-blue-600 bg-blue-100' },
-    { icon: Briefcase, value: stats?.job_postings ?? '-', label: 'Job Postings', color: 'text-green-600 bg-green-100' },
-    { icon: Users, value: stats?.developers ?? '-', label: 'Developers', color: 'text-purple-600 bg-purple-100' },
-    { icon: CheckCircle2, value: stats?.applications?.jobs?.total ?? '-', label: 'Jobs Applied', color: 'text-orange-600 bg-orange-100' },
-    { icon: Bot, value: stats?.ollama_available ? 'Online' : 'Offline', label: 'Ollama', color: stats?.ollama_available ? 'text-green-600 bg-green-100' : 'text-red-600 bg-red-100' },
+    { icon: MessageSquare, value: stats?.total_messages ?? '-', label: t('dashboard.totalMessages'), color: 'text-cyan-600 bg-cyan-100' },
+    { icon: Clock, value: stats?.pending_messages ?? '-', label: t('dashboard.pendingAnalysis'), color: 'text-yellow-600 bg-yellow-100' },
+    { icon: SkipForward, value: stats?.skipped_messages ?? '-', label: t('dashboard.skipped'), color: 'text-gray-600 bg-gray-100' },
+    { icon: Radio, value: stats?.total_channels ?? '-', label: t('dashboard.channels'), color: 'text-blue-600 bg-blue-100' },
+    { icon: Briefcase, value: stats?.job_postings ?? '-', label: t('dashboard.jobPostings'), color: 'text-green-600 bg-green-100' },
+    { icon: Users, value: stats?.developers ?? '-', label: t('dashboard.developers'), color: 'text-purple-600 bg-purple-100' },
+    { icon: CheckCircle2, value: stats?.applications?.jobs?.total ?? '-', label: t('dashboard.jobsApplied'), color: 'text-orange-600 bg-orange-100' },
+    { icon: Bot, value: stats?.ollama_available ? t('dashboard.online') : t('dashboard.offline'), label: t('dashboard.ollama'), color: stats?.ollama_available ? 'text-green-600 bg-green-100' : 'text-red-600 bg-red-100' },
   ];
 
   return (
@@ -366,7 +368,7 @@ const Dashboard = () => {
           <CardHeader className="px-4 py-3 pb-2">
             <CardTitle className="text-sm flex items-center gap-2">
               <Briefcase size={14} className="text-blue-500" />
-              Daily Job Postings
+              {t('dashboard.dailyJobPostings')}
             </CardTitle>
           </CardHeader>
           <CardContent className="px-4 pb-4 pt-0">
@@ -377,7 +379,7 @@ const Dashboard = () => {
           <CardHeader className="px-4 py-3 pb-2">
             <CardTitle className="text-sm flex items-center gap-2">
               <Users size={14} className="text-purple-500" />
-              Developers Contacted
+              {t('dashboard.dailyDevelopersContacted')}
             </CardTitle>
           </CardHeader>
           <CardContent className="px-4 pb-4 pt-0">
@@ -388,7 +390,7 @@ const Dashboard = () => {
           <CardHeader className="px-4 py-3 pb-2">
             <CardTitle className="text-sm flex items-center gap-2">
               <CheckCircle2 size={14} className="text-green-500" />
-              Jobs Applied
+              {t('dashboard.dailyJobsApplied')}
             </CardTitle>
           </CardHeader>
           <CardContent className="px-4 pb-4 pt-0">
