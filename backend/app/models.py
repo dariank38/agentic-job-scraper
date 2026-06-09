@@ -107,11 +107,17 @@ class Message(Base):
             "sender_first_name": self.sender_first_name,
             "has_image": self.has_image,
             "analysis_status": self.analysis_status,
+            "source_type": self.source_type,
             "channel": {
                 "id": self.channel.id,
                 "username": self.channel.username,
                 "name": self.channel.name,
             } if self.channel else None,
+            "website_source": {
+                "id": self.website_source.id,
+                "name": self.website_source.name,
+                "url": self.website_source.url,
+            } if self.website_source else None,
         }
 
 

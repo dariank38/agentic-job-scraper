@@ -9,6 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.connection import get_db
 from app.models import WebsiteSource, Message
 from web_crawler import Fetcher, Extractor
+from app.tasks import broadcast_progress, create_operation, update_operation, stop_website_operation, website_stop_events
 
 logger = logging.getLogger(__name__)
 
@@ -163,12 +164,29 @@ def register_website_source_routes(app):
             if not source.is_active:
                 raise HTTPException(status_code=400, detail="Website source is not active")
 
+            # Create operation for tracking
+            operation_id = await create_operation(db, "fetch", None, total_messages=0)
+            await update_operation(db, operation_id, channel_username=source.name)
+
+            # Broadcast start
+            await broadcast_progress("fetch_start", {
+                "channel": source.name,
+                "channel_id": source_id,
+                "operation_id": operation_id,
+            })
+
             # Use RSS fetcher to fetch RSS content
             crawler = Fetcher()
             fetch_result = await crawler.fetch(source.url)
             rss_entries = fetch_result["content"]
 
             if not rss_entries:
+                await update_operation(db, operation_id, status="completed")
+                await broadcast_progress("fetch_complete", {
+                    "channel": source.name,
+                    "new_messages": 0,
+                    "operation_id": operation_id,
+                })
                 return {
                     "success": True,
                     "new_messages": 0,
@@ -178,7 +196,9 @@ def register_website_source_routes(app):
 
             # Save raw RSS entries as Messages (no Ollama extraction yet)
             messages_added = 0
-            for entry_text in rss_entries:
+            total_entries = len(rss_entries)
+            
+            for idx, entry_text in enumerate(rss_entries):
                 # Check if message already exists (by text hash)
                 existing_result = await db.execute(
                     select(Message).filter(
@@ -190,35 +210,61 @@ def register_website_source_routes(app):
                 if existing:
                     continue
 
-                # Extract URL from entry for unique ID
+                # Extract URL and published date from entry
                 url = None
+                published_date = None
                 for line in entry_text.split('\n'):
                     if line.startswith('Link:'):
                         url = line.replace('Link:', '').strip()
-                        break
+                    elif line.startswith('Published:'):
+                        date_str = line.replace('Published:', '').strip()
+                        try:
+                            from datetime import datetime
+                            # Try to parse common RSS date formats
+                            parsed_date = datetime.fromisoformat(date_str.replace('Z', '+00:00'))
+                            # Convert to naive datetime (remove timezone) for database storage
+                            published_date = parsed_date.replace(tzinfo=None)
+                        except:
+                            pass
 
                 message = Message(
                     website_post_id=f"{source_id}-{hash(entry_text)}",
                     website_source_id=source_id,
                     source_type="website",
                     text=entry_text,
-                    date=None,
+                    date=published_date,
                     sender_username=source.name,
                     analysis_status="pending",
                 )
                 db.add(message)
                 await db.flush()
                 messages_added += 1
+                
+                # Broadcast progress
+                if idx % 5 == 0:  # Broadcast every 5 entries
+                    await broadcast_progress("fetch_progress", {
+                        "channel": source.name,
+                        "processed": idx + 1,
+                        "total": total_entries,
+                        "operation_id": operation_id,
+                    })
 
             # Update source
             source.last_fetch_new_count = messages_added
             source.last_fetch_at = func.now()
             await db.commit()
+            
+            await update_operation(db, operation_id, status="completed")
+            await broadcast_progress("fetch_complete", {
+                "channel": source.name,
+                "new_messages": messages_added,
+                "operation_id": operation_id,
+            })
 
             return {
                 "success": True,
                 "new_messages": messages_added,
-                "total_entries": len(rss_entries),
+                "total_entries": total_entries,
                 "fetch_method": fetch_result["type"],
                 "message": f"Fetched {messages_added} new messages from {source.name} using {fetch_result['type']}",
             }
@@ -370,6 +416,76 @@ def register_website_source_routes(app):
 
         except Exception as e:
             logger.error(f"[WEBSITE SOURCE] Error starting bulk analysis: {e}", exc_info=True)
+            raise HTTPException(status_code=500, detail=str(e))
+
+    @app.post("/api/website-sources/{source_id}/stop")
+    async def stop_website_source_operation(
+        source_id: int,
+        db: AsyncSession = Depends(get_db)
+    ):
+        """Stop the current fetch or analyze operation for a website source."""
+        try:
+            # Get source name first
+            result = await db.execute(select(WebsiteSource).filter(WebsiteSource.id == source_id))
+            source = result.scalar_one_or_none()
+            if not source:
+                return {"success": False, "message": "Website source not found"}
+
+            logger.info(f"Stop operation requested for source_id={source_id} ({source.name})")
+            logger.info(f"Current website stop events in memory: {list(website_stop_events.keys())}")
+
+            # Check in-memory (fast path)
+            if source_id in website_stop_events:
+                stop_website_operation(source_id)
+                logger.info(f"Stop signal sent via memory for source_id={source_id}")
+
+                # Also update any running operation in database by channel_username
+                from app.models import Operation
+                from sqlalchemy import select
+                result = await db.execute(
+                    select(Operation).filter(
+                        Operation.channel_username == source.name,
+                        Operation.status == "running"
+                    )
+                )
+                operation = result.scalar_one_or_none()
+                if operation:
+                    operation.status = "stopped"
+                    operation.completed_at = func.now()
+                    await db.commit()
+                    logger.info(f"Operation marked as stopped in database for {source.name}")
+
+                return {"success": True, "message": "Stop signal sent"}
+
+            # Check database for running operation (cross-process) by channel_username
+            from app.models import Operation
+            from sqlalchemy import select
+            result = await db.execute(
+                select(Operation).filter(
+                    Operation.channel_username == source.name,
+                    Operation.status == "running"
+                )
+            )
+            operation = result.scalar_one_or_none()
+            if operation:
+                # Mark operation as stopped in database
+                operation.status = "stopped"
+                operation.completed_at = func.now()
+                await db.commit()
+                logger.info(f"Operation marked as stopped in database for {source.name}")
+
+                # Try to stop via memory if available
+                if source_id in website_stop_events:
+                    stop_website_operation(source_id)
+                    logger.info(f"Also sent memory signal for source_id={source_id}")
+
+                return {"success": True, "message": "Stop signal sent (cross-process)"}
+
+            logger.warning(f"No active operation found for source_id={source_id} ({source.name})")
+            return {"success": False, "message": "No active operation found"}
+
+        except Exception as e:
+            logger.error(f"[WEBSITE SOURCE] Error stopping operation: {e}", exc_info=True)
             raise HTTPException(status_code=500, detail=str(e))
 
 

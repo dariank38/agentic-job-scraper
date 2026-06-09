@@ -118,10 +118,10 @@ const WebSocketProgressProvider = ({ children }: { children: React.ReactNode }) 
               console.log(`[POLL] Running: ${op.channel_username} | ${op.operation_type} | ${op.analyzed}/${op.total_messages}`);
             }
           });
-          // Build operations state from running database operations
+          // Build operations state from running database operations (exclude bulk operations and website operations)
           const newOperations: Record<string, { type: string; status: string }> = {};
           data.operations.forEach((op: any) => {
-            if (op.status === 'running' && op.channel_username) {
+            if (op.status === 'running' && op.channel_username && !op.bulk_operation_id && op.channel_id) {
               const opType = op.operation_type === 'analyze' ? 'analyze' : 'fetch';
               newOperations[op.channel_username] = { type: opType, status: 'running' };
             }

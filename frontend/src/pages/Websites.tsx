@@ -5,15 +5,16 @@ import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Badge } from '@/components/ui/badge';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
-import { Globe, Plus, RefreshCw, Bot, Trash2, Loader2, Edit } from 'lucide-react';
+import { Globe, Plus, RefreshCw, Bot, Trash2, Loader2, Edit, Square } from 'lucide-react';
 import api from '@/services/api';
 import type { WebsiteSource } from '@/services/api';
-import { useToast } from '@/components/Layout';
+import { useToast, useWebSocketProgress } from '@/components/Layout';
 
 const Websites = () => {
   const [websiteSources, setWebsiteSources] = useState<WebsiteSource[]>([]);
   const [loadingActions, setLoadingActions] = useState<Set<string>>(new Set());
   const { showToast } = useToast();
+  const { channelProgress, operations } = useWebSocketProgress();
   const [addWebsiteDialogOpen, setAddWebsiteDialogOpen] = useState(false);
   const [newWebsiteName, setNewWebsiteName] = useState('');
   const [newWebsiteUrl, setNewWebsiteUrl] = useState('');
@@ -78,7 +79,7 @@ const Websites = () => {
       setLoadingActions(prev => new Set(prev).add(`fetch-${id}`));
       const data = await api.fetchWebsiteSource(id);
       if (data.success) {
-        showToast('success', `Fetched ${data.new_jobs} new jobs (${data.fetch_method}) - ${data.emails_found} emails found`);
+        showToast('success', `Fetched ${data.new_messages} new messages (${data.fetch_method})`);
         loadWebsiteSources();
       } else {
         showToast('error', 'Error: ' + (data.error || 'Unknown'));
@@ -100,7 +101,7 @@ const Websites = () => {
       const data = await api.fetchAllWebsiteSources();
       if (data.success) {
         const methods = data.fetch_methods?.join(', ') || 'mixed';
-        showToast('success', `Fetched ${data.new_jobs} new jobs from ${data.sources_fetched} source(s) (${methods}) - ${data.emails_found} emails found`);
+        showToast('success', `Fetched ${data.new_messages} new messages from ${data.sources_fetched} source(s) (${methods})`);
         loadWebsiteSources();
       } else {
         showToast('error', 'Error: ' + (data.error || 'Unknown'));
@@ -179,6 +180,19 @@ const Websites = () => {
     }
   };
 
+  const stopWebsiteOperation = async (sourceId: number, sourceName: string) => {
+    try {
+      const data = await api.stopWebsiteSource(sourceId);
+      if (data.success) {
+        showToast('success', `Stop signal sent for ${sourceName}`);
+      } else {
+        showToast('error', 'Error: ' + (data.message || 'Unknown'));
+      }
+    } catch (e: any) {
+      showToast('error', 'Error: ' + e.message);
+    }
+  };
+
   return (
     <div className="space-y-6">
       <div className="flex justify-between items-center">
@@ -214,6 +228,42 @@ const Websites = () => {
         </CardContent>
       </Card>
 
+      {/* Active Operations Progress */}
+      {Object.keys(operations).length > 0 && (
+        <Card className="border-blue-200 bg-blue-50">
+          <CardHeader>
+            <CardTitle className="text-sm">Active Operations</CardTitle>
+          </CardHeader>
+          <CardContent>
+            {Object.entries(operations).map(([name, op]) => {
+              const progress = channelProgress[name];
+              return (
+                <div key={name} className="mb-3 last:mb-0">
+                  <div className="flex items-center justify-between mb-1">
+                    <span className="text-sm font-medium text-blue-900">{name}</span>
+                    <span className="text-xs text-blue-700">{op.type}</span>
+                  </div>
+                  {progress && (
+                    <div className="mt-2">
+                      <div className="flex justify-between text-xs mb-1">
+                        <span className="text-blue-700">Processing...</span>
+                        <span className="text-blue-700">{(progress as any).analyzed || (progress as any).processed || 0} / {progress.total || 0}</span>
+                      </div>
+                      <div className="w-full bg-blue-200 rounded-full h-2">
+                        <div
+                          className="bg-blue-600 h-2 rounded-full transition-all"
+                          style={{ width: `${(((progress as any).analyzed || (progress as any).processed || 0) / (progress.total || 1)) * 100}%` }}
+                        />
+                      </div>
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </CardContent>
+        </Card>
+      )}
+
       {/* Website Sources List */}
       <Card>
         <CardHeader>
@@ -237,7 +287,7 @@ const Websites = () => {
                           {source.is_active ? 'Active' : 'Inactive'}
                         </Badge>
                         <Badge variant="outline" className="text-xs">
-                          {source.site_type}
+                          RSS
                         </Badge>
                       </div>
                       <p className="text-sm text-gray-600 mb-2">{source.url}</p>
@@ -265,7 +315,7 @@ const Websites = () => {
                         size="sm"
                         variant="outline"
                         onClick={() => fetchWebsiteSource(source.id)}
-                        disabled={loadingActions.has(`fetch-${source.id}`)}
+                        disabled={loadingActions.has(`fetch-${source.id}`) || !!operations[source.name]}
                       >
                         {loadingActions.has(`fetch-${source.id}`) ? <Loader2 size={12} className="mr-1 animate-spin" /> : <RefreshCw size={12} className="mr-1" />}
                         Fetch
@@ -273,10 +323,21 @@ const Websites = () => {
                       <Button
                         size="sm"
                         onClick={() => analyzeWebsiteSource(source.id)}
+                        disabled={!!operations[source.name]}
                       >
                         <Bot size={12} className="mr-1" />
                         Analyze
                       </Button>
+                      {operations[source.name] && (
+                        <Button
+                          size="sm"
+                          variant="destructive"
+                          onClick={() => stopWebsiteOperation(source.id, source.name)}
+                        >
+                          <Square size={12} className="mr-1" />
+                          Stop
+                        </Button>
+                      )}
                       <Button
                         size="sm"
                         variant="destructive"
@@ -322,16 +383,16 @@ const Websites = () => {
               />
             </div>
             <div>
-              <label className="text-sm font-medium">URL</label>
+              <label className="text-sm font-medium">RSS Feed URL</label>
               <Input
                 value={newWebsiteUrl}
                 onChange={(e) => setNewWebsiteUrl(e.target.value)}
-                placeholder="e.g., https://v2ex.com/go/noder"
+                placeholder="e.g., https://example.com/feed.xml"
                 className="mt-1"
               />
             </div>
             <p className="text-xs text-gray-500">
-              Site type will be auto-detected from the URL (v2ex.com, eleduck.com, etc.)
+              Enter the full RSS feed URL (e.g., /feed.xml, /rss, /atom.xml)
             </p>
           </div>
           <DialogFooter>

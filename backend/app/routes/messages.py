@@ -44,9 +44,10 @@ def register_message_routes(app):
         total_result = await db.execute(count_query)
         total = total_result.scalar()
 
-        # Get messages with pagination, eagerly load channel
+        # Get messages with pagination, eagerly load channel and website_source
         messages_query = query.options(
-            selectinload(Message.channel)
+            selectinload(Message.channel),
+            selectinload(Message.website_source)
         ).order_by(Message.date.desc()).offset(offset).limit(limit)
         messages_result = await db.execute(messages_query)
         messages = messages_result.scalars().all()

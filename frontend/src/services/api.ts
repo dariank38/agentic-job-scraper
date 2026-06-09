@@ -435,6 +435,11 @@ const api = {
     });
     return response.json();
   },
+
+  stopWebsiteSource: async (id: number): Promise<any> => {
+    const response = await fetch(`${API_BASE}/api/website-sources/${id}/stop`, { method: 'POST' });
+    return response.json();
+  },
 };
 
 export default api;

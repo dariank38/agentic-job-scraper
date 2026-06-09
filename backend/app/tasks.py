@@ -19,6 +19,9 @@ logger = logging.getLogger(__name__)
 # Global stop events for cancelling analysis (per-channel)
 analysis_stop_events: dict[int, asyncio.Event] = {}
 
+# Website source stop events (for website fetch/analyze operations)
+website_stop_events: dict[int, asyncio.Event] = {}
+
 # Bulk operation stop events (for analyze-all, fetch-analyze-all)
 bulk_stop_events: dict[str, asyncio.Event] = {}
 
@@ -51,6 +54,30 @@ def is_analysis_stopped(channel_id: int) -> bool:
 def cleanup_stop_event(channel_id: int):
     """Clean up stop event after analysis completes."""
     analysis_stop_events.pop(channel_id, None)
+
+
+def reset_website_stop_event(source_id: int):
+    """Reset stop event for a website source before starting operation."""
+    website_stop_events[source_id] = asyncio.Event()
+
+
+def stop_website_operation(source_id: int):
+    """Signal website operation to stop for a specific source."""
+    if source_id in website_stop_events:
+        website_stop_events[source_id].set()
+
+
+def is_website_operation_stopped(source_id: int) -> bool:
+    """Check if website operation should stop for a source."""
+    event = website_stop_events.get(source_id)
+    if event is None:
+        return False
+    return event.is_set()
+
+
+def cleanup_website_stop_event(source_id: int):
+    """Clean up website stop event after operation completes."""
+    website_stop_events.pop(source_id, None)
 
 
 def reset_bulk_stop_event(operation_id: str):
@@ -137,14 +164,14 @@ async def broadcast_progress(event_type: str, data: dict):
 async def create_operation(
     db: AsyncSession,
     operation_type: str,
-    channel: Channel,
+    channel: Optional[Channel],
     total_messages: Optional[int] = None,
     bulk_operation_id: Optional[str] = None,
 ) -> int:
     operation = Operation(
         operation_type=operation_type,
-        channel_id=channel.id,
-        channel_username=channel.username,
+        channel_id=channel.id if channel else None,
+        channel_username=channel.username if channel else None,
         bulk_operation_id=bulk_operation_id,
         status="running",
         total_messages=total_messages or 0,
@@ -166,6 +193,7 @@ async def update_operation(
     jobs_found: Optional[int] = None,
     developers_found: Optional[int] = None,
     error_message: Optional[str] = None,
+    channel_username: Optional[str] = None,
     commit: bool = True,
 ):
     """Update operation progress. Use commit=False to batch updates."""
@@ -185,6 +213,8 @@ async def update_operation(
             operation.analyzed = analyzed
         if jobs_found is not None:
             operation.jobs_found = jobs_found
+        if channel_username is not None:
+            operation.channel_username = channel_username
         if developers_found is not None:
             operation.developers_found = developers_found
         if error_message is not None:
@@ -627,7 +657,7 @@ async def analyze_messages(
                                 Job.company == company,
                             )
                         )
-                        if existing_job_result.scalar_one_or_none():
+                        if existing_job_result.first():
                             skipped_count += 1
                             message.analysis_status = "skipped"
                             continue
@@ -690,7 +720,7 @@ async def analyze_messages(
                             existing_dev_result = await db.execute(
                                 select(Developer).filter(*conditions)
                             )
-                            if existing_dev_result.scalar_one_or_none():
+                            if existing_dev_result.first():
                                 skipped_count += 1
                                 message.analysis_status = "skipped"
                                 continue
@@ -935,8 +965,19 @@ async def analyze_website_posts(
         operation_id = await create_operation(db, "analyze", None, total_messages=total_messages, bulk_operation_id=bulk_operation_id)
         await update_operation(db, operation_id, channel_username=source_name, total_messages=total_messages)
 
+        # Reset stop event
+        reset_website_stop_event(source_id)
+
+        # Broadcast start
+        await broadcast_progress("analyze_start", {
+            "channel": source_name,
+            "channel_id": source_id,
+            "operation_id": operation_id,
+        })
+
         if len(messages) == 0:
             await update_operation(db, operation_id, status="completed")
+            cleanup_website_stop_event(source_id)
             return {"success": True, "analyzed": 0, "jobs_found": 0, "developers_found": 0, "skipped": 0}
 
         # Use RSS extractor for website sources
@@ -958,6 +999,12 @@ async def analyze_website_posts(
         logger.info(f"[ANALYZE WEBSITE] Source: {source_name} | Messages: {total_messages} | Batches: {total_batches}")
 
         for batch_num in range(total_batches):
+            # Check for stop signal
+            if is_website_operation_stopped(source_id):
+                logger.info(f"[ANALYZE WEBSITE STOP] Source: {source_name} - Stop signal received")
+                stopped_count = total_messages - (batch_num * batch_size)
+                break
+
             if consecutive_failures >= max_consecutive_failures:
                 logger.error(f"[ANALYZE WEBSITE CIRCUIT BREAKER] Source: {source_name} - Stopping after {consecutive_failures} consecutive batch failures")
                 stopped_count = total_messages - (batch_num * batch_size)
@@ -988,7 +1035,7 @@ async def analyze_website_posts(
                         if existing_job.scalar_one_or_none():
                             continue
 
-                        # Create job from extracted data
+                        # Create job from extracted data (map to valid Job model fields)
                         job_obj = Job(
                             message_id=message.id,
                             website_source_id=source_id,
@@ -997,10 +1044,8 @@ async def analyze_website_posts(
                             company=job.company or "Unknown",
                             location=job.location,
                             is_remote=job.is_remote,
-                            requirements=job.requirements,
-                            salary=job.salary,
-                            url=job.url,
-                            deadline=job.deadline,
+                            company_link=job.url,
+                            summary=job.requirements,
                         )
                         db.add(job_obj)
                         jobs_added += 1
@@ -1011,16 +1056,16 @@ async def analyze_website_posts(
                         existing_dev = await db.execute(
                             select(Developer).filter(
                                 Developer.website_source_id == source_id,
-                                Developer.team_name == dev.team_name
+                                Developer.name == dev.team_name
                             )
                         )
-                        if not existing_dev.scalar_one_or_none():
+                        if not existing_dev.first():
                             dev_obj = Developer(
                                 website_source_id=source_id,
-                                team_name=dev.team_name,
-                                tech_stack=dev.tech_stack,
-                                open_source_links=dev.open_source_links,
-                                description=dev.description,
+                                name=dev.team_name,
+                                skills=dev.tech_stack,
+                                portfolio=dev.open_source_links[0] if dev.open_source_links else None,
+                                summary=dev.description,
                             )
                             db.add(dev_obj)
                             devs_added += 1
@@ -1085,6 +1130,16 @@ async def analyze_website_posts(
 
         status = "stopped" if stopped_count > 0 else "completed"
         await update_operation(db, operation_id, status=status)
+        
+        # Broadcast completion
+        await broadcast_progress("analyze_complete", {
+            "channel": source_name,
+            "channel_id": source_id,
+            "analyzed": analyzed_count,
+            "jobs": jobs_added,
+            "developers": devs_added,
+            "operation_id": operation_id,
+        })
 
         logger.info(f"[ANALYZE WEBSITE] Completed: {source_name} | Jobs: {jobs_added} | Devs: {devs_added} | Analyzed: {analyzed_count}")
         return {
@@ -1099,7 +1154,15 @@ async def analyze_website_posts(
 
     except Exception as e:
         logger.error(f"[ANALYZE WEBSITE] Error: {e}", exc_info=True)
+        # Broadcast error
+        await broadcast_progress("error", {
+            "channel": source_name,
+            "channel_id": source_id,
+            "error": str(e),
+        })
         return {"success": False, "error": str(e)}
+    finally:
+        cleanup_website_stop_event(source_id)
 
 
 # ── LIFESPAN ──────────────────────────────────────────────────────────────────
