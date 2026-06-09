@@ -20,11 +20,14 @@ An automated job scraping system that fetches software development job postings 
 - **Remote Jobs Focus**: Prioritizes remote/work-from-home opportunities
 - **Multi-Account Support**: Manage multiple Telegram accounts dynamically through the UI with interactive authentication
 - **Custom Extraction Prompts**: Customize Ollama prompts per website source for better extraction accuracy
+- **Internationalization (i18n)**: Full UI translation support with English and Chinese (Simplified) via a language switcher
+- **Server-Side Search**: All search inputs query the backend API on Enter key press for accurate, paginated results
 
 ## Planned Features
 
 - **Extended Job Board Support**: Add more job boards and career sites based on user demand
 - **Smart Content Fetching**: Use Playwright to fetch full content from job posting detail pages for better analysis
+- **Additional Languages**: Expand i18n support beyond English and Chinese
 
 ## Workflow
 
@@ -205,6 +208,7 @@ However, the project is fully functional and can be used effectively for persona
 - **shadcn/ui**: Beautiful, accessible UI components
 - **Tailwind CSS**: Utility-first styling
 - **React Router**: Client-side routing
+- **react-i18next**: Internationalization with English and Chinese locale files in `frontend/src/locales/`
 
 ## Prerequisites
 
@@ -539,7 +543,8 @@ agentic-job-scraper/
 │   │   ├── components/        # React components
 │   │   ├── pages/             # Page components
 │   │   ├── services/          # API client
-│   │   └── hooks/             # Custom hooks
+│   │   ├── hooks/             # Custom hooks
+│   │   └── locales/           # i18n translation files (en.json, zh.json)
 │   └── package.json
 └── README.md
 ```
@@ -695,6 +700,15 @@ for f in *.sql; do psql -U your_username -d job_scraper -f "$f"; done
 - Verify VITE_API_BASE_URL in frontend `.env`
 - Check browser console for CORS errors
 - Ensure WebSocket URL is correct (VITE_WS_BASE_URL)
+
+## Internationalization (i18n)
+
+The frontend supports English and Chinese (Simplified) with a language switcher in the top navigation bar.
+
+- Locale files: `frontend/src/locales/en.json` and `frontend/src/locales/zh.json`
+- All UI text, buttons, labels, toast notifications, error messages, and placeholders are translated
+- To add a new language, create a new locale file and register it in `frontend/src/i18n.ts`
+- The selected language is persisted in `localStorage`
 
 ## License
 

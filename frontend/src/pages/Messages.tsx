@@ -55,6 +55,7 @@ const Messages = () => {
   const [analyzingChannel, setAnalyzingChannel] = useState<string | null>(null);
   const [analysisProgress, setAnalysisProgress] = useState<{ processed: number; total: number } | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
+  const [searchInput, setSearchInput] = useState('');
   const [statusFilter, setStatusFilter] = useState('all');
   const [reanalyzingId, setReanalyzingId] = useState<number | null>(null);
   const limit = 8;
@@ -225,8 +226,9 @@ const Messages = () => {
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
               <Input
                 placeholder={t('messages.searchPlaceholder')}
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
+                value={searchInput}
+                onChange={(e) => setSearchInput(e.target.value)}
+                onKeyDown={(e) => { if (e.key === 'Enter') { setSearchParams({}); setSearchQuery(searchInput); } }}
                 className="pl-9"
               />
             </div>

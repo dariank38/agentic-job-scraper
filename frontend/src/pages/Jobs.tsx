@@ -36,6 +36,7 @@ const Jobs = () => {
   const [selectedJob, setSelectedJob] = useState<Job | null>(null);
   const [searchParams, setSearchParams] = useSearchParams();
   const [searchQuery, setSearchQuery] = useState('');
+  const [searchInput, setSearchInput] = useState('');
   const [loadingActions, setLoadingActions] = useState<Set<string>>(new Set());
   const [total, setTotal] = useState(0);
   const [jobNotes, setJobNotes] = useState('');
@@ -98,6 +99,7 @@ const Jobs = () => {
   const clearFilters = () => {
     setSearchParams({});
     setSearchQuery('');
+    setSearchInput('');
   };
 
   const toggleApplied = async (id: number) => {
@@ -188,7 +190,7 @@ const Jobs = () => {
         </div>
       </div>
 
-      {jobs.length > 0 ? (
+      {(jobs.length > 0 || searchQuery) ? (
         <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
           {/* Left Sidebar - Job List */}
           <Card className="md:col-span-2">
@@ -199,8 +201,9 @@ const Jobs = () => {
                   <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
                   <Input
                     placeholder={t('jobs.searchPlaceholder')}
-                    value={searchQuery}
-                    onChange={(e) => setSearchQuery(e.target.value)}
+                    value={searchInput}
+                    onChange={(e) => setSearchInput(e.target.value)}
+                    onKeyDown={(e) => { if (e.key === 'Enter') { setSearchParams({}); setSearchQuery(searchInput); } }}
                     className="pl-9"
                   />
                 </div>
@@ -499,6 +502,7 @@ const Jobs = () => {
           </CardContent>
         </Card>
       )}
+
     </>
   );
 };

@@ -29,6 +29,7 @@ const Channels = () => {
   const [total, setTotal] = useState(0);
   const [searchParams, setSearchParams] = useSearchParams();
   const [searchQuery, setSearchQuery] = useState('');
+  const [searchInput, setSearchInput] = useState('');
   const [activeFilter, setActiveFilter] = useState('all');
   const [telegramAccounts, setTelegramAccounts] = useState<TelegramAccount[]>([]);
   const [selectedAccountId, setSelectedAccountId] = useState<number | null>(null);
@@ -333,8 +334,9 @@ const Channels = () => {
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
               <Input
                 placeholder={t('channels.searchPlaceholder')}
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
+                value={searchInput}
+                onChange={(e) => setSearchInput(e.target.value)}
+                onKeyDown={(e) => { if (e.key === 'Enter') { setSearchParams({}); setSearchQuery(searchInput); } }}
                 className="pl-9"
               />
             </div>
@@ -348,7 +350,7 @@ const Channels = () => {
               <option value="inactive">{t('channels.inactive')}</option>
             </select>
             {(searchQuery || activeFilter !== 'all') && (
-              <Button variant="ghost" size="sm" onClick={() => { setSearchQuery(''); setActiveFilter('all'); }}>
+              <Button variant="ghost" size="sm" onClick={() => { setSearchQuery(''); setSearchInput(''); setActiveFilter('all'); }}>
                 {t('common.clear')}
               </Button>
             )}

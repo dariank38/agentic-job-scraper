@@ -41,6 +41,7 @@ const Developers = () => {
   const [selectedDeveloper, setSelectedDeveloper] = useState<Developer | null>(null);
   const [searchParams, setSearchParams] = useSearchParams();
   const [searchQuery, setSearchQuery] = useState('');
+  const [searchInput, setSearchInput] = useState('');
   const [total, setTotal] = useState(0);
   const [developerNotes, setDeveloperNotes] = useState('');
   const lookingFilter = searchParams.get('looking_for_work');
@@ -95,6 +96,7 @@ const Developers = () => {
   const clearFilters = () => {
     setSearchParams({});
     setSearchQuery('');
+    setSearchInput('');
   };
 
   const toggleContacted = async (id: number) => {
@@ -193,7 +195,7 @@ const Developers = () => {
         </div>
       </div>
 
-      {developers.length > 0 ? (
+      {(developers.length > 0 || searchQuery) ? (
         <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
           {/* Left Sidebar - Developer List */}
           <Card className="md:col-span-2">
@@ -204,8 +206,9 @@ const Developers = () => {
                   <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
                   <Input
                     placeholder={t('developers.searchPlaceholder')}
-                    value={searchQuery}
-                    onChange={(e) => setSearchQuery(e.target.value)}
+                    value={searchInput}
+                    onChange={(e) => setSearchInput(e.target.value)}
+                    onKeyDown={(e) => { if (e.key === 'Enter') { setSearchParams({}); setSearchQuery(searchInput); } }}
                     className="pl-9"
                   />
                 </div>
