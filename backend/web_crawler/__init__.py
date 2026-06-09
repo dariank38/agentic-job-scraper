@@ -7,8 +7,8 @@ from web_crawler.config import (
     USER_AGENT,
 )
 from web_crawler.fetcher import fetch_posts
-from web_crawler.smart_fetcher import SmartSiteCrawler
-from web_crawler.smart_extractor import SmartOllamaExtractor
+from web_crawler.rss_fetcher import Fetcher
+from web_crawler.rss_extractor import Extractor
 from web_crawler.models import ExtractedData, JobPosting, DeveloperInfo, ContactInfo
 
 __all__ = [
@@ -17,8 +17,8 @@ __all__ = [
     "DEFAULT_DAYS_BACK",
     "USER_AGENT",
     "fetch_posts",
-    "SmartSiteCrawler",
-    "SmartOllamaExtractor",
+    "Fetcher",
+    "Extractor",
     "ExtractedData",
     "JobPosting",
     "DeveloperInfo",

@@ -1,71 +1,46 @@
-"""Smart Ollama extractor with structured JSON output and chunking."""
+"""RSS Ollama extractor with structured JSON output and chunking."""
 
 import json
 import logging
+import os
 from typing import Optional, List
-from ollama import chat
+from ollama import AsyncClient
 
 from web_crawler.models import ExtractedData, JobPosting, DeveloperInfo, ContactInfo
+from web_crawler.prompts import get_prompt_for_site
 
 logger = logging.getLogger(__name__)
 
-PROMPT_TEMPLATE = """
-You are an expert web content analyzer for job postings and developer information.
-Extract the following from the text below and return ONLY a valid JSON object.
-No explanation, no markdown, no extra text.
-
-JSON Schema:
-{{
-  "job_postings": [
-    {{
-      "title": "string",
-      "requirements": "string or null",
-      "deadline": "string or null",
-      "url": "string or null",
-      "company": "string or null",
-      "location": "string or null",
-      "is_remote": "boolean or null",
-      "salary": "string or null"
-    }}
-  ],
-  "developer_info": {{
-    "team_name": "string or null",
-    "tech_stack": ["list of technologies"],
-    "open_source_links": ["list of github or repo urls"],
-    "description": "string or null"
-  }},
-  "contact_info": {{
-    "emails": ["list of emails"],
-    "phone_numbers": ["list of phone numbers"],
-    "social_links": ["list of social media urls"],
-    "contact_persons": ["list of person names"]
-  }}
-}}
-
-Text to analyze:
-{content}
-"""
+# Ollama configuration
+OLLAMA_BASE_URL = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
+OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "qwen2.5:7b")
 
 MAX_CHARS = 6000  # qwen2.5:7b context limit buffer
 
 
-class SmartOllamaExtractor:
-    """Smart extractor using Ollama with structured JSON output."""
+class Extractor:
+    """RSS extractor using Ollama with structured JSON output."""
 
-    def __init__(self, model: str = "qwen2.5:7b"):
-        self.model = model
+    def __init__(self, model: str = None, base_url: str = None):
+        self.model = model or OLLAMA_MODEL
+        self.base_url = base_url or OLLAMA_BASE_URL
+        self.client = AsyncClient(host=self.base_url)
 
-    def extract(self, content: str, source_url: str) -> ExtractedData:
-        """Extract structured data from content using Ollama.
+    async def extract(self, content: str, source_url: str, custom_prompt: str = None) -> ExtractedData:
+        """Extract structured data from RSS content using Ollama.
 
         Args:
             content: Text content to analyze.
             source_url: Original URL of the content.
+            custom_prompt: Optional custom prompt override.
 
         Returns:
             ExtractedData with job postings, developer info, and contact info.
         """
         logger.info(f"[EXTRACTOR] Processing {len(content)} chars from {source_url}")
+
+        # Get appropriate prompt for extraction
+        prompt_template = get_prompt_for_site(custom_prompt=custom_prompt)
 
         # Chunk if too long
         chunks = self._chunk(content)
@@ -74,7 +49,7 @@ class SmartOllamaExtractor:
         all_results = []
         for i, chunk in enumerate(chunks):
             logger.info(f"[EXTRACTOR] Processing chunk {i + 1}/{len(chunks)}")
-            result = self._call_llm(chunk)
+            result = await self._call_llm(chunk, prompt_template)
             if result:
                 all_results.append(result)
 
@@ -82,18 +57,19 @@ class SmartOllamaExtractor:
         logger.info(f"[EXTRACTOR] Extracted {len(merged.job_postings)} jobs, {len(merged.contact_info.emails) if merged.contact_info else 0} emails")
         return merged
 
-    def _call_llm(self, content: str) -> Optional[dict]:
+    async def _call_llm(self, content: str, prompt_template: str) -> Optional[dict]:
         """Call Ollama LLM for extraction.
 
         Args:
             content: Text chunk to analyze.
+            prompt_template: The prompt template to use.
 
         Returns:
             Parsed JSON dict if successful, None otherwise.
         """
-        prompt = PROMPT_TEMPLATE.format(content=content)
+        prompt = prompt_template.format(content=content)
         try:
-            response = chat(
+            response = await self.client.chat(
                 model=self.model,
                 messages=[{"role": "user", "content": prompt}],
                 options={"temperature": 0.1}  # Low temp for factual extraction
