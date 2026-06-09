@@ -6,6 +6,7 @@ import Jobs from '@/pages/Jobs';
 import Developers from '@/pages/Developers';
 import Messages from '@/pages/Messages';
 import TelegramAccounts from '@/pages/TelegramAccounts';
+import Websites from '@/pages/Websites';
 
 function App() {
   return (
@@ -20,6 +21,7 @@ function App() {
               <Route path="/developers" element={<Developers />} />
               <Route path="/messages" element={<Messages />} />
               <Route path="/telegram-accounts" element={<TelegramAccounts />} />
+              <Route path="/websites" element={<Websites />} />
             </Routes>
           </Layout>
         </ToastProvider>

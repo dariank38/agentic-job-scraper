@@ -912,11 +912,12 @@ async def analyze_website_posts(
     website_source: WebsiteSource,
     bulk_operation_id: Optional[str] = None,
 ) -> dict:
-    """Analyze unanalyzed website posts with AI using concurrent pipeline."""
+    """Analyze unanalyzed website posts with AI using RSS extraction with batching and circuit breaker."""
     # Capture primitives immediately
     source_id = website_source.id
     source_name = website_source.name
     source_url = website_source.url
+    custom_prompt = website_source.extraction_prompt
 
     if not await is_ollama_available():
         return {"success": False, "error": "Ollama not available"}
@@ -938,7 +939,9 @@ async def analyze_website_posts(
             await update_operation(db, operation_id, status="completed")
             return {"success": True, "analyzed": 0, "jobs_found": 0, "developers_found": 0, "skipped": 0}
 
-        analyzer = get_analyzer()
+        # Use RSS extractor for website sources
+        from web_crawler import Extractor
+        extractor = Extractor()
 
         jobs_added = 0
         devs_added = 0
@@ -948,6 +951,7 @@ async def analyze_website_posts(
         batch_size = 3
         total_batches = (total_messages + batch_size - 1) // batch_size
 
+        # Circuit breaker: stop after too many consecutive batch failures
         consecutive_failures = 0
         max_consecutive_failures = 5
 
@@ -965,101 +969,81 @@ async def analyze_website_posts(
 
             logger.info(f"[ANALYZE WEBSITE BATCH] Source: {source_name} | Batch {batch_num + 1}/{total_batches} | Messages {batch_start + 1}-{batch_end}")
 
+            batch_message_results = []
             for message in filtered_messages:
-                if not await should_analyze_message(message.text):
-                    message.analysis_status = "skipped"
-                    skipped_count += 1
-                    continue
-
                 try:
-                    result = await analyzer.analyze(message.text)
-                    category = result.get("category")
+                    # Use RSS extractor with custom prompt if provided
+                    extracted_data = await extractor.extract(
+                        message.text,
+                        source_url,
+                        custom_prompt=custom_prompt
+                    )
 
-                    if category == "job_posting":
-                        job_data = result.get("job_posting") or {}
-
-                        is_remote = job_data.get("is_remote")
-                        if is_remote is False:
-                            skipped_count += 1
-                            message.analysis_status = "skipped"
+                    # Process extracted job postings
+                    for job in extracted_data.job_postings:
+                        # Check if job already exists for this message
+                        existing_job = await db.execute(
+                            select(Job).filter(Job.message_id == message.id)
+                        )
+                        if existing_job.scalar_one_or_none():
                             continue
 
-                        title = _to_str(job_data.get("title"))
-                        company = _to_str(job_data.get("company"))
-                        location = job_data.get("location")
-                        role_str = _to_str(job_data.get("role_type"))
-                        contact, contact_type = _resolve_contact(job_data.get("contacts"), message)
-
-                        job = Job(
+                        # Create job from extracted data
+                        job_obj = Job(
                             message_id=message.id,
                             website_source_id=source_id,
                             channel_name=source_name,
-                            confidence=_to_str(job_data.get("confidence")),
-                            translated_text=_to_str(job_data.get("translated_text")),
-                            title=title,
-                            company=company,
-                            company_link=_to_str(job_data.get("company_link")),
-                            location=location,
-                            is_remote=is_remote,
-                            role_type=role_str,
-                            skills=job_data.get("skills", []),
-                            contact=contact,
-                            contact_type=contact_type,
-                            summary=_to_str(job_data.get("summary")),
+                            title=job.title or "Unknown",
+                            company=job.company or "Unknown",
+                            location=job.location,
+                            is_remote=job.is_remote,
+                            requirements=job.requirements,
+                            salary=job.salary,
+                            url=job.url,
+                            deadline=job.deadline,
                         )
-                        db.add(job)
+                        db.add(job_obj)
                         jobs_added += 1
 
-                    elif category == "personal_info":
-                        pi_data = result.get("personal_info") or {}
-
-                        name = _to_str(pi_data.get("name"))
-                        contact, contact_type = _resolve_contact(pi_data.get("contacts"), message)
-
-                        portfolio = _to_str(pi_data.get("portfolio"))
-                        github = _to_str(pi_data.get("github"))
-                        linkedin = _to_str(pi_data.get("linkedin"))
-
-                        exp_val = pi_data.get("experience")
-                        if isinstance(exp_val, list):
-                            exp_str = "\n".join(str(item) for item in exp_val)
-                        else:
-                            exp_str = str(exp_val) if exp_val else None
-
-                        developer = Developer(
-                            message_id=message.id,
-                            website_source_id=source_id,
-                            confidence=_to_str(pi_data.get("confidence")),
-                            translated_text=_to_str(pi_data.get("translated_text")),
-                            name=name,
-                            skills=pi_data.get("skills", []),
-                            experience=exp_str,
-                            portfolio=portfolio,
-                            github=github,
-                            linkedin=linkedin,
-                            contact=contact,
-                            contact_type=contact_type,
-                            looking_for_work=pi_data.get("looking_for_work"),
-                            summary=_to_str(pi_data.get("summary")),
+                    # Process developer info if present
+                    if extracted_data.developer_info:
+                        dev = extracted_data.developer_info
+                        existing_dev = await db.execute(
+                            select(Developer).filter(
+                                Developer.website_source_id == source_id,
+                                Developer.team_name == dev.team_name
+                            )
                         )
-                        db.add(developer)
-                        devs_added += 1
+                        if not existing_dev.scalar_one_or_none():
+                            dev_obj = Developer(
+                                website_source_id=source_id,
+                                team_name=dev.team_name,
+                                tech_stack=dev.tech_stack,
+                                open_source_links=dev.open_source_links,
+                                description=dev.description,
+                            )
+                            db.add(dev_obj)
+                            devs_added += 1
 
                     message.analysis_status = "analyzed"
                     analyzed_count += 1
+                    batch_message_results.append({"status": "success"})
 
                 except Exception as e:
-                    logger.error(f"[ANALYZE WEBSITE] Error analyzing message {message.id}: {e}", exc_info=True)
+                    logger.error(f"[ANALYZE WEBSITE] Error analyzing message {message.id}: {e}")
                     message.analysis_status = "error"
+                    batch_message_results.append({"status": "failed", "error": str(e)})
                     continue
 
-            batch_message_results = []
+            # Determine if this batch succeeded
             batch_has_errors = any(r.get("status") in ["failed", "db_error"] for r in batch_message_results)
             if batch_has_errors:
                 consecutive_failures += 1
+                logger.warning(f"[ANALYZE WEBSITE BATCH ERROR] Source: {source_name} | Batch {batch_num + 1} had errors | Consecutive failures: {consecutive_failures}")
             else:
                 consecutive_failures = 0
 
+            # Broadcast progress
             await broadcast_progress("analyze_progress", {
                 "channel": source_name,
                 "channel_id": source_id,
@@ -1102,17 +1086,19 @@ async def analyze_website_posts(
         status = "stopped" if stopped_count > 0 else "completed"
         await update_operation(db, operation_id, status=status)
 
+        logger.info(f"[ANALYZE WEBSITE] Completed: {source_name} | Jobs: {jobs_added} | Devs: {devs_added} | Analyzed: {analyzed_count}")
         return {
             "success": True,
+            "analyzed": analyzed_count,
             "jobs_found": jobs_added,
             "developers_found": devs_added,
-            "analyzed": analyzed_count,
             "skipped": skipped_count,
             "stopped": stopped_count > 0,
+            "remaining": stopped_count,
         }
 
     except Exception as e:
-        logger.error(f"[ANALYZE WEBSITE] Error analyzing source {source_name}: {e}", exc_info=True)
+        logger.error(f"[ANALYZE WEBSITE] Error: {e}", exc_info=True)
         return {"success": False, "error": str(e)}
 
 

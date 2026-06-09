@@ -112,6 +112,7 @@ export interface WebsiteSource {
   is_active: boolean;
   last_fetch_new_count: number;
   last_fetch_at: string | null;
+  extraction_prompt: string | null;
 }
 
 const api = {
@@ -424,6 +425,14 @@ const api = {
 
   analyzeAllWebsiteSources: async (): Promise<any> => {
     const response = await fetch(`${API_BASE}/api/website-sources/analyze-all`, { method: 'POST' });
+    return response.json();
+  },
+
+  updateWebsiteSource: async (id: number, formData: FormData): Promise<any> => {
+    const response = await fetch(`${API_BASE}/api/website-sources/${id}`, {
+      method: 'PUT',
+      body: formData,
+    });
     return response.json();
   },
 };

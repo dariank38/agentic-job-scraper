@@ -13,6 +13,7 @@ import {
   Code2,
   Menu,
   Zap,
+  Globe,
 } from 'lucide-react';
 
 type ToastType = 'success' | 'error' | 'info' | 'warning';
@@ -343,6 +344,7 @@ const navLinks = [
   { path: '/messages', label: 'Messages', icon: MessageSquare },
   { path: '/jobs', label: 'Jobs', icon: Briefcase },
   { path: '/developers', label: 'Developers', icon: Code2 },
+  { path: '/websites', label: 'Websites', icon: Globe },
   { path: '/telegram-accounts', label: 'Telegram Accounts', icon: Radio },
 ];
 

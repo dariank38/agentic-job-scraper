@@ -283,6 +283,7 @@ class WebsiteSource(Base):
     is_active = Column(Boolean, default=True)
     last_fetch_new_count = Column(Integer, default=0)  # Number of new posts from last fetch
     last_fetch_at = Column(DateTime, nullable=True)  # Timestamp of last fetch
+    extraction_prompt = Column(Text, nullable=True)  # Custom prompt for this site
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 

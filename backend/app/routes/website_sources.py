@@ -8,7 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.connection import get_db
 from app.models import WebsiteSource, Message
-from web_crawler import SmartSiteCrawler, SmartOllamaExtractor
+from web_crawler import Fetcher, Extractor
 
 logger = logging.getLogger(__name__)
 
@@ -107,6 +107,45 @@ def register_website_source_routes(app):
             logger.error(f"[WEBSITE SOURCE] Error deleting source: {e}", exc_info=True)
             raise HTTPException(status_code=500, detail=str(e))
 
+    @app.put("/api/website-sources/{source_id}")
+    async def update_website_source(
+        source_id: int,
+        name: Optional[str] = Form(None),
+        url: Optional[str] = Form(None),
+        is_active: Optional[bool] = Form(None),
+        extraction_prompt: Optional[str] = Form(None),
+        db: AsyncSession = Depends(get_db),
+    ):
+        """Update a website source."""
+        try:
+            result = await db.execute(select(WebsiteSource).filter(WebsiteSource.id == source_id))
+            source = result.scalar_one_or_none()
+            if not source:
+                raise HTTPException(status_code=404, detail="Website source not found")
+
+            if name is not None:
+                source.name = name
+            if url is not None:
+                source.url = url
+                # Re-detect site type if URL changed
+                source.site_type = detect_site_type(url)
+            if is_active is not None:
+                source.is_active = is_active
+            if extraction_prompt is not None:
+                source.extraction_prompt = extraction_prompt
+
+            source.updated_at = func.now()
+            await db.commit()
+
+            return {"success": True, "message": "Website source updated"}
+        except HTTPException:
+            await db.rollback()
+            raise
+        except Exception as e:
+            await db.rollback()
+            logger.error(f"[WEBSITE SOURCE] Error updating source: {e}", exc_info=True)
+            raise HTTPException(status_code=500, detail=str(e))
+
     @app.post("/api/website-sources/{source_id}/fetch")
     async def fetch_website_source(
         source_id: int,
@@ -114,7 +153,7 @@ def register_website_source_routes(app):
         background_tasks: BackgroundTasks = None,
         db: AsyncSession = Depends(get_db),
     ):
-        """Fetch and extract structured data from a website source using smart crawler."""
+        """Fetch RSS content from a website source and save as Messages."""
         try:
             result = await db.execute(select(WebsiteSource).filter(WebsiteSource.id == source_id))
             source = result.scalar_one_or_none()
@@ -124,57 +163,64 @@ def register_website_source_routes(app):
             if not source.is_active:
                 raise HTTPException(status_code=400, detail="Website source is not active")
 
-            # Use smart crawler to fetch content
-            crawler = SmartSiteCrawler()
+            # Use RSS fetcher to fetch RSS content
+            crawler = Fetcher()
             fetch_result = await crawler.fetch(source.url)
-            content = fetch_result["content"]
-            if isinstance(content, list):
-                content = "\n\n".join(content)
+            rss_entries = fetch_result["content"]
 
-            # Use smart extractor to get structured data
-            extractor = SmartOllamaExtractor()
-            extracted_data = extractor.extract(content, source.url)
+            if not rss_entries:
+                return {
+                    "success": True,
+                    "new_messages": 0,
+                    "fetch_method": fetch_result["type"],
+                    "message": f"No RSS entries found for {source.name}",
+                }
 
-            # Save extracted job postings to database
-            jobs_added = 0
-            for job in extracted_data.job_postings:
-                # Check if job already exists (by title + company)
+            # Save raw RSS entries as Messages (no Ollama extraction yet)
+            messages_added = 0
+            for entry_text in rss_entries:
+                # Check if message already exists (by text hash)
                 existing_result = await db.execute(
                     select(Message).filter(
                         Message.website_source_id == source_id,
-                        Message.text.ilike(f"%{job.title}%")
+                        Message.text == entry_text
                     )
                 )
                 existing = existing_result.scalar_one_or_none()
                 if existing:
                     continue
 
-                # Create message with job content
+                # Extract URL from entry for unique ID
+                url = None
+                for line in entry_text.split('\n'):
+                    if line.startswith('Link:'):
+                        url = line.replace('Link:', '').strip()
+                        break
+
                 message = Message(
-                    website_post_id=f"{source_id}-{hash(job.title)}",  # Generate ID from title
+                    website_post_id=f"{source_id}-{hash(entry_text)}",
                     website_source_id=source_id,
                     source_type="website",
-                    text=f"Title: {job.title}\nCompany: {job.company or 'N/A'}\nLocation: {job.location or 'N/A'}\nRequirements: {job.requirements or 'N/A'}\nURL: {job.url or source.url}",
+                    text=entry_text,
                     date=None,
-                    sender_username=job.company,
+                    sender_username=source.name,
                     analysis_status="pending",
                 )
                 db.add(message)
-                await db.flush()  # Get message ID
-                jobs_added += 1
+                await db.flush()
+                messages_added += 1
 
             # Update source
-            source.last_fetch_new_count = jobs_added
+            source.last_fetch_new_count = messages_added
             source.last_fetch_at = func.now()
             await db.commit()
 
             return {
                 "success": True,
-                "new_jobs": jobs_added,
-                "total_jobs": len(extracted_data.job_postings),
-                "emails_found": len(extracted_data.contact_info.emails) if extracted_data.contact_info else 0,
+                "new_messages": messages_added,
+                "total_entries": len(rss_entries),
                 "fetch_method": fetch_result["type"],
-                "message": f"Fetched {jobs_added} new jobs from {source.name} using {fetch_result['type']}",
+                "message": f"Fetched {messages_added} new messages from {source.name} using {fetch_result['type']}",
             }
 
         except HTTPException:
@@ -191,7 +237,7 @@ def register_website_source_routes(app):
         background_tasks: BackgroundTasks = None,
         db: AsyncSession = Depends(get_db),
     ):
-        """Fetch and extract structured data from all active website sources using smart crawler."""
+        """Fetch RSS content from all active website sources and save as Messages."""
         try:
             result = await db.execute(select(WebsiteSource).filter(WebsiteSource.is_active == True))
             sources = result.scalars().all()
@@ -200,29 +246,25 @@ def register_website_source_routes(app):
                 return {"success": True, "message": "No active website sources found"}
 
             total_new = 0
-            total_emails = 0
             fetch_methods = []
 
             for source in sources:
                 try:
-                    # Use smart crawler to fetch content
-                    crawler = SmartSiteCrawler()
+                    # Use RSS fetcher to fetch RSS content
+                    crawler = Fetcher()
                     fetch_result = await crawler.fetch(source.url)
-                    content = fetch_result["content"]
-                    if isinstance(content, list):
-                        content = "\n\n".join(content)
+                    rss_entries = fetch_result["content"]
 
-                    # Use smart extractor to get structured data
-                    extractor = SmartOllamaExtractor()
-                    extracted_data = extractor.extract(content, source.url)
+                    if not rss_entries:
+                        continue
 
-                    # Save extracted job postings to database
+                    # Save raw RSS entries as Messages (no Ollama extraction yet)
                     new_count = 0
-                    for job in extracted_data.job_postings:
+                    for entry_text in rss_entries:
                         existing_result = await db.execute(
                             select(Message).filter(
                                 Message.website_source_id == source.id,
-                                Message.text.ilike(f"%{job.title}%")
+                                Message.text == entry_text
                             )
                         )
                         existing = existing_result.scalar_one_or_none()
@@ -230,12 +272,12 @@ def register_website_source_routes(app):
                             continue
 
                         message = Message(
-                            website_post_id=f"{source.id}-{hash(job.title)}",
+                            website_post_id=f"{source.id}-{hash(entry_text)}",
                             website_source_id=source.id,
                             source_type="website",
-                            text=f"Title: {job.title}\nCompany: {job.company or 'N/A'}\nLocation: {job.location or 'N/A'}\nRequirements: {job.requirements or 'N/A'}\nURL: {job.url or source.url}",
+                            text=entry_text,
                             date=None,
-                            sender_username=job.company,
+                            sender_username=source.name,
                             analysis_status="pending",
                         )
                         db.add(message)
@@ -245,7 +287,6 @@ def register_website_source_routes(app):
                     source.last_fetch_new_count = new_count
                     source.last_fetch_at = func.now()
                     total_new += new_count
-                    total_emails += len(extracted_data.contact_info.emails) if extracted_data.contact_info else 0
                     fetch_methods.append(fetch_result["type"])
 
                 except Exception as e:
@@ -256,11 +297,10 @@ def register_website_source_routes(app):
 
             return {
                 "success": True,
-                "new_jobs": total_new,
+                "new_messages": total_new,
                 "sources_fetched": len(sources),
-                "emails_found": total_emails,
                 "fetch_methods": fetch_methods,
-                "message": f"Fetched {total_new} new jobs from {len(sources)} source(s)",
+                "message": f"Fetched {total_new} new messages from {len(sources)} source(s)",
             }
 
         except Exception as e:

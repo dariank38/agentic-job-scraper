@@ -27,17 +27,14 @@ import {
   ChevronRight,
   Loader2,
   Zap,
-  Globe,
-  Plus,
 } from 'lucide-react';
 import api from '@/services/api';
-import type { Channel, Stats, WebsiteSource } from '@/services/api';
+import type { Channel, Stats } from '@/services/api';
 import { useWebSocketProgress, useToast } from '@/components/Layout';
 
 const Dashboard = () => {
   const [stats, setStats] = useState<Stats | null>(null);
   const [channels, setChannels] = useState<Channel[]>([]);
-  const [websiteSources, setWebsiteSources] = useState<WebsiteSource[]>([]);
   const [loadingActions, setLoadingActions] = useState<Set<string>>(new Set());
   const { showToast } = useToast();
   const [cronRunning, setCronRunning] = useState(false);
@@ -47,9 +44,6 @@ const Dashboard = () => {
   const [cleanupDialogOpen, setCleanupDialogOpen] = useState(false);
   const [cleanupDays, setCleanupDays] = useState(30);
   const [bulkOperation, setBulkOperation] = useState<{ id: string; type: 'analyze-all' | 'fetch-analyze-all' } | null>(null);
-  const [addWebsiteDialogOpen, setAddWebsiteDialogOpen] = useState(false);
-  const [newWebsiteName, setNewWebsiteName] = useState('');
-  const [newWebsiteUrl, setNewWebsiteUrl] = useState('');
   const limit = 10;
   const offset = parseInt(searchParams.get('offset') || '0');
 
@@ -90,14 +84,12 @@ const Dashboard = () => {
 
   const loadData = async () => {
     try {
-      const [statsData, channelsData, websiteSourcesData] = await Promise.all([
+      const [statsData, channelsData] = await Promise.all([
         api.getStats(),
         api.getChannels({ limit, offset }),
-        api.getWebsiteSources(),
       ]);
       setStats(statsData);
       setChannels(channelsData.channels);
-      setWebsiteSources(websiteSourcesData.sources || []);
       setTotal(channelsData.total || 0);
       setInitialLoading(false);
     } catch (error) {
@@ -349,103 +341,6 @@ const Dashboard = () => {
         setBulkOperation(null);
       } else {
         showToast('error', 'Error: ' + (data.message || 'Unknown'));
-      }
-    } catch (e: any) {
-      showToast('error', 'Error: ' + e.message);
-    }
-  };
-
-  const addWebsiteSource = async () => {
-    try {
-      const formData = new FormData();
-      formData.append('name', newWebsiteName);
-      formData.append('url', newWebsiteUrl);
-      const data = await api.addWebsiteSource(formData);
-      if (data.success) {
-        showToast('success', 'Website source added');
-        setAddWebsiteDialogOpen(false);
-        setNewWebsiteName('');
-        setNewWebsiteUrl('');
-        loadData();
-      } else {
-        showToast('error', 'Error: ' + (data.error || 'Unknown'));
-      }
-    } catch (e: any) {
-      showToast('error', 'Error: ' + e.message);
-    }
-  };
-
-  const deleteWebsiteSource = async (id: number) => {
-    try {
-      const data = await api.deleteWebsiteSource(id);
-      if (data.success) {
-        showToast('success', 'Website source deleted');
-        loadData();
-      } else {
-        showToast('error', 'Error: ' + (data.error || 'Unknown'));
-      }
-    } catch (e: any) {
-      showToast('error', 'Error: ' + e.message);
-    }
-  };
-
-  const fetchWebsiteSource = async (id: number) => {
-    try {
-      const data = await api.fetchWebsiteSource(id);
-      if (data.success) {
-        showToast('success', `Fetched ${data.new_jobs} new jobs (${data.fetch_method}) - ${data.emails_found} emails found`);
-        loadData();
-      } else {
-        showToast('error', 'Error: ' + (data.error || 'Unknown'));
-      }
-    } catch (e: any) {
-      showToast('error', 'Error: ' + e.message);
-    }
-  };
-
-  const fetchAllWebsiteSources = async () => {
-    try {
-      const data = await api.fetchAllWebsiteSources();
-      if (data.success) {
-        const methods = data.fetch_methods?.join(', ') || 'mixed';
-        showToast('success', `Fetched ${data.new_jobs} new jobs from ${data.sources_fetched} source(s) (${methods}) - ${data.emails_found} emails found`);
-        loadData();
-      } else {
-        showToast('error', 'Error: ' + (data.error || 'Unknown'));
-      }
-    } catch (e: any) {
-      showToast('error', 'Error: ' + e.message);
-    }
-  };
-
-  const analyzeWebsiteSource = async (id: number) => {
-    try {
-      if (!stats?.ollama_available) {
-        showToast('error', 'Ollama is not available. Please check if Ollama is running.');
-        return;
-      }
-      const data = await api.analyzeWebsiteSource(id);
-      if (data.success) {
-        showToast('success', 'Analysis started');
-      } else {
-        showToast('error', 'Error: ' + (data.error || 'Unknown'));
-      }
-    } catch (e: any) {
-      showToast('error', 'Error: ' + e.message);
-    }
-  };
-
-  const analyzeAllWebsiteSources = async () => {
-    try {
-      if (!stats?.ollama_available) {
-        showToast('error', 'Ollama is not available. Please check if Ollama is running.');
-        return;
-      }
-      const data = await api.analyzeAllWebsiteSources();
-      if (data.success) {
-        showToast('success', `Analysis started for ${data.sources} website source(s)`);
-      } else {
-        showToast('error', 'Error: ' + (data.error || 'Unknown'));
       }
     } catch (e: any) {
       showToast('error', 'Error: ' + e.message);
@@ -795,156 +690,7 @@ const Dashboard = () => {
             </CardContent>
           </Card>
         </div>
-
-        {/* Website Sources List */}
-        <div className="lg:col-span-2 mt-6">
-          <Card>
-            <CardHeader className="px-4 py-3 pb-2">
-              <div className="flex justify-between items-center">
-                <CardTitle className="flex items-center gap-1.5 text-sm">
-                  <Globe size={14} className="text-blue-500" />
-                  Website Sources ({websiteSources.length})
-                </CardTitle>
-                <Button variant="ghost" size="sm" onClick={() => setAddWebsiteDialogOpen(true)}>
-                  <Plus size={12} className="mr-1" />
-                  Add
-                </Button>
-              </div>
-            </CardHeader>
-            <CardContent className="p-0">
-              {websiteSources.length > 0 ? (
-                <>
-                  {websiteSources.map((source) => (
-                    <div key={source.id} className="px-4 py-3 border-b last:border-b-0 hover:bg-gray-50 transition-colors">
-                      <div className="flex justify-between items-center gap-3">
-                        <div className="min-w-0">
-                          <div className="flex items-center gap-2 mb-0.5">
-                            <p className="font-semibold text-gray-900 truncate">{source.name}</p>
-                            <Badge variant={source.is_active ? 'default' : 'secondary'} className="text-xs">
-                              {source.is_active ? 'Active' : 'Inactive'}
-                            </Badge>
-                            <Badge variant="outline" className="text-xs">
-                              {source.site_type}
-                            </Badge>
-                          </div>
-                          <p className="text-xs text-gray-500 truncate">{source.url}</p>
-                          <p className="text-xs text-gray-400 mt-0.5">
-                            {(source.last_fetch_new_count || 0) > 0 && (
-                              <span className="inline-flex items-center px-1.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
-                                +{source.last_fetch_new_count} fetched
-                              </span>
-                            )}
-                            {source.last_fetch_at && (
-                              <span className="ml-2 text-gray-400">
-                                Last: {new Date(source.last_fetch_at).toLocaleDateString()}
-                              </span>
-                            )}
-                          </p>
-                        </div>
-                        <div className="flex gap-2 flex-shrink-0">
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            onClick={() => fetchWebsiteSource(source.id)}
-                          >
-                            <RefreshCw size={12} className="mr-1" />
-                            Fetch
-                          </Button>
-                          <Button
-                            size="sm"
-                            onClick={() => analyzeWebsiteSource(source.id)}
-                          >
-                            <Bot size={12} className="mr-1" />
-                            Analyze
-                          </Button>
-                          <Button
-                            size="sm"
-                            variant="destructive"
-                            onClick={() => deleteWebsiteSource(source.id)}
-                          >
-                            <Trash2 size={12} />
-                          </Button>
-                        </div>
-                      </div>
-                    </div>
-                  ))}
-                  <div className="px-4 py-3 border-t flex gap-2">
-                    <Button
-                      className="flex-1"
-                      variant="outline"
-                      onClick={() => fetchAllWebsiteSources()}
-                    >
-                      <RefreshCw size={14} className="mr-2" />
-                      Fetch All
-                    </Button>
-                    <Button
-                      className="flex-1"
-                      onClick={() => analyzeAllWebsiteSources()}
-                    >
-                      <Bot size={14} className="mr-2" />
-                      Analyze All
-                    </Button>
-                  </div>
-                </>
-              ) : (
-                <div className="px-4 py-8 text-center">
-                  <Globe size={32} className="text-gray-200 mx-auto mb-3" />
-                  <p className="text-sm text-gray-500">No website sources found</p>
-                  <Button variant="outline" size="sm" className="mt-3" onClick={() => setAddWebsiteDialogOpen(true)}>
-                    <Plus size={12} className="mr-1" />
-                    Add Website Source
-                  </Button>
-                </div>
-              )}
-            </CardContent>
-          </Card>
-        </div>
       </div>
-
-      {/* Add Website Source Dialog */}
-      <Dialog open={addWebsiteDialogOpen} onOpenChange={setAddWebsiteDialogOpen}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Add Website Source</DialogTitle>
-            <DialogDescription>
-              Add a new website source to crawl for job postings.
-            </DialogDescription>
-          </DialogHeader>
-          <div className="space-y-4">
-            <div>
-              <label className="text-sm font-medium">Name</label>
-              <input
-                type="text"
-                value={newWebsiteName}
-                onChange={(e) => setNewWebsiteName(e.target.value)}
-                placeholder="e.g., V2EX"
-                className="w-full mt-1 px-3 py-2 border rounded-md"
-              />
-            </div>
-            <div>
-              <label className="text-sm font-medium">URL</label>
-              <input
-                type="text"
-                value={newWebsiteUrl}
-                onChange={(e) => setNewWebsiteUrl(e.target.value)}
-                placeholder="e.g., https://v2ex.com/go/noder"
-                className="w-full mt-1 px-3 py-2 border rounded-md"
-              />
-            </div>
-            <p className="text-xs text-gray-500">
-              Site type will be auto-detected from the URL (v2ex.com, eleduck.com, etc.)
-            </p>
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setAddWebsiteDialogOpen(false)}>
-              Cancel
-            </Button>
-            <Button onClick={addWebsiteSource}>
-              Add Source
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
 
       {/* Cleanup Confirmation Dialog */}
       <Dialog open={cleanupDialogOpen} onOpenChange={setCleanupDialogOpen}>
