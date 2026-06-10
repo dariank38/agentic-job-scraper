@@ -191,6 +191,9 @@
     "searchPlaceholder": "Search jobs...",
     "noJobsMatch": "No jobs match your search.",
     "noJobsFound": "No jobs found",
+    "allSources": "All Sources",
+    "sourceTelegram": "Telegram",
+    "sourceWebsite": "Website",
     "goToChannels": "Go to Channels",
     "goToChannelsHint": "Try searching some channels first to find job postings.",
     "selectJob": "Select a job to view details",
@@ -213,8 +216,14 @@
     "deleteWarning": "Are you sure you want to delete this job? This action cannot be undone.",
     "deletedSuccessfully": "Job deleted successfully"
   },
+  "websiteSources": {
+    "title": "Website Sources",
+    "noSources": "No website sources found",
+    "lastFetch": "Last fetch",
+    "deleteConfirm": "Delete Website Source",
+    "deleteWarning": "Are you sure you want to delete this website source? This action cannot be undone."
+  },
   "developers": {
-    "title": "Developers",
     "name": "Name",
     "skills": "Skills",
     "portfolio": "Portfolio",

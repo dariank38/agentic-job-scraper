@@ -2,12 +2,13 @@
 
 import logging
 from typing import Optional
+from datetime import datetime
 from fastapi import Depends, Form, HTTPException, BackgroundTasks
 from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.connection import get_db
-from app.models import WebsiteSource, Message
+from app.models import WebsiteSource, Message, Job
 from web_crawler import Fetcher, Extractor
 from app.tasks import broadcast_progress, create_operation, update_operation, stop_website_operation, website_stop_events
 
@@ -34,6 +35,31 @@ def register_website_source_routes(app):
         """Get all website sources."""
         result = await db.execute(select(WebsiteSource))
         sources = result.scalars().all()
+
+        # Get job counts per source
+        job_counts_result = await db.execute(
+            select(Job.website_source_id, func.count(Job.id))
+            .filter(Job.website_source_id.isnot(None))
+            .group_by(Job.website_source_id)
+        )
+        job_counts = {row[0]: row[1] for row in job_counts_result.all()}
+
+        # Get pending message counts per source
+        pending_counts_result = await db.execute(
+            select(Message.website_source_id, func.count(Message.id))
+            .filter(Message.website_source_id.isnot(None), Message.analysis_status == "pending")
+            .group_by(Message.website_source_id)
+        )
+        pending_counts = {row[0]: row[1] for row in pending_counts_result.all()}
+
+        # Get total message counts per source
+        msg_counts_result = await db.execute(
+            select(Message.website_source_id, func.count(Message.id))
+            .filter(Message.website_source_id.isnot(None))
+            .group_by(Message.website_source_id)
+        )
+        msg_counts = {row[0]: row[1] for row in msg_counts_result.all()}
+
         return {
             "success": True,
             "sources": [
@@ -45,6 +71,9 @@ def register_website_source_routes(app):
                     "is_active": s.is_active,
                     "last_fetch_new_count": s.last_fetch_new_count,
                     "last_fetch_at": s.last_fetch_at.isoformat() if s.last_fetch_at else None,
+                    "job_count": job_counts.get(s.id, 0),
+                    "message_count": msg_counts.get(s.id, 0),
+                    "pending_count": pending_counts.get(s.id, 0),
                 }
                 for s in sources
             ],
@@ -147,6 +176,31 @@ def register_website_source_routes(app):
             logger.error(f"[WEBSITE SOURCE] Error updating source: {e}", exc_info=True)
             raise HTTPException(status_code=500, detail=str(e))
 
+    @app.post("/api/website-sources/{source_id}/toggle")
+    async def toggle_website_source(
+        source_id: int,
+        db: AsyncSession = Depends(get_db),
+    ):
+        """Toggle website source active status."""
+        try:
+            result = await db.execute(select(WebsiteSource).filter(WebsiteSource.id == source_id))
+            source = result.scalar_one_or_none()
+            if not source:
+                raise HTTPException(status_code=404, detail="Website source not found")
+
+            source.is_active = not source.is_active
+            source.updated_at = func.now()
+            await db.commit()
+
+            return {"success": True, "is_active": source.is_active}
+        except HTTPException:
+            await db.rollback()
+            raise
+        except Exception as e:
+            await db.rollback()
+            logger.error(f"[WEBSITE SOURCE] Error toggling source: {e}", exc_info=True)
+            raise HTTPException(status_code=500, detail=str(e))
+
     @app.post("/api/website-sources/{source_id}/fetch")
     async def fetch_website_source(
         source_id: int,
@@ -175,7 +229,7 @@ def register_website_source_routes(app):
                 "operation_id": operation_id,
             })
 
-            # Use RSS fetcher to fetch RSS content
+            # Fetch RSS — save as Messages, analyze separately via Analyze button
             crawler = Fetcher()
             fetch_result = await crawler.fetch(source.url)
             rss_entries = fetch_result["content"]
@@ -197,7 +251,7 @@ def register_website_source_routes(app):
             # Save raw RSS entries as Messages (no Ollama extraction yet)
             messages_added = 0
             total_entries = len(rss_entries)
-            
+
             for idx, entry_text in enumerate(rss_entries):
                 # Check if message already exists (by text hash)
                 existing_result = await db.execute(
@@ -219,10 +273,7 @@ def register_website_source_routes(app):
                     elif line.startswith('Published:'):
                         date_str = line.replace('Published:', '').strip()
                         try:
-                            from datetime import datetime
-                            # Try to parse common RSS date formats
                             parsed_date = datetime.fromisoformat(date_str.replace('Z', '+00:00'))
-                            # Convert to naive datetime (remove timezone) for database storage
                             published_date = parsed_date.replace(tzinfo=None)
                         except:
                             pass
@@ -239,9 +290,9 @@ def register_website_source_routes(app):
                 db.add(message)
                 await db.flush()
                 messages_added += 1
-                
+
                 # Broadcast progress
-                if idx % 5 == 0:  # Broadcast every 5 entries
+                if messages_added % 5 == 0:
                     await broadcast_progress("fetch_progress", {
                         "channel": source.name,
                         "processed": idx + 1,
@@ -249,24 +300,22 @@ def register_website_source_routes(app):
                         "operation_id": operation_id,
                     })
 
-            # Update source
+            # Update source last fetch info
             source.last_fetch_new_count = messages_added
-            source.last_fetch_at = func.now()
+            source.last_fetch_at = datetime.utcnow()
+
             await db.commit()
-            
             await update_operation(db, operation_id, status="completed")
             await broadcast_progress("fetch_complete", {
                 "channel": source.name,
                 "new_messages": messages_added,
                 "operation_id": operation_id,
             })
-
             return {
                 "success": True,
                 "new_messages": messages_added,
-                "total_entries": total_entries,
                 "fetch_method": fetch_result["type"],
-                "message": f"Fetched {messages_added} new messages from {source.name} using {fetch_result['type']}",
+                "message": f"Added {messages_added} messages from {source.name}",
             }
 
         except HTTPException:
@@ -274,8 +323,8 @@ def register_website_source_routes(app):
             raise
         except Exception as e:
             await db.rollback()
-            logger.error(f"[WEBSITE SOURCE] Error fetching from source: {e}", exc_info=True)
-            raise HTTPException(status_code=500, detail=str(e))
+            logger.error(f"[FETCH WEBSITE] Error: {e}", exc_info=True)
+            raise HTTPException(status_code=500, detail=f"Failed to fetch: {str(e)}")
 
     @app.post("/api/website-sources/fetch-all")
     async def fetch_all_website_sources(
@@ -424,6 +473,8 @@ def register_website_source_routes(app):
         db: AsyncSession = Depends(get_db)
     ):
         """Stop the current fetch or analyze operation for a website source."""
+        from app.models import Operation
+        from sqlalchemy import select as sa_select
         try:
             # Get source name first
             result = await db.execute(select(WebsiteSource).filter(WebsiteSource.id == source_id))
@@ -440,10 +491,8 @@ def register_website_source_routes(app):
                 logger.info(f"Stop signal sent via memory for source_id={source_id}")
 
                 # Also update any running operation in database by channel_username
-                from app.models import Operation
-                from sqlalchemy import select
                 result = await db.execute(
-                    select(Operation).filter(
+                    sa_select(Operation).filter(
                         Operation.channel_username == source.name,
                         Operation.status == "running"
                     )
@@ -458,10 +507,8 @@ def register_website_source_routes(app):
                 return {"success": True, "message": "Stop signal sent"}
 
             # Check database for running operation (cross-process) by channel_username
-            from app.models import Operation
-            from sqlalchemy import select
             result = await db.execute(
-                select(Operation).filter(
+                sa_select(Operation).filter(
                     Operation.channel_username == source.name,
                     Operation.status == "running"
                 )

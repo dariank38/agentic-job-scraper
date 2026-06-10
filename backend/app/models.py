@@ -127,10 +127,11 @@ class Job(Base):
     __tablename__ = "jobs"
 
     id = Column(Integer, primary_key=True)
-    message_id = Column(Integer, ForeignKey("messages.id"), unique=True, nullable=False)
+    message_id = Column(Integer, ForeignKey("messages.id"), unique=True, nullable=True)  # Nullable for website sources
     channel_id = Column(Integer, ForeignKey("channels.id"), nullable=True)  # Null for website sources
     website_source_id = Column(Integer, ForeignKey("website_sources.id"), nullable=True)  # For website sources
     channel_name = Column(String, nullable=True)  # Store channel/source name for reference
+    source_type = Column(String, nullable=True)  # 'telegram' or 'website'
 
     # AI Analysis results
     confidence = Column(String, nullable=True)  # high, medium, low
@@ -170,6 +171,8 @@ class Job(Base):
             "message_id": self.message_id,
             "channel_id": self.channel_id,
             "channel_name": self.channel_name,
+            "source_type": self.source_type,
+            "website_source_id": self.website_source_id,
             "confidence": self.confidence,
             "translated_text": self.translated_text,
             "title": self.title,

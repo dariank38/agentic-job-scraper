@@ -36,7 +36,7 @@ CRITICAL DISTINCTION:
 - "personal_info": Job seeker speaking about themselves. Indicators: "I want", "I am looking for", "seeking [role]", "looking for work", "open to opportunities", "hire me", "available for work", first person perspective ("I", "my"), sharing skills/experience/portfolio.
 
 RULES:
-- "translated_text": Full English translation of the original message. Required for ALL categories including other. If the message is not in English, translate the FULL message to English and put it in "translated_text". If the message is already in English, copy the original text into "translated_text". Never return null for "translated_text"
+- "translated_text": Full English translation of the original message. Required for job_posting and personal_info only. If the message is not in English, translate the FULL message to English. If already in English, copy the original text. For "other" category, omit translated_text entirely.
 - "skills": array of individual items, never comma-separated in one string
 - Unknown fields: null (not "", not "N/A")
 - "is_remote": true=remote/wfh/anywhere mentioned; false=onsite only; null=not mentioned
@@ -49,13 +49,13 @@ CONTACT TYPES: telegram(@user or t.me/), email, linkedin, twitter, discord, wech
 OUTPUT: Only return the block matching the category.
 
 job_posting:
-{"category":"job_posting","confidence":"...","translated_text":"<REQUIRED: full English translation>","job_posting":{"title":null,"company":null,"company_link":null,"location":null,"is_remote":null,"role_type":"frontend|backend|fullstack|devops|mobile|blockchain|smart_contract|data|ml_ai|qa|security|systems|embedded|other_tech","skills":[],"contacts":[{"type":"...","value":"..."}],"summary":null}}
+{"category":"job_posting","confidence":"...","translated_text":"<REQUIRED: full English translation>","job_posting":{"company":null,"company_link":null,"location":null,"is_remote":null,"role_type":"frontend|backend|fullstack|devops|mobile|blockchain|smart_contract|data|ml_ai|qa|security|systems|embedded|other_tech","skills":[],"contacts":[{"type":"...","value":"..."}],"summary":null}}
 
 personal_info:
 {"category":"personal_info","confidence":"...","translated_text":"<REQUIRED: full English translation>","personal_info":{"name":null,"skills":[],"experience":null,"portfolio":null,"github":null,"linkedin":null,"contacts":[{"type":"...","value":"..."}],"looking_for_work":null,"summary":null}}
 
 other:
-{"category":"other","confidence":"...","translated_text":"<REQUIRED: full English translation>"}"""
+{"category":"other","confidence":"..."}"""
 
 
 # ── PRE-FILTER ────────────────────────────────────────────────────────────────
@@ -69,16 +69,16 @@ _SPAM_PATTERN = re.compile(
 
 def should_analyze_message(text: str) -> bool:
     """Return False only for obvious spam. Everything else goes to Ollama."""
-    if not text or len(text.strip()) < 10:
-        return False
-    if _SPAM_PATTERN.search(text):
-        return False
+    # if not text or len(text.strip()) < 10:
+    #     return False
+    # if _SPAM_PATTERN.search(text):
+    #     return False
     return True
 
 
 # ── ANALYZER ─────────────────────────────────────────────────────────────────
 
-RECOMMENDED_MODEL = "qwen2.5:14b-instruct-q4_K_M"
+RECOMMENDED_MODEL = "qwen2.5:14b"
 
 
 class AsyncOllamaAnalyzer:

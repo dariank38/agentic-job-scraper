@@ -190,6 +190,9 @@
     "searchPlaceholder": "搜索职位...",
     "noJobsMatch": "没有匹配的职位。",
     "noJobsFound": "未找到职位",
+    "allSources": "所有来源",
+    "sourceTelegram": "Telegram",
+    "sourceWebsite": "网站",
     "goToChannels": "前往频道",
     "goToChannelsHint": "请先搜索频道以找到职位发布。",
     "selectJob": "选择一个职位以查看详情",
@@ -211,6 +214,13 @@
     "deleteConfirm": "删除职位",
     "deleteWarning": "确定要删除此职位吗？此操作无法撤销。",
     "deletedSuccessfully": "职位已成功删除"
+  },
+  "websiteSources": {
+    "title": "网站来源",
+    "noSources": "未找到网站来源",
+    "lastFetch": "上次获取",
+    "deleteConfirm": "删除网站来源",
+    "deleteWarning": "确定要删除此网站来源吗？此操作无法撤销。"
   },
   "developers": {
     "title": "开发者",

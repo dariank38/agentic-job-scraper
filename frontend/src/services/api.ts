@@ -34,6 +34,8 @@ export interface Job {
   analyzed_at?: string;
   channel_id?: number;
   channel_name?: string;
+  source_type?: string;
+  website_source_id?: number;
   channel: Channel;
   message: {
     id: number;
@@ -113,6 +115,9 @@ export interface WebsiteSource {
   last_fetch_new_count: number;
   last_fetch_at: string | null;
   extraction_prompt: string | null;
+  job_count: number;
+  message_count: number;
+  pending_count: number;
 }
 
 const api = {
@@ -445,6 +450,16 @@ const api = {
   updateWebsiteSource: async (id: number, formData: FormData): Promise<any> => {
     const response = await fetch(`${API_BASE}/api/website-sources/${id}`, {
       method: 'PUT',
+      body: formData,
+    });
+    return response.json();
+  },
+
+  toggleWebsiteSource: async (id: number): Promise<any> => {
+    const formData = new FormData();
+    formData.append('is_active', 'true');
+    const response = await fetch(`${API_BASE}/api/website-sources/${id}/toggle`, {
+      method: 'POST',
       body: formData,
     });
     return response.json();

@@ -15,7 +15,7 @@ logger = logging.getLogger(__name__)
 OLLAMA_BASE_URL = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
 OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "qwen2.5:7b")
 
-MAX_CHARS = 6000  # qwen2.5:7b context limit buffer
+MAX_CHARS = 3000  # Safe chunk size for Ollama (~1000-1500 tokens)
 
 
 class Extractor:
@@ -26,7 +26,7 @@ class Extractor:
         self.base_url = base_url or OLLAMA_BASE_URL
         self.client = AsyncClient(host=self.base_url)
 
-    async def extract(self, content: str, source_url: str, custom_prompt: str = None) -> ExtractedData:
+    async def extract(self, content: str, source_url: str, custom_prompt: str = None, site_type: str = None) -> ExtractedData:
         """Extract structured data from RSS content using Ollama.
 
         Args:
@@ -37,24 +37,24 @@ class Extractor:
         Returns:
             ExtractedData with job postings, developer info, and contact info.
         """
-        logger.info(f"[EXTRACTOR] Processing {len(content)} chars from {source_url}")
+        logger.info(f"[EXTRACTOR] ▶ START | source={source_url} | content_len={len(content)} chars | model={self.model}")
 
         # Get appropriate prompt for extraction
-        prompt_template = get_prompt_for_site(custom_prompt=custom_prompt)
+        prompt_template = get_prompt_for_site(site_type=site_type, custom_prompt=custom_prompt)
 
         # Chunk if too long
         chunks = self._chunk(content)
-        logger.info(f"[EXTRACTOR] Split into {len(chunks)} chunks")
+        logger.info(f"[EXTRACTOR] Split into {len(chunks)} chunk(s) (MAX_CHARS={MAX_CHARS})")
 
         all_results = []
         for i, chunk in enumerate(chunks):
-            logger.info(f"[EXTRACTOR] Processing chunk {i + 1}/{len(chunks)}")
+            logger.info(f"[EXTRACTOR] Chunk {i + 1}/{len(chunks)} — sending {len(chunk)} chars to Ollama")
             result = await self._call_llm(chunk, prompt_template)
             if result:
                 all_results.append(result)
 
         merged = self._merge_results(all_results, source_url)
-        logger.info(f"[EXTRACTOR] Extracted {len(merged.job_postings)} jobs, {len(merged.contact_info.emails) if merged.contact_info else 0} emails")
+        logger.info(f"[EXTRACTOR] ✓ DONE | jobs={len(merged.job_postings)} | devs={1 if merged.developer_info else 0} | emails={len(merged.contact_info.emails) if merged.contact_info else 0}")
         return merged
 
     async def _call_llm(self, content: str, prompt_template: str) -> Optional[dict]:
@@ -75,6 +75,7 @@ class Extractor:
                 options={"temperature": 0.1}  # Low temp for factual extraction
             )
             raw = response["message"]["content"].strip()
+            logger.info(f"[EXTRACTOR] Ollama raw response ({len(raw)} chars): {raw[:300]!r}{'...' if len(raw) > 300 else ''}")
 
             # Strip markdown fences if present
             if raw.startswith("```"):
@@ -82,7 +83,13 @@ class Extractor:
                 if raw.startswith("json"):
                     raw = raw[4:]
 
-            return json.loads(raw)
+            parsed = json.loads(raw)
+            jobs_count = len(parsed.get("job_postings", []))
+            logger.info(f"[EXTRACTOR] Parsed OK — job_postings={jobs_count}")
+            return parsed
+        except json.JSONDecodeError as e:
+            logger.error(f"[EXTRACTOR] JSON parse error: {e} | raw={raw[:200]!r}")
+            return None
         except Exception as e:
             logger.error(f"[EXTRACTOR] LLM error: {e}")
             return None

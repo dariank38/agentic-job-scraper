@@ -51,19 +51,21 @@ const Jobs = () => {
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [jobToDelete, setJobToDelete] = useState<number | null>(null);
   const appliedFilter = searchParams.get('is_applied');
+  const sourceFilter = searchParams.get('source_type');
   const limit = 10;
   const offset = parseInt(searchParams.get('offset') || '0');
   const { showToast } = useToast();
 
   useEffect(() => {
     loadJobs();
-  }, [offset, searchQuery, appliedFilter]);
+  }, [offset, searchQuery, appliedFilter, sourceFilter]);
 
   const loadJobs = async () => {
     try {
       const params: any = { limit, offset };
       if (searchQuery) params.search = searchQuery;
       if (appliedFilter) params.is_applied = appliedFilter;
+      if (sourceFilter) params.source_type = sourceFilter;
       const data = await api.getJobs(params);
       setJobs(data.jobs);
       setTotal(data.total || 0);
@@ -134,6 +136,14 @@ const Jobs = () => {
     params.delete('offset');
     if (value) params.set('is_applied', value);
     else params.delete('is_applied');
+    setSearchParams(params);
+  };
+
+  const applySourceFilter = (value: string) => {
+    const params = new URLSearchParams(searchParams);
+    params.delete('offset');
+    if (value) params.set('source_type', value);
+    else params.delete('source_type');
     setSearchParams(params);
   };
 
@@ -281,7 +291,16 @@ const Jobs = () => {
                     <option value="true">{t('jobs.applied')}</option>
                     <option value="false">{t('jobs.notApplied')}</option>
                   </select>
-                  {(appliedFilter || searchQuery) && (
+                  <select
+                    value={sourceFilter || ''}
+                    onChange={(e) => applySourceFilter(e.target.value)}
+                    className="flex-1 px-3 py-2 rounded-md border border-gray-200 text-sm bg-white"
+                  >
+                    <option value="">{t('jobs.allSources')}</option>
+                    <option value="telegram">{t('jobs.sourceTelegram')}</option>
+                    <option value="website">{t('jobs.sourceWebsite')}</option>
+                  </select>
+                  {(appliedFilter || sourceFilter || searchQuery) && (
                     <Button variant="ghost" size="sm" onClick={clearFilters}>
                       {t('common.clear')}
                     </Button>
@@ -414,6 +433,11 @@ const Jobs = () => {
                         <Badge variant={selectedJob.is_applied ? 'default' : 'secondary'} className="text-sm px-3 py-1 shrink-0">
                           {selectedJob.is_applied ? t('jobs.applied') : t('jobs.notApplied')}
                         </Badge>
+                        {selectedJob.source_type && (
+                          <Badge variant="outline" className="text-xs sm:text-sm px-2.5 py-0.5 sm:px-3 sm:py-1 shrink-0">
+                            {selectedJob.source_type === 'telegram' ? 'Telegram' : 'Website'}
+                          </Badge>
+                        )}
                         {selectedJob.is_remote && (
                           <Badge className="bg-teal-100 text-teal-700 hover:bg-teal-100 text-sm px-3 py-1 shrink-0">{t('jobs.remote')}</Badge>
                         )}

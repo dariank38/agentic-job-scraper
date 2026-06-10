@@ -17,14 +17,25 @@ def register_job_routes(app):
     async def api_jobs(
         search: Optional[str] = None,
         is_applied: Optional[bool] = None,
+        source_type: Optional[str] = None,  # 'telegram' or 'website'
         limit: int = 10,
         offset: int = 0,
         db: AsyncSession = Depends(get_db),
     ):
         """Get jobs as JSON with search and filters."""
-        from app.models import Channel
+        from app.models import Channel, WebsiteSource
 
-        query = select(Job).join(Channel).filter(Channel.is_active == True)
+        # Build base query - jobs from active channels OR active website sources
+        query = select(Job).outerjoin(Channel).outerjoin(WebsiteSource).filter(
+            (Channel.is_active == True) | (WebsiteSource.is_active == True)
+        )
+
+        # Filter by source type if specified
+        if source_type:
+            if source_type == "telegram":
+                query = query.filter(Job.message_id.isnot(None))
+            elif source_type == "website":
+                query = query.filter(Job.website_source_id.isnot(None))
 
         if is_applied is not None:
             query = query.filter(Job.is_applied == is_applied)
@@ -45,12 +56,13 @@ def register_job_routes(app):
         total_result = await db.execute(count_query)
         total = total_result.scalar()
 
-        # Get jobs with pagination, eagerly load message and channel
-        # Order by message date (when posted on Telegram) for most recent first
+        # Get jobs with pagination, eagerly load message, channel, and website_source
+        # Order by analyzed_at (works for both telegram and website sources)
         jobs_query = query.options(
             selectinload(Job.message),
-            selectinload(Job.channel)
-        ).join(Job.message).order_by(Message.date.desc()).offset(offset).limit(limit)
+            selectinload(Job.channel),
+            selectinload(Job.website_source)
+        ).order_by(Job.analyzed_at.desc()).offset(offset).limit(limit)
         jobs_result = await db.execute(jobs_query)
         jobs = jobs_result.scalars().all()
 
@@ -67,7 +79,8 @@ def register_job_routes(app):
         result = await db.execute(
             select(Job).options(
                 selectinload(Job.channel),
-                selectinload(Job.message)
+                selectinload(Job.message),
+                selectinload(Job.website_source)
             ).filter(Job.id == job_id)
         )
         job = result.scalar_one_or_none()
