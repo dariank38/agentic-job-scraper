@@ -39,7 +39,14 @@
     "failedToToggle": "Failed to toggle",
     "failedToVerify": "Failed to verify",
     "failedToSend": "Failed to send",
-    "unknown": "Unknown"
+    "unknown": "Unknown",
+    "yes": "Yes",
+    "no": "No",
+    "mixed": "Mixed",
+    "telegram": "Telegram",
+    "website": "Website",
+    "ws": "WS",
+    "ch": "CH"
   },
 
   "nav": {
@@ -210,6 +217,7 @@
     "remote": "Remote",
     "untitledJob": "Untitled Job",
     "unknownCompany": "Unknown Company",
+    "unknownSource": "Unknown Source",
     "noTextContent": "<No text content>",
     "deleteJob": "Delete Job",
     "deleteConfirm": "Delete Job",
@@ -349,7 +357,6 @@
     "stopSignalSent": "Stop signal sent for {{name}}",
     "fetchedMessages": "Fetched {{count}} new messages ({{method}})",
     "fetchedAllMessages": "Fetched {{count}} new messages from {{sources}} source(s) ({{methods}})",
-    "underMaintenance": "Website analysis is under maintenance",
     "rssFeedHint": "Enter the full RSS feed URL (e.g., /feed.xml, /rss, /atom.xml)",
     "customPromptHint": "Edit extraction prompt for {{name}}",
     "promptHint": "The prompt should instruct Ollama to extract job postings in JSON format. See the default prompts in web_crawler/prompts.py for reference.",
@@ -363,7 +370,6 @@
     "fetchAll": "Fetch All",
     "analyzeAll": "Analyze All",
     "customPrompt": "Custom Extraction Prompt",
-    "maintenance": "Website analysis is under maintenance",
     "bulkActions": "Bulk Actions",
     "activeOperations": "Active Operations",
     "processing": "Processing...",

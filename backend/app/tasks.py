@@ -1072,6 +1072,8 @@ async def analyze_website_posts(
         stopped_count = 0
         batch_size = 3
         total_batches = (total_messages + batch_size - 1) // batch_size
+        total_input_tokens = 0
+        total_output_tokens = 0
 
         # Circuit breaker: stop after too many consecutive batch failures
         consecutive_failures = 0
@@ -1100,20 +1102,33 @@ async def analyze_website_posts(
 
             batch_message_results = []
             for message in filtered_messages:
-                msg_preview = (message.text or '')[:120].replace('\n', ' ')
-                logger.info(f"[ANALYZE WEBSITE MSG] id={message.id} | preview={msg_preview!r}")
+                try:
+                    msg_preview = (message.text or '')[:120].replace('\n', ' ')
+                    logger.info(f"[ANALYZE WEBSITE MSG] id={message.id} | preview={msg_preview!r}")
+                except Exception as e:
+                    logger.error(f"[ANALYZE WEBSITE] Failed to load message {message.id}: {e}")
+                    await db.rollback()
+                    batch_message_results.append({"status": "failed", "error": str(e)})
+                    continue
+
                 try:
                     # Use RSS extractor with custom prompt if provided
-                    extracted_data = await extractor.extract(
+                    extracted_data, usage = await extractor.extract(
                         message.text,
                         source_url,
                         custom_prompt=custom_prompt,
                         site_type=site_type,
                     )
-                    logger.info(f"[ANALYZE WEBSITE MSG RESULT] id={message.id} | jobs={len(extracted_data.job_postings)} | developer={'yes' if extracted_data.developer_info else 'no'}")
+                    total_input_tokens += usage.get("input_tokens", 0)
+                    total_output_tokens += usage.get("output_tokens", 0)
+                    logger.info(f"[ANALYZE WEBSITE MSG RESULT] id={message.id} | jobs={len(extracted_data.job_postings)} | developer={'yes' if extracted_data.developer_info else 'no'} | tokens: in={usage.get('input_tokens', 0)} out={usage.get('output_tokens', 0)}")
 
-                    # Process extracted job postings
-                    for job in extracted_data.job_postings:
+                    # Process extracted job postings (V2EX should return 1 per message, take first if multiple)
+                    jobs_to_process = extracted_data.job_postings[:1] if len(extracted_data.job_postings) > 1 else extracted_data.job_postings
+                    if len(extracted_data.job_postings) > 1:
+                        logger.warning(f"[ANALYZE WEBSITE] Message {message.id} returned {len(extracted_data.job_postings)} jobs, taking first only")
+
+                    for job in jobs_to_process:
                         # Check if job already exists for this message
                         existing_job = await db.execute(
                             select(Job).filter(Job.message_id == message.id)
@@ -1162,8 +1177,23 @@ async def analyze_website_posts(
                     batch_message_results.append({"status": "success"})
                     logger.info(f"[ANALYZE WEBSITE MSG OK] id={message.id} | status=analyzed | jobs_total={jobs_added}")
 
+                    # Broadcast per-message progress for real-time UI updates
+                    await broadcast_progress("analyze_progress", {
+                        "channel": source_name,
+                        "channel_id": source_id,
+                        "analyzed": analyzed_count,
+                        "total_messages": total_messages,
+                        "jobs": jobs_added,
+                        "developers": devs_added,
+                        "operation_id": operation_id,
+                        "input_tokens": total_input_tokens,
+                        "output_tokens": total_output_tokens,
+                        "total_tokens": total_input_tokens + total_output_tokens,
+                    })
+
                 except Exception as e:
                     logger.error(f"[ANALYZE WEBSITE] Error analyzing message {message.id}: {e}", exc_info=True)
+                    await db.rollback()
                     message.analysis_status = "error"
                     batch_message_results.append({"status": "failed", "error": str(e)})
                     continue
@@ -1187,6 +1217,9 @@ async def analyze_website_posts(
                 "jobs": jobs_added,
                 "developers": devs_added,
                 "operation_id": operation_id,
+                "input_tokens": total_input_tokens,
+                "output_tokens": total_output_tokens,
+                "total_tokens": total_input_tokens + total_output_tokens,
             })
 
             try:
@@ -1229,7 +1262,7 @@ async def analyze_website_posts(
             "operation_id": operation_id,
         })
 
-        logger.info(f"[ANALYZE WEBSITE] ✓ COMPLETE | source={source_name} | analyzed={analyzed_count}/{total_messages} | jobs_saved={jobs_added} | devs_saved={devs_added} | skipped={skipped_count} | status={status}")
+        logger.info(f"[ANALYZE WEBSITE] ✓ COMPLETE | source={source_name} | analyzed={analyzed_count}/{total_messages} | jobs_saved={jobs_added} | devs_saved={devs_added} | skipped={skipped_count} | status={status} | tokens: in={total_input_tokens} out={total_output_tokens} total={total_input_tokens + total_output_tokens}")
         return {
             "success": True,
             "analyzed": analyzed_count,

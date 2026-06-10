@@ -209,7 +209,7 @@ const Developers = () => {
         dev.linkedin || '',
         dev.portfolio || '',
         dev.contact || '',
-        dev.looking_for_work ? 'Yes' : 'No',
+        dev.looking_for_work ? t('common.yes') : t('common.no'),
         dev.channel?.username || t('common.unknown'),
         dev.message.date ? new Date(dev.message.date).toLocaleDateString() : ''
       ];

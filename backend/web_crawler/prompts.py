@@ -51,7 +51,8 @@ V2EX_PROMPT = """
 You are extracting a single job posting from a V2EX tech community post. The content may be in Chinese or English.
 
 RULES:
-- This is always ONE job posting per message — return exactly one object in job_postings
+- This is always ONE job posting per message — return exactly ONE object in job_postings array
+- If the post contains multiple job listings, extract ONLY the FIRST/PRIMARY one
 - Translate all extracted fields to English
 - 远程 / remote / wfh = is_remote: true; 现场/onsite only = is_remote: false; not mentioned = null
 - 招聘/诚聘/hiring/looking for = employer posting; ignore personal seeking posts (return empty job_postings)

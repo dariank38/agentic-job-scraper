@@ -216,8 +216,8 @@ const Jobs = () => {
         job.role_type || '',
         skillsStr,
         job.contact || '',
-        job.is_remote ? 'Yes' : 'No',
-        job.is_applied ? 'Yes' : 'No',
+        job.is_remote ? t('common.yes') : t('common.no'),
+        job.is_applied ? t('common.yes') : t('common.no'),
         job.channel?.username || t('common.unknown'),
         job.message.date ? new Date(job.message.date).toLocaleDateString() : ''
       ];
@@ -435,7 +435,7 @@ const Jobs = () => {
                         </Badge>
                         {selectedJob.source_type && (
                           <Badge variant="outline" className="text-xs sm:text-sm px-2.5 py-0.5 sm:px-3 sm:py-1 shrink-0">
-                            {selectedJob.source_type === 'telegram' ? 'Telegram' : 'Website'}
+                            {selectedJob.source_type === 'telegram' ? t('common.telegram') : t('common.website')}
                           </Badge>
                         )}
                         {selectedJob.is_remote && (

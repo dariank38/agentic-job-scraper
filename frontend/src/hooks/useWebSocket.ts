@@ -32,6 +32,9 @@ export interface ProgressUpdate {
   developers_found?: number;
   error?: string;
   tokens?: TokenUsage;
+  input_tokens?: number;
+  output_tokens?: number;
+  total_tokens?: number;
   message_results?: MessageResult[];
 }
 

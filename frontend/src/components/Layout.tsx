@@ -252,11 +252,20 @@ const WebSocketProgressProvider = ({ children }: { children: React.ReactNode }) 
                   total: data.total_messages || data.total || 0,
                 }
               }));
-              // Update token usage
+              // Update token usage (handle both nested tokens object and top-level fields)
               if (data.tokens) {
                 setTokenUsage(prev => ({
                   ...prev,
                   [channel]: data.tokens!
+                }));
+              } else if (data.input_tokens !== undefined || data.output_tokens !== undefined) {
+                setTokenUsage(prev => ({
+                  ...prev,
+                  [channel]: {
+                    input: data.input_tokens || 0,
+                    output: data.output_tokens || 0,
+                    total: data.total_tokens || 0,
+                  }
                 }));
               }
               // Update message results
