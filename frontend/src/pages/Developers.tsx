@@ -7,6 +7,14 @@ import { Badge } from '@/components/ui/badge';
 import { Separator } from '@/components/ui/separator';
 import { Input } from '@/components/ui/input';
 import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
+import {
   Globe,
   Mail,
   MessageSquare,
@@ -44,6 +52,8 @@ const Developers = () => {
   const [searchInput, setSearchInput] = useState('');
   const [total, setTotal] = useState(0);
   const [developerNotes, setDeveloperNotes] = useState('');
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
+  const [developerToDelete, setDeveloperToDelete] = useState<number | null>(null);
   const lookingFilter = searchParams.get('looking_for_work');
   const contactedFilter = searchParams.get('is_contacted');
   const limit = 10;
@@ -134,7 +144,7 @@ const Developers = () => {
       setDeveloperNotes('');
       showToast('success', t('developers.markedAsContacted'));
     } catch (e: any) {
-      let errorMessage = `${t('common.failedToToggle')} ${t('developers.status')}`;
+      let errorMessage = `${t('common.failedToToggle')} ${t('developers.contactStatus')}`;
       if (e.response) {
         const errorData = await e.response.json().catch(() => ({}));
         errorMessage = errorData.detail || errorMessage;
@@ -144,6 +154,34 @@ const Developers = () => {
       showToast('error', errorMessage);
       // Revert on error
       loadDevelopers();
+    }
+  };
+
+  const deleteDeveloper = async (id: number) => {
+    setDeveloperToDelete(id);
+    setDeleteDialogOpen(true);
+  };
+
+  const confirmDeleteDeveloper = async () => {
+    if (!developerToDelete) return;
+    try {
+      await api.deleteDeveloper(developerToDelete);
+      setDevelopers(prevDevs => prevDevs.filter(d => d.id !== developerToDelete));
+      if (selectedDeveloper?.id === developerToDelete) {
+        setSelectedDeveloper(developers.find(d => d.id !== developerToDelete) || null);
+      }
+      showToast('success', t('developers.deletedSuccessfully'));
+      setDeleteDialogOpen(false);
+      setDeveloperToDelete(null);
+    } catch (e: any) {
+      let errorMessage = `${t('common.failedToDelete')} ${t('developers.title')}`;
+      if (e.response) {
+        const errorData = await e.response.json().catch(() => ({}));
+        errorMessage = errorData.detail || errorMessage;
+      } else if (e.message) {
+        errorMessage = e.message;
+      }
+      showToast('error', errorMessage);
     }
   };
 
@@ -405,6 +443,13 @@ const Developers = () => {
                       >
                         {selectedDeveloper.is_contacted ? t('developers.contacted') + ' ✓' : t('developers.markContacted')}
                       </Button>
+                      <Button
+                        size="sm"
+                        variant="destructive"
+                        onClick={() => deleteDeveloper(selectedDeveloper.id)}
+                      >
+                        {t('developers.deleteDeveloper')}
+                      </Button>
                     </div>
 
                     <Separator />
@@ -567,6 +612,26 @@ const Developers = () => {
           </CardContent>
         </Card>
       )}
+
+      {/* Delete Confirmation Dialog */}
+      <Dialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>{t('developers.deleteConfirm')}</DialogTitle>
+            <DialogDescription>
+              {t('developers.deleteWarning')}
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setDeleteDialogOpen(false)}>
+              {t('common.cancel')}
+            </Button>
+            <Button variant="destructive" onClick={confirmDeleteDeveloper}>
+              {t('common.delete')}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </>
   );
 };

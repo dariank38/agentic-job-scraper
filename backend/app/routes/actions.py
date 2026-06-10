@@ -633,25 +633,12 @@ def register_action_routes(app):
             elif category == "personal_info" and result.get("personal_info"):
                 pi_data = result.get("personal_info", {})
 
-                contact = pi_data.get("contact")
-                if isinstance(contact, list):
-                    contact = ", ".join(contact)
+                contact = _to_str(pi_data.get("contact"))
+                contact_type = _to_str(pi_data.get("contact_type"))
 
-                contact_type = pi_data.get("contact_type")
-                if isinstance(contact_type, list):
-                    contact_type = ", ".join(contact_type)
-
-                portfolio = pi_data.get("portfolio")
-                if isinstance(portfolio, list):
-                    portfolio = ", ".join(portfolio)
-
-                github = pi_data.get("github")
-                if isinstance(github, list):
-                    github = ", ".join(github)
-
-                linkedin = pi_data.get("linkedin")
-                if isinstance(linkedin, list):
-                    linkedin = ", ".join(linkedin)
+                portfolio = _to_str(pi_data.get("portfolio"))
+                github = _to_str(pi_data.get("github"))
+                linkedin = _to_str(pi_data.get("linkedin"))
 
                 name = pi_data.get("name")
                 if name:

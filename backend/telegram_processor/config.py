@@ -32,7 +32,7 @@ OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "qwen2.5:7b")
 # Fetcher settings
 DEFAULT_BATCH_SIZE = 50
 DEFAULT_BATCH_DELAY = 1.0  # seconds
-DEFAULT_DAYS_BACK = 15
+DEFAULT_DAYS_BACK = 3
 
 # Rate limiting
 FLOOD_WAIT_RETRY = True

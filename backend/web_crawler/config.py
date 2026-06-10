@@ -13,7 +13,7 @@ BASE_DIR = Path(__file__).parent.parent
 # Fetcher settings
 DEFAULT_BATCH_SIZE = 20
 DEFAULT_BATCH_DELAY = 2.0  # seconds
-DEFAULT_DAYS_BACK = 15
+DEFAULT_DAYS_BACK = 3
 
 # User agent
 USER_AGENT = os.getenv(

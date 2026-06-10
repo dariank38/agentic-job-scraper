@@ -253,6 +253,13 @@ const api = {
     return response.json();
   },
 
+  deleteDeveloper: async (id: number): Promise<{ success: boolean }> => {
+    const response = await fetch(`${API_BASE}/api/developers/${id}`, {
+      method: 'DELETE',
+    });
+    return response.json();
+  },
+
   reviewDeveloper: async (id: number, formData: FormData): Promise<void> => {
     await fetch(`${API_BASE}/api/developers/${id}/review`, {
       method: 'POST',

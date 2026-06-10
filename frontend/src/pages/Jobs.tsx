@@ -131,7 +131,7 @@ const Jobs = () => {
       setJobNotes('');
       showToast('success', t('jobs.markedAsApplied'));
     } catch (e: any) {
-      let errorMessage = `${t('common.failedToToggle')} ${t('jobs.status')}`;
+      let errorMessage = `${t('common.failedToToggle')} ${t('jobs.applicationStatus')}`;
       if (e.response) {
         const errorData = await e.response.json().catch(() => ({}));
         errorMessage = errorData.detail || errorMessage;

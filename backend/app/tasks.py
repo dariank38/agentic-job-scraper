@@ -316,11 +316,23 @@ def _first_contact_type(value) -> Optional[str]:
 
 
 def _to_str(value) -> Optional[str]:
-    """Convert list or value to comma-separated string."""
+    """Convert list or value to comma-separated string. Handle dict objects with 'value' field."""
     if value is None:
         return None
     if isinstance(value, list):
-        return ", ".join(str(v) for v in value if v) or None
+        processed = []
+        for v in value:
+            if isinstance(v, dict):
+                val = v.get("value")
+                if val:
+                    processed.append(str(val))
+            elif v:
+                processed.append(str(v))
+        return ", ".join(processed) or None
+    if isinstance(value, dict):
+        val = value.get("value")
+        if val:
+            return str(val)
     return str(value)
 
 

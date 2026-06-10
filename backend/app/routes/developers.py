@@ -137,3 +137,23 @@ def register_developer_routes(app):
         except Exception as e:
             await db.rollback()
             raise HTTPException(status_code=500, detail=f"Failed to toggle contacted status: {str(e)}")
+
+    @app.delete("/api/developers/{developer_id}")
+    async def api_delete_developer(developer_id: int, db: AsyncSession = Depends(get_db)):
+        """Delete a developer."""
+        try:
+            result = await db.execute(select(Developer).filter(Developer.id == developer_id))
+            developer = result.scalar_one_or_none()
+            if not developer:
+                raise HTTPException(status_code=404, detail="Developer not found")
+
+            await db.delete(developer)
+            await db.commit()
+
+            return {"success": True}
+        except HTTPException:
+            await db.rollback()
+            raise
+        except Exception as e:
+            await db.rollback()
+            raise HTTPException(status_code=500, detail=f"Failed to delete developer: {str(e)}")
