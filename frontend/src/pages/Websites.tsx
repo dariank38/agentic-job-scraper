@@ -16,7 +16,7 @@ const Websites = () => {
   const [websiteSources, setWebsiteSources] = useState<WebsiteSource[]>([]);
   const [loadingActions, setLoadingActions] = useState<Set<string>>(new Set());
   const { showToast } = useToast();
-  const { channelProgress, operations } = useWebSocketProgress();
+  const { channelProgress, operations, tokenUsage, stoppingChannels, requestStop } = useWebSocketProgress();
   const [addWebsiteDialogOpen, setAddWebsiteDialogOpen] = useState(false);
   const [newWebsiteName, setNewWebsiteName] = useState('');
   const [newWebsiteUrl, setNewWebsiteUrl] = useState('');
@@ -102,7 +102,7 @@ const Websites = () => {
       setLoadingActions(prev => new Set(prev).add('fetch-all'));
       const data = await api.fetchAllWebsiteSources();
       if (data.success) {
-        const methods = data.fetch_methods?.join(', ') || 'mixed';
+        const methods = data.fetch_methods?.join(', ') || t('common.mixed');
         showToast('success', t('websites.fetchedAllMessages', { count: data.new_messages, sources: data.sources_fetched, methods }));
         loadWebsiteSources();
       } else {
@@ -119,12 +119,44 @@ const Websites = () => {
     }
   };
 
-  const analyzeWebsiteSource = async (_id: number) => {
-    showToast('warning', t('websites.underMaintenance'));
+  const analyzeWebsiteSource = async (id: number) => {
+    try {
+      setLoadingActions(prev => new Set(prev).add(`analyze-${id}`));
+      const data = await api.analyzeWebsiteSource(id);
+      if (data.success) {
+        showToast('success', data.message || t('websites.analysisStarted'));
+      } else {
+        showToast('error', `${t('common.error')}: ` + (data.error || t('common.unknown')));
+      }
+    } catch (e: any) {
+      showToast('error', `${t('common.error')}: ` + e.message);
+    } finally {
+      setLoadingActions(prev => {
+        const newSet = new Set(prev);
+        newSet.delete(`analyze-${id}`);
+        return newSet;
+      });
+    }
   };
 
   const analyzeAllWebsiteSources = async () => {
-    showToast('warning', t('websites.underMaintenance'));
+    try {
+      setLoadingActions(prev => new Set(prev).add('analyze-all'));
+      const data = await api.analyzeAllWebsiteSources();
+      if (data.success) {
+        showToast('success', data.message || t('websites.analysisStarted'));
+      } else {
+        showToast('error', `${t('common.error')}: ` + (data.error || t('common.unknown')));
+      }
+    } catch (e: any) {
+      showToast('error', `${t('common.error')}: ` + e.message);
+    } finally {
+      setLoadingActions(prev => {
+        const newSet = new Set(prev);
+        newSet.delete('analyze-all');
+        return newSet;
+      });
+    }
   };
 
   const handleDeleteClick = (id: number) => {
@@ -166,6 +198,7 @@ const Websites = () => {
 
   const stopWebsiteOperation = async (sourceId: number, sourceName: string) => {
     try {
+      requestStop(sourceId, sourceName);
       const data = await api.stopWebsiteSource(sourceId);
       if (data.success) {
         showToast('success', t('websites.stopSignalSent', { name: sourceName }));
@@ -285,6 +318,28 @@ const Websites = () => {
                           <span>{t('websites.last')}: {new Date(source.last_fetch_at).toLocaleDateString()}</span>
                         )}
                       </div>
+                      {channelProgress[source.name] && (
+                        <div className="mt-2">
+                          <div className="flex justify-between text-xs mb-1">
+                            <span className={stoppingChannels[source.name] ? 'text-orange-600 font-medium' : 'text-blue-600 font-medium'}>
+                              {stoppingChannels[source.name] ? t('dashboard.stoppingProgress') : t('dashboard.analyzingProgress')}
+                            </span>
+                            <span>{channelProgress[source.name].analyzed}/{channelProgress[source.name].total}</span>
+                          </div>
+                          <div className="w-full bg-gray-200 rounded-full h-2">
+                            <div
+                              className={`h-2 rounded-full transition-all ${stoppingChannels[source.name] ? 'bg-orange-500' : 'bg-blue-600'}`}
+                              style={{ width: `${channelProgress[source.name].total > 0 ? (channelProgress[source.name].analyzed / channelProgress[source.name].total) * 100 : 0}%` }}
+                            />
+                          </div>
+                          {tokenUsage[source.name] && (
+                            <div className="flex justify-between text-xs mt-1 text-gray-500">
+                              <span>🤖 {(tokenUsage[source.name].total / 1000).toFixed(1)}k tokens</span>
+                              <span>⬆{(tokenUsage[source.name].input / 1000).toFixed(1)}k ⬇{(tokenUsage[source.name].output / 1000).toFixed(1)}k</span>
+                            </div>
+                          )}
+                        </div>
+                      )}
                     </div>
                     <div className="flex gap-2 flex-shrink-0">
                       <Button
@@ -299,7 +354,7 @@ const Websites = () => {
                         size="sm"
                         variant="outline"
                         onClick={() => fetchWebsiteSource(source.id)}
-                        disabled={loadingActions.has(`fetch-${source.id}`) || !!operations[source.name]}
+                        disabled={loadingActions.has(`fetch-${source.id}`) || loadingActions.has(`analyze-${source.id}`) || !!channelProgress[source.name]}
                       >
                         {loadingActions.has(`fetch-${source.id}`) ? <Loader2 size={12} className="mr-1 animate-spin" /> : <RefreshCw size={12} className="mr-1" />}
                         {t('websites.fetch')}
@@ -307,19 +362,20 @@ const Websites = () => {
                       <Button
                         size="sm"
                         onClick={() => analyzeWebsiteSource(source.id)}
-                        disabled={!!operations[source.name]}
+                        disabled={loadingActions.has(`fetch-${source.id}`) || loadingActions.has(`analyze-${source.id}`) || !!channelProgress[source.name]}
                       >
                         <Bot size={12} className="mr-1" />
                         {t('websites.analyze')}
                       </Button>
-                      {operations[source.name] && (
+                      {(loadingActions.has(`fetch-${source.id}`) || loadingActions.has(`analyze-${source.id}`) || !!channelProgress[source.name]) && (
                         <Button
                           size="sm"
                           variant="destructive"
                           onClick={() => stopWebsiteOperation(source.id, source.name)}
+                          disabled={stoppingChannels[source.id] || stoppingChannels[source.name]}
                         >
                           <Square size={12} className="mr-1" />
-                          {t('common.stop')}
+                          {stoppingChannels[source.id] || stoppingChannels[source.name] ? t('channels.stopping') : t('common.stop')}
                         </Button>
                       )}
                       <Button

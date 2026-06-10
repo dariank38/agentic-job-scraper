@@ -6,7 +6,7 @@
 
 - **自动获取**: 持续监控 Telegram 频道的新职位发布
 - **网站源支持**: 从 RSS 订阅源获取和分析职位信息（如 V2EX、电鸭社区）
-- **AI 驱动分析**: 使用 Ollama（推荐 qwen2.5）分析消息并提取职位/开发者信息
+- **AI 驱动分析**: 使用 Ollama（推荐 qwen2.5:14b 或 qwen2.5:7b）分析消息并提取职位/开发者信息
 - **实时进度**: 基于 WebSocket 的分析操作进度跟踪
 - **Token 使用监控**: 实时跟踪 Ollama API 调用的 token 使用情况
 - **停止分析**: 优雅地停止正在进行的分析操作，并提供视觉反馈
@@ -20,6 +20,8 @@
 - **远程工作优先**: 优先考虑远程/居家办公机会
 - **多账号支持**: 通过 UI 动态管理多个 Telegram 账号，支持交互式认证
 - **自定义提取提示词**: 为每个网站源自定义 Ollama 提示词，提高提取准确性
+- **V2EX 专用分析**: 针对中文技术职位的专用提示词，支持翻译和单职位提取
+- **单条消息进度**: 每条消息分析后实时更新进度（不仅仅是每批次）
 
 ## 计划功能
 
@@ -457,6 +459,7 @@ npm run dev
 11. **分析**: 在仪表板上查看按频道、联系的开发者和申请职位的每日图表
 12. **清理**: 使用快速操作中的"Cleanup Old Messages"删除 N 天前的消息
 13. **自定义提示词**: 为每个网站源自定义提取提示词以提高准确性
+14. **V2EX 配置**: 添加 V2EX 时设置 `site_type="v2ex"` 以使用专用的中文职位提示词
 
 ## API 端点
 
@@ -478,12 +481,14 @@ npm run dev
 - `GET /api/website-sources` - 列出所有网站源
 - `POST /api/website-sources` - 添加新网站源（RSS 订阅源）
 - `DELETE /api/website-sources/{id}` - 删除网站源
-- `PUT /api/website-sources/{id}` - 更新网站源（包括自定义提取提示词）
+- `PUT /api/website-sources/{id}` - 更新网站源（包括自定义提取提示词和 site_type）
 - `POST /api/website-sources/{id}/fetch` - 从网站源获取 RSS 内容
 - `POST /api/website-sources/fetch-all` - 从所有活跃网站源获取
 - `POST /api/website-sources/{id}/analyze` - 分析网站源的消息
 - `POST /api/website-sources/analyze-all` - 分析所有网站源的消息
 - `POST /api/website-sources/{id}/stop` - 停止网站源的正在进行的操作
+
+**注意:** 添加 V2EX 源时设置 `site_type="v2ex"` 以使用专用的中文职位提示词。
 
 ### 消息
 - `GET /api/messages` - 列出消息（带分页）
@@ -574,13 +579,15 @@ agentic-job-scraper/
 从 [my.telegram.org/apps](https://my.telegram.org/apps) 获取您的 API 凭证。如果需要，您可以为不同账号创建多个应用程序。
 
 ### Ollama 配置
-- 推荐模型: `qwen2.5:7b-instruct-q4_K_M`
+- 推荐模型: `qwen2.5:14b`（更高精度）或 `qwen2.5:7b`（更快速度）
 - 可配置为使用远程 Ollama 实例
 - 支持 GPU 加速以加快处理速度
 - 并发处理，使用信号量（默认：3 个并发请求）
 - 批处理（默认：每批 3 条消息）
-- 实时 token 使用跟踪（输入/输出/总 token）
+- 实时 token 使用跟踪（输入/输出/总 token），支持 Telegram 和网站源
 - 垃圾邮件预过滤器（`should_analyze_message`）在 Ollama 之前跳过明显的非技术消息
+- V2EX 专用提示词（`V2EX_PROMPT`）用于中文职位，支持翻译和单职位约束
+- 通用 RSS 提示词（`RSS_PROMPT`）用于其他网站源
 - 通过 `.env` 中的 `OLLAMA_BASE_URL` 和 `OLLAMA_MODEL` 配置
 - `ollama_service.py` 中的高级选项：
   - `num_predict`: 最大生成 token 数（默认：2048）
@@ -588,6 +595,9 @@ agentic-job-scraper/
   - `num_gpu`: GPU 层数卸载（默认：99，完全 GPU 卸载）
   - `keep_alive`: 将模型保留在内存中（默认：-1，无限期）
   - `timeout`: 请求超时（默认：120s）
+- `rss_extractor.py` 中的 RSS 提取器选项：
+  - `MAX_CHARS`: 内容分块大小（默认：3000，约 1000-1500 token）
+  - `temperature`: 低温度用于事实提取（默认：0.1）
 
 ### 数据库
 - 带异步支持的 PostgreSQL
@@ -627,6 +637,11 @@ psql -U your_username -d job_scraper -f backend/migrate_make_telegram_id_nullabl
 **添加 extraction_prompt 列到 website_sources 表:**
 ```bash
 psql -U your_username -d job_scraper -f backend/migrate_add_extraction_prompt.sql
+```
+
+**添加 site_type 列到 website_sources 表（用于 V2EX 专用提示词）:**
+```bash
+psql -U your_username -d job_scraper -f backend/migrate_add_site_type.sql
 ```
 
 或一次性运行所有迁移：

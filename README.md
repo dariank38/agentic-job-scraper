@@ -6,7 +6,7 @@ An automated job scraping system that fetches software development job postings 
 
 - **Automated Fetching**: Continuously monitors Telegram channels for new job postings
 - **Website Source Support**: Fetch and analyze job postings from RSS feeds (e.g., V2EX, 电鸭社区)
-- **AI-Powered Analysis**: Uses Ollama (qwen2.5 recommended) to analyze messages and extract job/developer information
+- **AI-Powered Analysis**: Uses Ollama (qwen2.5:14b or qwen2.5:7b recommended) to analyze messages and extract job/developer information
 - **Real-time Progress**: WebSocket-based progress tracking for analysis operations
 - **Token Usage Monitoring**: Real-time token usage tracking for Ollama API calls
 - **Stop Analysis**: Gracefully stop ongoing analysis operations with visual feedback
@@ -20,6 +20,8 @@ An automated job scraping system that fetches software development job postings 
 - **Remote Jobs Focus**: Prioritizes remote/work-from-home opportunities
 - **Multi-Account Support**: Manage multiple Telegram accounts dynamically through the UI with interactive authentication
 - **Custom Extraction Prompts**: Customize Ollama prompts per website source for better extraction accuracy
+- **V2EX-Specific Analysis**: Specialized prompt for Chinese tech job posts with translation and single-job extraction
+- **Per-Message Progress**: Real-time progress updates after each message analyzed (not just per batch)
 - **Internationalization (i18n)**: Full UI translation support with English and Chinese (Simplified) via a language switcher
 - **Server-Side Search**: All search inputs query the backend API on Enter key press for accurate, paginated results
 
@@ -461,6 +463,7 @@ Now the frontend will connect to your backend through the ngrok tunnel.
 11. **Analytics**: View daily charts on the Dashboard for job postings by channel, developers contacted, and jobs applied
 12. **Cleanup**: Use "Cleanup Old Messages" in Quick Actions to remove messages older than N days
 13. **Custom Prompts**: Customize extraction prompts per website source for better accuracy
+14. **V2EX Configuration**: Set `site_type="v2ex"` when adding V2EX to use the specialized Chinese job post prompt
 
 ## API Endpoints
 
@@ -482,12 +485,14 @@ Now the frontend will connect to your backend through the ngrok tunnel.
 - `GET /api/website-sources` - List all website sources
 - `POST /api/website-sources` - Add a new website source (RSS feed)
 - `DELETE /api/website-sources/{id}` - Delete a website source
-- `PUT /api/website-sources/{id}` - Update a website source (including custom extraction prompt)
+- `PUT /api/website-sources/{id}` - Update a website source (including custom extraction prompt and site_type)
 - `POST /api/website-sources/{id}/fetch` - Fetch RSS content from a website source
 - `POST /api/website-sources/fetch-all` - Fetch from all active website sources
 - `POST /api/website-sources/{id}/analyze` - Analyze messages from a website source
 - `POST /api/website-sources/analyze-all` - Analyze messages from all website sources
 - `POST /api/website-sources/{id}/stop` - Stop ongoing operation for a website source
+
+**Note:** Set `site_type="v2ex"` when adding V2EX sources to use the specialized Chinese job post prompt.
 
 ### Messages
 - `GET /api/messages` - List messages with pagination
@@ -579,13 +584,15 @@ The application supports managing multiple Telegram accounts through the web UI 
 Get your API credentials from [my.telegram.org/apps](https://my.telegram.org/apps). You can create multiple applications if needed for different accounts.
 
 ### Ollama Configuration
-- Recommended model: `qwen2.5:7b-instruct-q4_K_M`
+- Recommended models: `qwen2.5:14b` (better accuracy) or `qwen2.5:7b` (faster)
 - Can be configured to use remote Ollama instance
 - Supports GPU acceleration for faster processing
 - Concurrent processing with semaphore (default: 3 concurrent requests)
 - Batch processing (default: 3 messages per batch)
-- Real-time token usage tracking (input/output/total tokens)
+- Real-time token usage tracking (input/output/total tokens) for both Telegram and website sources
 - Spam pre-filter (`should_analyze_message`) skips obvious non-tech messages before Ollama
+- V2EX-specific prompt (`V2EX_PROMPT`) for Chinese job posts with translation and single-job constraint
+- Generic RSS prompt (`RSS_PROMPT`) for other website sources
 - Configure via `OLLAMA_BASE_URL` and `OLLAMA_MODEL` in `.env`
 - Advanced options in `ollama_service.py`:
   - `num_predict`: Maximum tokens to generate (default: 2048)
@@ -593,6 +600,9 @@ Get your API credentials from [my.telegram.org/apps](https://my.telegram.org/app
   - `num_gpu`: GPU layers to offload (default: 99, full GPU offload)
   - `keep_alive`: Keep model in memory (default: -1, indefinitely)
   - `timeout`: Request timeout (default: 120s)
+- RSS extractor options in `rss_extractor.py`:
+  - `MAX_CHARS`: Chunk size for content (default: 3000, ~1000-1500 tokens)
+  - `temperature`: Low temp for factual extraction (default: 0.1)
 
 ### Database
 - PostgreSQL with async support
@@ -632,6 +642,11 @@ psql -U your_username -d job_scraper -f backend/migrate_make_telegram_id_nullabl
 **Add extraction_prompt column to website_sources table:**
 ```bash
 psql -U your_username -d job_scraper -f backend/migrate_add_extraction_prompt.sql
+```
+
+**Add site_type column to website_sources table (for V2EX-specific prompts):**
+```bash
+psql -U your_username -d job_scraper -f backend/migrate_add_site_type.sql
 ```
 
 Or run all migrations at once:

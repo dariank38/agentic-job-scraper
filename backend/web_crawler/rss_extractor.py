@@ -26,7 +26,7 @@ class Extractor:
         self.base_url = base_url or OLLAMA_BASE_URL
         self.client = AsyncClient(host=self.base_url)
 
-    async def extract(self, content: str, source_url: str, custom_prompt: str = None, site_type: str = None) -> ExtractedData:
+    async def extract(self, content: str, source_url: str, custom_prompt: str = None, site_type: str = None) -> tuple[ExtractedData, dict]:
         """Extract structured data from RSS content using Ollama.
 
         Args:
@@ -35,7 +35,7 @@ class Extractor:
             custom_prompt: Optional custom prompt override.
 
         Returns:
-            ExtractedData with job postings, developer info, and contact info.
+            Tuple of (ExtractedData with job postings/developer info/contact info, usage dict with token stats).
         """
         logger.info(f"[EXTRACTOR] ▶ START | source={source_url} | content_len={len(content)} chars | model={self.model}")
 
@@ -47,17 +47,22 @@ class Extractor:
         logger.info(f"[EXTRACTOR] Split into {len(chunks)} chunk(s) (MAX_CHARS={MAX_CHARS})")
 
         all_results = []
+        total_usage = {"input_tokens": 0, "output_tokens": 0, "total_tokens": 0}
         for i, chunk in enumerate(chunks):
             logger.info(f"[EXTRACTOR] Chunk {i + 1}/{len(chunks)} — sending {len(chunk)} chars to Ollama")
-            result = await self._call_llm(chunk, prompt_template)
+            result, usage = await self._call_llm(chunk, prompt_template)
             if result:
                 all_results.append(result)
+            if usage:
+                total_usage["input_tokens"] += usage.get("input_tokens", 0)
+                total_usage["output_tokens"] += usage.get("output_tokens", 0)
+                total_usage["total_tokens"] += usage.get("total_tokens", 0)
 
         merged = self._merge_results(all_results, source_url)
-        logger.info(f"[EXTRACTOR] ✓ DONE | jobs={len(merged.job_postings)} | devs={1 if merged.developer_info else 0} | emails={len(merged.contact_info.emails) if merged.contact_info else 0}")
-        return merged
+        logger.info(f"[EXTRACTOR] ✓ DONE | jobs={len(merged.job_postings)} | devs={1 if merged.developer_info else 0} | emails={len(merged.contact_info.emails) if merged.contact_info else 0} | tokens: in={total_usage['input_tokens']} out={total_usage['output_tokens']} total={total_usage['total_tokens']}")
+        return merged, total_usage
 
-    async def _call_llm(self, content: str, prompt_template: str) -> Optional[dict]:
+    async def _call_llm(self, content: str, prompt_template: str) -> tuple[Optional[dict], dict]:
         """Call Ollama LLM for extraction.
 
         Args:
@@ -65,7 +70,7 @@ class Extractor:
             prompt_template: The prompt template to use.
 
         Returns:
-            Parsed JSON dict if successful, None otherwise.
+            Tuple of (parsed JSON dict if successful else None, usage dict with token stats).
         """
         prompt = prompt_template.format(content=content)
         try:
@@ -75,7 +80,13 @@ class Extractor:
                 options={"temperature": 0.1}  # Low temp for factual extraction
             )
             raw = response["message"]["content"].strip()
-            logger.info(f"[EXTRACTOR] Ollama raw response ({len(raw)} chars): {raw[:300]!r}{'...' if len(raw) > 300 else ''}")
+            usage = {
+                "input_tokens": response.get("prompt_eval_count", 0),
+                "output_tokens": response.get("eval_count", 0),
+                "total_tokens": response.get("prompt_eval_count", 0) + response.get("eval_count", 0),
+            }
+            logger.info(f"[EXTRACTOR] Ollama response ({len(raw)} chars) | tokens: in={usage['input_tokens']} out={usage['output_tokens']} total={usage['total_tokens']}")
+            logger.info(f"[EXTRACTOR] Raw preview: {raw[:300]!r}{'...' if len(raw) > 300 else ''}")
 
             # Strip markdown fences if present
             if raw.startswith("```"):
@@ -86,13 +97,13 @@ class Extractor:
             parsed = json.loads(raw)
             jobs_count = len(parsed.get("job_postings", []))
             logger.info(f"[EXTRACTOR] Parsed OK — job_postings={jobs_count}")
-            return parsed
+            return parsed, usage
         except json.JSONDecodeError as e:
             logger.error(f"[EXTRACTOR] JSON parse error: {e} | raw={raw[:200]!r}")
-            return None
+            return None, {}
         except Exception as e:
             logger.error(f"[EXTRACTOR] LLM error: {e}")
-            return None
+            return None, {}
 
     def _chunk(self, text: str) -> List[str]:
         """Split text into chunks for processing.

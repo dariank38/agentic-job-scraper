@@ -271,14 +271,14 @@ const Messages = () => {
                         <div className="flex items-start gap-3">
                           {/* Avatar */}
                           <div className="w-10 h-10 rounded-lg bg-gradient-to-br from-blue-500 to-blue-600 flex items-center justify-center text-sm font-bold text-white shrink-0">
-                            {getInitials(msg.source_type === 'website' ? msg.website_source?.name || 'WS' : msg.channel?.username || 'CH')}
+                            {getInitials(msg.source_type === 'website' ? msg.website_source?.name || t('common.ws') : msg.channel?.username || t('common.ch'))}
                           </div>
                           
                           {/* Content */}
                           <div className="flex-1 min-w-0">
                             <div className="flex items-center gap-2 mb-1.5 flex-wrap">
                               <span className="font-semibold text-sm text-gray-900 truncate">
-                                {msg.source_type === 'website' ? msg.website_source?.name : msg.channel?.username || 'unknown'}
+                                {msg.source_type === 'website' ? msg.website_source?.name : msg.channel?.username || t('common.unknown')}
                               </span>
                               <Badge variant={statusInfo.variant} className="text-xs px-2 py-0.5">
                                 <StatusIcon className="w-3 h-3 mr-1" />
