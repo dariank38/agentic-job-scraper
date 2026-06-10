@@ -13,6 +13,8 @@
     "back": "返回",
     "next": "下一页",
     "previous": "上一页",
+    "first": "首页",
+    "last": "末页",
     "refresh": "刷新",
     "success": "成功",
     "error": "错误",
@@ -200,10 +202,15 @@
     "originalMessage": "原始消息",
     "notes": "备注",
     "addNotes": "添加备注（可选）",
+    "noNotes": "无备注",
     "remote": "远程",
     "untitledJob": "无标题职位",
     "unknownCompany": "未知公司",
-    "noTextContent": "<无文字内容>"
+    "noTextContent": "<无文字内容>",
+    "deleteJob": "删除职位",
+    "deleteConfirm": "删除职位",
+    "deleteWarning": "确定要删除此职位吗？此操作无法撤销。",
+    "deletedSuccessfully": "职位已成功删除"
   },
   "developers": {
     "title": "开发者",

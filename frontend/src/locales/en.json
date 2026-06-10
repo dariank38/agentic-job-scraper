@@ -13,6 +13,8 @@
     "back": "Back",
     "next": "Next",
     "previous": "Previous",
+    "first": "First",
+    "last": "Last",
     "refresh": "Refresh",
     "success": "Success",
     "error": "Error",
@@ -201,10 +203,15 @@
     "originalMessage": "Original Message",
     "notes": "Notes",
     "addNotes": "Add notes (optional)",
+    "noNotes": "No notes",
     "remote": "Remote",
     "untitledJob": "Untitled Job",
     "unknownCompany": "Unknown Company",
-    "noTextContent": "<No text content>"
+    "noTextContent": "<No text content>",
+    "deleteJob": "Delete Job",
+    "deleteConfirm": "Delete Job",
+    "deleteWarning": "Are you sure you want to delete this job? This action cannot be undone.",
+    "deletedSuccessfully": "Job deleted successfully"
   },
   "developers": {
     "title": "Developers",

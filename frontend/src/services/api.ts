@@ -231,6 +231,13 @@ const api = {
     });
   },
 
+  deleteJob: async (id: number): Promise<{ success: boolean }> => {
+    const response = await fetch(`${API_BASE}/api/jobs/${id}`, {
+      method: 'DELETE',
+    });
+    return response.json();
+  },
+
   // Developers
   getDevelopers: async (params?: { looking_for_work?: string; is_contacted?: string; search?: string; limit?: number; offset?: number }): Promise<{ developers: Developer[]; total: number; limit: number; offset: number }> => {
     const query = new URLSearchParams(params as any).toString();

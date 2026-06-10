@@ -132,3 +132,23 @@ def register_job_routes(app):
         except Exception as e:
             await db.rollback()
             raise HTTPException(status_code=500, detail=f"Failed to toggle applied status: {str(e)}")
+
+    @app.delete("/api/jobs/{job_id}")
+    async def api_delete_job(job_id: int, db: AsyncSession = Depends(get_db)):
+        """Delete a job."""
+        try:
+            result = await db.execute(select(Job).filter(Job.id == job_id))
+            job = result.scalar_one_or_none()
+            if not job:
+                raise HTTPException(status_code=404, detail="Job not found")
+
+            await db.delete(job)
+            await db.commit()
+
+            return {"success": True}
+        except HTTPException:
+            await db.rollback()
+            raise
+        except Exception as e:
+            await db.rollback()
+            raise HTTPException(status_code=500, detail=f"Failed to delete job: {str(e)}")

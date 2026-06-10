@@ -7,6 +7,14 @@ import { Badge } from '@/components/ui/badge';
 import { Separator } from '@/components/ui/separator';
 import { Input } from '@/components/ui/input';
 import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
+import {
   Mail,
   MessageSquare,
   Calendar,
@@ -40,6 +48,8 @@ const Jobs = () => {
   const [loadingActions, setLoadingActions] = useState<Set<string>>(new Set());
   const [total, setTotal] = useState(0);
   const [jobNotes, setJobNotes] = useState('');
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
+  const [jobToDelete, setJobToDelete] = useState<number | null>(null);
   const appliedFilter = searchParams.get('is_applied');
   const limit = 10;
   const offset = parseInt(searchParams.get('offset') || '0');
@@ -81,6 +91,19 @@ const Jobs = () => {
   const handlePrevious = () => {
     const params = new URLSearchParams(searchParams);
     params.set('offset', Math.max(0, offset - limit).toString());
+    setSearchParams(params);
+  };
+
+  const handleFirst = () => {
+    const params = new URLSearchParams(searchParams);
+    params.set('offset', '0');
+    setSearchParams(params);
+  };
+
+  const handleLast = () => {
+    const params = new URLSearchParams(searchParams);
+    const lastOffset = Math.floor((total - 1) / limit) * limit;
+    params.set('offset', lastOffset.toString());
     setSearchParams(params);
   };
 
@@ -141,6 +164,34 @@ const Jobs = () => {
       showToast('error', errorMessage);
       // Revert on error
       loadJobs();
+    }
+  };
+
+  const deleteJob = async (id: number) => {
+    setJobToDelete(id);
+    setDeleteDialogOpen(true);
+  };
+
+  const confirmDeleteJob = async () => {
+    if (!jobToDelete) return;
+    try {
+      await api.deleteJob(jobToDelete);
+      setJobs(prevJobs => prevJobs.filter(j => j.id !== jobToDelete));
+      if (selectedJob?.id === jobToDelete) {
+        setSelectedJob(jobs.find(j => j.id !== jobToDelete) || null);
+      }
+      showToast('success', t('jobs.deletedSuccessfully'));
+      setDeleteDialogOpen(false);
+      setJobToDelete(null);
+    } catch (e: any) {
+      let errorMessage = `${t('common.failedToDelete')} ${t('jobs.title')}`;
+      if (e.response) {
+        const errorData = await e.response.json().catch(() => ({}));
+        errorMessage = errorData.detail || errorMessage;
+      } else if (e.message) {
+        errorMessage = e.message;
+      }
+      showToast('error', errorMessage);
     }
   };
 
@@ -303,25 +354,45 @@ const Jobs = () => {
               {jobs.length > 0 && (
                 <div className="px-4 pb-4 pt-0">
                   <div className="flex items-center justify-between pt-3 border-t">
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={handlePrevious}
-                      disabled={offset === 0}
-                    >
-                      {t('common.previous')}
-                    </Button>
+                    <div className="flex gap-2">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => handleFirst()}
+                        disabled={offset === 0}
+                      >
+                        {t('common.first')}
+                      </Button>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={handlePrevious}
+                        disabled={offset === 0}
+                      >
+                        {t('common.previous')}
+                      </Button>
+                    </div>
                     <span className="text-sm text-muted-foreground">
                       {t('common.page')} {Math.floor(offset / limit) + 1} / {Math.ceil(total / limit)} ({offset + 1}-{Math.min(offset + limit, total)} / {total})
                     </span>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={handleNext}
-                      disabled={offset + limit >= total}
-                    >
-                      {t('common.next')}
-                    </Button>
+                    <div className="flex gap-2">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={handleNext}
+                        disabled={offset + limit >= total}
+                      >
+                        {t('common.next')}
+                      </Button>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => handleLast()}
+                        disabled={offset + limit >= total}
+                      >
+                        {t('common.last')}
+                      </Button>
+                    </div>
                   </div>
                 </div>
               )}
@@ -374,6 +445,33 @@ const Jobs = () => {
                         )}
                       </p>
                     </div>
+                  </div>
+
+                  {/* Action Buttons */}
+                  <div className="flex gap-2 pt-2">
+                    {!selectedJob.is_applied && (
+                      <Input
+                        placeholder={t('jobs.addNotes')}
+                        value={jobNotes}
+                        onChange={(e) => setJobNotes(e.target.value)}
+                        className="flex-1"
+                      />
+                    )}
+                    <Button
+                      size="sm"
+                      variant={selectedJob.is_applied ? 'default' : 'outline'}
+                      onClick={() => toggleApplied(selectedJob.id)}
+                      disabled={loadingActions.has(`toggle-${selectedJob.id}`)}
+                    >
+                      {selectedJob.is_applied ? t('jobs.applied') + ' ✓' : t('jobs.markApplied')}
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="destructive"
+                      onClick={() => deleteJob(selectedJob.id)}
+                    >
+                      {t('jobs.deleteJob')}
+                    </Button>
                   </div>
 
                   <Separator />
@@ -474,34 +572,14 @@ const Jobs = () => {
                     </div>
                   </div>
 
-                  {/* Action Buttons */}
-                  <div className="flex gap-2 pt-2">
-                    {!selectedJob.is_applied && (
-                      <Input
-                        placeholder={t('jobs.addNotes')}
-                        value={jobNotes}
-                        onChange={(e) => setJobNotes(e.target.value)}
-                        className="flex-1"
-                      />
-                    )}
-                    <Button
-                      size="sm"
-                      variant={selectedJob.is_applied ? 'default' : 'outline'}
-                      onClick={() => toggleApplied(selectedJob.id)}
-                      disabled={loadingActions.has(`toggle-${selectedJob.id}`)}
-                    >
-                      {selectedJob.is_applied ? t('jobs.applied') + ' ✓' : t('jobs.markApplied')}
-                    </Button>
-                  </div>
-
                   {/* Notes */}
-                  {selectedJob.notes && (
+                  {selectedJob.notes !== undefined && (
                     <div className="bg-yellow-50/50 border border-yellow-100 rounded-xl p-4">
                       <div className="flex items-center gap-2 mb-2">
                         <FileText className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-yellow-600" />
                         <h3 className="text-xs sm:text-sm font-semibold text-yellow-900">{t('jobs.notes')}</h3>
                       </div>
-                      <p className="text-sm text-gray-700 leading-relaxed break-words">{selectedJob.notes}</p>
+                      <p className="text-sm text-gray-700 leading-relaxed break-words">{selectedJob.notes || t('jobs.noNotes')}</p>
                     </div>
                   )}
                 </div>
@@ -526,6 +604,26 @@ const Jobs = () => {
           </CardContent>
         </Card>
       )}
+
+      {/* Delete Confirmation Dialog */}
+      <Dialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>{t('jobs.deleteConfirm')}</DialogTitle>
+            <DialogDescription>
+              {t('jobs.deleteWarning')}
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setDeleteDialogOpen(false)}>
+              {t('common.cancel')}
+            </Button>
+            <Button variant="destructive" onClick={confirmDeleteJob}>
+              {t('common.delete')}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
     </>
   );

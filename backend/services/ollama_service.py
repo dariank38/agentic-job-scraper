@@ -27,9 +27,13 @@ async def is_ollama_available() -> bool:
 SYSTEM_PROMPT = """Telegram message classifier for remote tech job boards. Output: JSON only, no markdown, no explanation.
 
 CATEGORIES:
-- "job_posting": Software engineering role offer (frontend, backend, fullstack, devops, mobile, blockchain, smart_contract, qa, data, ml_ai, security, systems, embedded)
-- "personal_info": Software developer (coder/programmer) describing themselves or seeking work. MUST have software engineering skills or experience.
+- "job_posting": Company/organization offering a software engineering role (frontend, backend, fullstack, devops, mobile, blockchain, smart_contract, qa, data, ml_ai, security, systems, embedded). The message is FROM an employer, not a job seeker.
+- "personal_info": Software developer (coder/programmer) describing themselves or seeking work. The message is FROM a job seeker, not an employer. MUST have software engineering skills or experience.
 - "other": Non-engineering (design, marketing, HR, sales, product, ops, finance, trading, support, admin, etc.) OR job seekers without software engineering background
+
+CRITICAL DISTINCTION:
+- "job_posting": Employer speaking about hiring. Indicators: "we are hiring", "looking for [role]", "seeking [role]", "join our team", "position available", "job opening", "vacancy", "recruiting", "apply to", "send CV/resume to", company name mentioned, salary/benefits listed.
+- "personal_info": Job seeker speaking about themselves. Indicators: "I want", "I am looking for", "seeking [role]", "looking for work", "open to opportunities", "hire me", "available for work", first person perspective ("I", "my"), sharing skills/experience/portfolio.
 
 RULES:
 - "translated_text": Full English translation of the original message. Required for ALL categories including other. If the message is not in English, translate the FULL message to English and put it in "translated_text". If the message is already in English, copy the original text into "translated_text". Never return null for "translated_text"
@@ -74,11 +78,11 @@ def should_analyze_message(text: str) -> bool:
 
 # ── ANALYZER ─────────────────────────────────────────────────────────────────
 
-RECOMMENDED_MODEL = "qwen2.5:7b-instruct-q4_K_M"
+RECOMMENDED_MODEL = "qwen2.5:14b-instruct-q4_K_M"
 
 
 class AsyncOllamaAnalyzer:
-    def __init__(self, base_url: str = None, model_name: str = None, max_concurrent: int = 3):
+    def __init__(self, base_url: str = None, model_name: str = None, max_concurrent: int = 1):
         self.client = AsyncClient(host=base_url or OLLAMA_BASE_URL)
         self.model_name = model_name or OLLAMA_MODEL or RECOMMENDED_MODEL
         self.semaphore = asyncio.Semaphore(max_concurrent)
@@ -97,7 +101,7 @@ class AsyncOllamaAnalyzer:
 
         # Track semaphore wait time
         wait_start = time.time()
-        logger.info(f"[OLLAMA] Waiting for semaphore | Msg: {msg_preview}... | Semaphore: {self.semaphore._value if hasattr(self.semaphore, '_value') else 'N/A'}")
+        logger.info(f"[OLLAMA] Waiting for semaphore | Message length: {len(message_text)} chars | Semaphore: {self.semaphore._value if hasattr(self.semaphore, '_value') else 'N/A'}")
         
         async with self.semaphore:
             wait_elapsed = time.time() - wait_start
@@ -113,11 +117,11 @@ class AsyncOllamaAnalyzer:
                             "temperature": 0.0,
                             "num_predict": 2048,   # 800 max observed + 25% margin
                             "num_ctx": 2048,
-                            "num_gpu": 99,         # 7B fits fully in 6GB VRAM
+                            "num_gpu": 99,         # 14B fits fully in 6GB VRAM
                             "keep_alive": -1,      # keep model loaded
                         },
                     ),
-                    timeout=120.0,  # 7B @ ~15 tok/s: 2048 tokens ≈ 136s + margin
+                    timeout=240.0,  # 14b @ ~10 tok/s: 2048 tokens ≈ 204s + margin
                 )
 
                 response_text = response["response"]
@@ -143,13 +147,13 @@ class AsyncOllamaAnalyzer:
                 result = self._parse_json(response_text)
                 result["usage"] = usage
                 total_elapsed = time.time() - wait_start
-                logger.info(f"[OLLAMA] Success | Msg: {msg_preview}... | Category: {result.get('category', 'unknown')} | Total time: {total_elapsed:.1f}s | Tokens: {usage['total_tokens']}")
+                logger.info(f"[OLLAMA] Success | Msg: {msg_preview}... | Category: {result.get('category', 'unknown')} | Total time: {total_elapsed:.1f}s | Input tokens: {usage['input_tokens']} | Output tokens: {usage['output_tokens']} | Total tokens: {usage['total_tokens']}")
                 return result
 
             except asyncio.TimeoutError:
                 elapsed = time.time() - wait_start
                 logger.error(f"[OLLAMA] TIMEOUT | Msg: {msg_preview}... | Total time: {elapsed:.1f}s")
-                raise ValueError("Ollama request timed out after 120s")
+                raise ValueError("Ollama request timed out after 240s")
             except json.JSONDecodeError as e:
                 elapsed = time.time() - wait_start
                 logger.error(f"[OLLAMA] JSON ERROR | Msg: {msg_preview}... | Time: {elapsed:.1f}s | Error: {e}")
