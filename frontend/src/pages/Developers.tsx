@@ -56,19 +56,21 @@ const Developers = () => {
   const [developerToDelete, setDeveloperToDelete] = useState<number | null>(null);
   const lookingFilter = searchParams.get('looking_for_work');
   const contactedFilter = searchParams.get('is_contacted');
+  const hasContactFilter = searchParams.get('has_contact');
   const limit = 10;
   const offset = parseInt(searchParams.get('offset') || '0');
   const { showToast } = useToast();
 
   useEffect(() => {
     loadDevelopers();
-  }, [lookingFilter, contactedFilter, offset, searchQuery]);
+  }, [lookingFilter, contactedFilter, hasContactFilter, offset, searchQuery]);
 
   const loadDevelopers = async () => {
     try {
       const params: any = { limit, offset };
       if (lookingFilter) params.looking_for_work = lookingFilter;
       if (contactedFilter) params.is_contacted = contactedFilter;
+      if (hasContactFilter) params.has_contact = hasContactFilter;
       if (searchQuery) params.search = searchQuery;
       const data = await api.getDevelopers(params);
       setDevelopers(data.developers);
@@ -281,7 +283,17 @@ const Developers = () => {
                     <option value="true">{t('developers.contacted')}</option>
                     <option value="false">{t('developers.notContacted')}</option>
                   </select>
-                  {(lookingFilter || contactedFilter || searchQuery) && (
+                  <select
+                    id="has-contact-filter"
+                    defaultValue={hasContactFilter || ''}
+                    onChange={applyFilters}
+                    className="flex-1 px-3 py-2 rounded-md border border-gray-200 text-sm bg-white"
+                  >
+                    <option value="">All Contact Info</option>
+                    <option value="true">Has Contact</option>
+                    <option value="false">No Contact</option>
+                  </select>
+                  {(lookingFilter || contactedFilter || hasContactFilter || searchQuery) && (
                     <Button variant="ghost" size="sm" onClick={clearFilters}>
                       {t('common.clear')}
                     </Button>
@@ -558,27 +570,29 @@ const Developers = () => {
                     )}
 
                     {/* Original Message */}
-                    <div className="bg-gray-50 border border-gray-200 rounded-xl p-4">
-                      <div className="flex items-center gap-2 mb-2 sm:mb-3">
-                        <MessagesSquare className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-gray-600" />
-                        <h3 className="text-xs sm:text-sm font-semibold text-gray-900">{t('developers.originalMessage')}</h3>
+                    {selectedDeveloper.message && (
+                      <div className="bg-gray-50 border border-gray-200 rounded-xl p-4">
+                        <div className="flex items-center gap-2 mb-2 sm:mb-3">
+                          <MessagesSquare className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-gray-600" />
+                          <h3 className="text-xs sm:text-sm font-semibold text-gray-900">{t('developers.originalMessage')}</h3>
+                        </div>
+                        <p className="text-sm text-gray-700 leading-relaxed whitespace-pre-wrap break-words">{selectedDeveloper.message.text || t('developers.noTextContent')}</p>
+                        <div className="mt-3 pt-3 border-t border-gray-200 flex flex-wrap gap-x-4 gap-y-1 text-xs text-gray-500">
+                          <span className="flex items-center gap-1">
+                            <User className="w-3 h-3" />
+                            {selectedDeveloper.message.sender_username || selectedDeveloper.message.sender_first_name || t('common.unknown')}
+                          </span>
+                          <span className="flex items-center gap-1">
+                            <MessageSquare className="w-3 h-3" />
+                            @{selectedDeveloper.channel?.username || t('common.unknown')}
+                          </span>
+                          <span className="flex items-center gap-1">
+                            <Calendar className="w-3 h-3" />
+                            {selectedDeveloper.message.date ? new Date(selectedDeveloper.message.date).toLocaleString() : t('common.unknown')}
+                          </span>
+                        </div>
                       </div>
-                      <p className="text-sm text-gray-700 leading-relaxed whitespace-pre-wrap break-words">{selectedDeveloper.message?.text || t('developers.noTextContent')}</p>
-                      <div className="mt-3 pt-3 border-t border-gray-200 flex flex-wrap gap-x-4 gap-y-1 text-xs text-gray-500">
-                        <span className="flex items-center gap-1">
-                          <User className="w-3 h-3" />
-                          {selectedDeveloper.message?.sender_username || selectedDeveloper.message?.sender_first_name || t('common.unknown')}
-                        </span>
-                        <span className="flex items-center gap-1">
-                          <MessageSquare className="w-3 h-3" />
-                          @{selectedDeveloper.channel?.username || t('common.unknown')}
-                        </span>
-                        <span className="flex items-center gap-1">
-                          <Calendar className="w-3 h-3" />
-                          {selectedDeveloper.message?.date ? new Date(selectedDeveloper.message.date).toLocaleString() : t('common.unknown')}
-                        </span>
-                      </div>
-                    </div>
+                    )}
 
                     {/* Notes */}
                     {selectedDeveloper.notes && (

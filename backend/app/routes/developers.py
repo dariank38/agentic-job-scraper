@@ -17,6 +17,7 @@ def register_developer_routes(app):
     async def api_developers(
         looking_for_work: Optional[bool] = None,
         is_contacted: Optional[bool] = None,
+        has_contact: Optional[bool] = None,
         search: Optional[str] = None,
         limit: int = 10,
         offset: int = 0,
@@ -33,11 +34,22 @@ def register_developer_routes(app):
         if is_contacted is not None:
             query = query.filter(Developer.is_contacted == is_contacted)
 
+        if has_contact is not None:
+            if has_contact:
+                query = query.filter(Developer.contact.isnot(None))
+            else:
+                query = query.filter(Developer.contact.is_(None))
+
         # Apply search filter
         if search:
             search_pattern = f"%{search}%"
             query = query.where(
-                (Developer.name.ilike(search_pattern))
+                (Developer.name.ilike(search_pattern)) |
+                (Developer.contact.ilike(search_pattern)) |
+                (Developer.github.ilike(search_pattern)) |
+                (Developer.linkedin.ilike(search_pattern)) |
+                (Developer.portfolio.ilike(search_pattern)) |
+                (Developer.summary.ilike(search_pattern))
             )
 
         # Get total count

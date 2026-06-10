@@ -35,7 +35,9 @@ def register_job_routes(app):
             query = query.where(
                 (Job.title.ilike(search_pattern)) |
                 (Job.company.ilike(search_pattern)) |
-                (Job.location.ilike(search_pattern))
+                (Job.location.ilike(search_pattern)) |
+                (Job.summary.ilike(search_pattern)) |
+                (Job.company_link.ilike(search_pattern))
             )
 
         # Get total count
