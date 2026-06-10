@@ -56,21 +56,19 @@ const Developers = () => {
   const [developerToDelete, setDeveloperToDelete] = useState<number | null>(null);
   const lookingFilter = searchParams.get('looking_for_work');
   const contactedFilter = searchParams.get('is_contacted');
-  const hasContactFilter = searchParams.get('has_contact');
   const limit = 10;
   const offset = parseInt(searchParams.get('offset') || '0');
   const { showToast } = useToast();
 
   useEffect(() => {
     loadDevelopers();
-  }, [lookingFilter, contactedFilter, hasContactFilter, offset, searchQuery]);
+  }, [lookingFilter, contactedFilter, offset, searchQuery]);
 
   const loadDevelopers = async () => {
     try {
       const params: any = { limit, offset };
       if (lookingFilter) params.looking_for_work = lookingFilter;
       if (contactedFilter) params.is_contacted = contactedFilter;
-      if (hasContactFilter) params.has_contact = hasContactFilter;
       if (searchQuery) params.search = searchQuery;
       const data = await api.getDevelopers(params);
       setDevelopers(data.developers);
@@ -99,6 +97,19 @@ const Developers = () => {
   const handlePrevious = () => {
     const params = new URLSearchParams(searchParams);
     params.set('offset', Math.max(0, offset - limit).toString());
+    setSearchParams(params);
+  };
+
+  const handleFirst = () => {
+    const params = new URLSearchParams(searchParams);
+    params.set('offset', '0');
+    setSearchParams(params);
+  };
+
+  const handleLast = () => {
+    const params = new URLSearchParams(searchParams);
+    const lastOffset = Math.floor((total - 1) / limit) * limit;
+    params.set('offset', lastOffset.toString());
     setSearchParams(params);
   };
 
@@ -283,17 +294,7 @@ const Developers = () => {
                     <option value="true">{t('developers.contacted')}</option>
                     <option value="false">{t('developers.notContacted')}</option>
                   </select>
-                  <select
-                    id="has-contact-filter"
-                    defaultValue={hasContactFilter || ''}
-                    onChange={applyFilters}
-                    className="flex-1 px-3 py-2 rounded-md border border-gray-200 text-sm bg-white"
-                  >
-                    <option value="">All Contact Info</option>
-                    <option value="true">Has Contact</option>
-                    <option value="false">No Contact</option>
-                  </select>
-                  {(lookingFilter || contactedFilter || hasContactFilter || searchQuery) && (
+                  {(lookingFilter || contactedFilter || searchQuery) && (
                     <Button variant="ghost" size="sm" onClick={clearFilters}>
                       {t('common.clear')}
                     </Button>
@@ -367,25 +368,45 @@ const Developers = () => {
               {developers.length > 0 && (
                 <div className="px-4 pb-4 pt-0">
                   <div className="flex items-center justify-between pt-3 border-t">
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={handlePrevious}
-                      disabled={offset === 0}
-                    >
-                      {t('common.previous')}
-                    </Button>
+                    <div className="flex gap-2">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => handleFirst()}
+                        disabled={offset === 0}
+                      >
+                        {t('common.first')}
+                      </Button>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={handlePrevious}
+                        disabled={offset === 0}
+                      >
+                        {t('common.previous')}
+                      </Button>
+                    </div>
                     <span className="text-sm text-muted-foreground">
                       {t('common.page')} {Math.floor(offset / limit) + 1} / {Math.ceil(total / limit)} ({offset + 1}-{Math.min(offset + limit, total)} / {total})
                     </span>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={handleNext}
-                      disabled={offset + limit >= total}
-                    >
-                      {t('common.next')}
-                    </Button>
+                    <div className="flex gap-2">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={handleNext}
+                        disabled={offset + limit >= total}
+                      >
+                        {t('common.next')}
+                      </Button>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => handleLast()}
+                        disabled={offset + limit >= total}
+                      >
+                        {t('common.last')}
+                      </Button>
+                    </div>
                   </div>
                 </div>
               )}
