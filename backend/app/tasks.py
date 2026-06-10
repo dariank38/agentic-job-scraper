@@ -151,8 +151,8 @@ async def cleanup_stale_operations():
                 # 2. No corresponding stop event in memory (crash scenario)
                 is_stale = False
 
-                if op.created_at:
-                    age = datetime.now(timezone.utc) - op.created_at
+                if op.started_at:
+                    age = datetime.now(timezone.utc) - op.started_at.replace(tzinfo=timezone.utc)
                     if age > timedelta(hours=1):
                         is_stale = True
                         logger.info(f"[CLEANUP] Operation {op.id} stale: running for {age}")
@@ -718,14 +718,17 @@ async def analyze_messages(
                         message.analysis_status = "skipped"
                         continue
 
-                    title = _to_str(job_data.get("title"))
+                    # title is no longer a separate LLM field — extract from summary first sentence
+                    summary_text = _to_str(job_data.get("summary"))
+                    title = _to_str(job_data.get("title"))  # fallback if model still returns it
+                    if not title and summary_text:
+                        title = summary_text.split(".")[0].strip()[:200]
+                    if not title:
+                        title = f"[No Title] sender:{message.sender_username or message.sender_id or 'unknown'}"
                     company = _to_str(job_data.get("company"))
 
                     location = _to_str(job_data.get("location"))
                     contact, contact_type = _resolve_contact(job_data.get("contacts"), message)
-
-                    if not title:
-                        title = f"[No Title] sender:{message.sender_username or message.sender_id or 'unknown'}"
 
                     if title and company:
                         existing_job_result = await db.execute(
@@ -1025,6 +1028,7 @@ async def analyze_website_posts(
     source_name = website_source.name
     source_url = website_source.url
     custom_prompt = website_source.extraction_prompt
+    site_type = website_source.site_type
 
     if not await is_ollama_available():
         return {"success": False, "error": "Ollama not available"}
@@ -1073,7 +1077,8 @@ async def analyze_website_posts(
         consecutive_failures = 0
         max_consecutive_failures = 5
 
-        logger.info(f"[ANALYZE WEBSITE] Source: {source_name} | Messages: {total_messages} | Batches: {total_batches}")
+        prompt_type = "custom" if custom_prompt else (site_type or "generic")
+        logger.info(f"[ANALYZE WEBSITE] ▶ START | source={source_name} | url={source_url} | pending_messages={total_messages} | batches={total_batches} | batch_size={batch_size} | model={extractor.model} | prompt={prompt_type}")
 
         for batch_num in range(total_batches):
             # Check for stop signal
@@ -1095,13 +1100,17 @@ async def analyze_website_posts(
 
             batch_message_results = []
             for message in filtered_messages:
+                msg_preview = (message.text or '')[:120].replace('\n', ' ')
+                logger.info(f"[ANALYZE WEBSITE MSG] id={message.id} | preview={msg_preview!r}")
                 try:
                     # Use RSS extractor with custom prompt if provided
                     extracted_data = await extractor.extract(
                         message.text,
                         source_url,
-                        custom_prompt=custom_prompt
+                        custom_prompt=custom_prompt,
+                        site_type=site_type,
                     )
+                    logger.info(f"[ANALYZE WEBSITE MSG RESULT] id={message.id} | jobs={len(extracted_data.job_postings)} | developer={'yes' if extracted_data.developer_info else 'no'}")
 
                     # Process extracted job postings
                     for job in extracted_data.job_postings:
@@ -1126,6 +1135,7 @@ async def analyze_website_posts(
                         )
                         db.add(job_obj)
                         jobs_added += 1
+                        logger.info(f"[ANALYZE WEBSITE JOB SAVED] msg_id={message.id} | title={job_obj.title!r} | company={job_obj.company!r} | remote={job_obj.is_remote}")
 
                     # Process developer info if present
                     if extracted_data.developer_info:
@@ -1150,9 +1160,10 @@ async def analyze_website_posts(
                     message.analysis_status = "analyzed"
                     analyzed_count += 1
                     batch_message_results.append({"status": "success"})
+                    logger.info(f"[ANALYZE WEBSITE MSG OK] id={message.id} | status=analyzed | jobs_total={jobs_added}")
 
                 except Exception as e:
-                    logger.error(f"[ANALYZE WEBSITE] Error analyzing message {message.id}: {e}")
+                    logger.error(f"[ANALYZE WEBSITE] Error analyzing message {message.id}: {e}", exc_info=True)
                     message.analysis_status = "error"
                     batch_message_results.append({"status": "failed", "error": str(e)})
                     continue
@@ -1218,7 +1229,7 @@ async def analyze_website_posts(
             "operation_id": operation_id,
         })
 
-        logger.info(f"[ANALYZE WEBSITE] Completed: {source_name} | Jobs: {jobs_added} | Devs: {devs_added} | Analyzed: {analyzed_count}")
+        logger.info(f"[ANALYZE WEBSITE] ✓ COMPLETE | source={source_name} | analyzed={analyzed_count}/{total_messages} | jobs_saved={jobs_added} | devs_saved={devs_added} | skipped={skipped_count} | status={status}")
         return {
             "success": True,
             "analyzed": analyzed_count,

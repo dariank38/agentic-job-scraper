@@ -363,8 +363,10 @@ def register_action_routes(app):
                         job_result = await db.execute(select(Job).filter(Job.message_id == message.id))
                         job = job_result.scalar_one_or_none()
 
+                        _summary = job_data.get("summary") or ""
+                        _title = job_data.get("title") or (_summary.split(".")[0].strip()[:200] if _summary else None)
                         if job:
-                            job.title = job_data.get("title")
+                            job.title = _title
                             job.company = job_data.get("company")
                             job.location = job_data.get("location")
                             job.is_remote = _to_bool(job_data.get("is_remote"))
@@ -381,7 +383,7 @@ def register_action_routes(app):
                                 message_id=message.id,
                                 channel_id=message.channel_id,
                                 channel_name=channel.name if channel else None,  # channel is now defined
-                                title=job_data.get("title"),
+                                title=_title,
                                 company=job_data.get("company"),
                                 location=job_data.get("location"),
                                 is_remote=_to_bool(job_data.get("is_remote")),
@@ -592,7 +594,8 @@ def register_action_routes(app):
                 if isinstance(role_type, list):
                     role_type = ", ".join(role_type)
 
-                title = job_data.get("title")
+                summary_str = job_data.get("summary") or ""
+                title = job_data.get("title") or (summary_str.split(".")[0].strip()[:200] if summary_str else None)
                 company = job_data.get("company")
                 if title and company:
                     existing_job_result = await db.execute(

@@ -30,13 +30,15 @@ import {
   Zap,
 } from 'lucide-react';
 import api from '@/services/api';
-import type { Channel, Stats } from '@/services/api';
+import type { Channel, Stats, WebsiteSource } from '@/services/api';
 import { useWebSocketProgress, useToast } from '@/components/Layout';
 
 const Dashboard = () => {
   const { t } = useTranslation();
   const [stats, setStats] = useState<Stats | null>(null);
   const [channels, setChannels] = useState<Channel[]>([]);
+  const [websiteSources, setWebsiteSources] = useState<WebsiteSource[]>([]);
+  const [activeTab, setActiveTab] = useState('channels');
   const [loadingActions, setLoadingActions] = useState<Set<string>>(new Set());
   const { showToast } = useToast();
   const [cronRunning, setCronRunning] = useState(false);
@@ -56,6 +58,13 @@ const Dashboard = () => {
       loadData();
     }
   }, [wsProgress]);
+
+  // Track which website sources are currently being analyzed via WS (keyed by source name)
+  const wsSourceAnalyzing: Record<string, boolean> = {};
+  websiteSources.forEach(s => {
+    if (channelProgress[s.name]) wsSourceAnalyzing[s.name] = true;
+  });
+  const anyWebsiteAnalyzing = Object.keys(wsSourceAnalyzing).length > 0;
 
   // Derive effective bulk operation (local state or from context polling)
   const effectiveBulkOperation = bulkOperation || (bulkOperations.length > 0 ? {
@@ -86,13 +95,15 @@ const Dashboard = () => {
 
   const loadData = async () => {
     try {
-      const [statsData, channelsData] = await Promise.all([
+      const [statsData, channelsData, sourcesData] = await Promise.all([
         api.getStats(),
         api.getChannels({ limit, offset }),
+        api.getWebsiteSources(),
       ]);
       setStats(statsData);
       setChannels(channelsData.channels);
       setTotal(channelsData.total || 0);
+      setWebsiteSources(sourcesData.sources || []);
       setInitialLoading(false);
     } catch (error) {
       setInitialLoading(false);
@@ -333,6 +344,95 @@ const Dashboard = () => {
     }
   };
 
+  const fetchWebsiteSource = async (sourceId: number) => {
+    try {
+      const data = await withLoading(`fetch-ws-${sourceId}`, () => api.fetchWebsiteSource(sourceId));
+      if (data.success) {
+        showToast('success', t('dashboard.fetchedMessages', { count: data.new_messages ?? data.fetched ?? 0, days: data.days_back_used ?? 0 }));
+        loadData();
+      } else {
+        showToast('error', `${t('common.error')}: ` + (data.error || data.detail || t('common.unknown')));
+      }
+    } catch (e: any) {
+      showToast('error', `${t('common.error')}: ` + e.message);
+    }
+  };
+
+  const analyzeWebsiteSource = async (sourceId: number) => {
+    try {
+      if (!stats?.ollama_available) {
+        showToast('error', t('dashboard.ollamaUnavailable'));
+        return;
+      }
+      const data = await withLoading(`analyze-ws-${sourceId}`, () => api.analyzeWebsiteSource(sourceId));
+      if (data.success) {
+        showToast('success', data.message || t('dashboard.analyzeComplete', { analyzed: data.analyzed ?? 0, jobs: data.jobs_found ?? 0, devs: 0 }));
+        setTimeout(() => loadData(), 2000);
+      } else {
+        showToast('error', `${t('common.error')}: ` + (data.error || data.detail || t('common.unknown')));
+      }
+    } catch (e: any) {
+      showToast('error', `${t('common.error')}: ` + e.message);
+    }
+  };
+
+  const stopWebsiteSource = async (sourceId: number, sourceName: string) => {
+    try {
+      requestStop(sourceId, sourceName);
+      const data = await api.stopWebsiteSource(sourceId);
+      if (data.success) {
+        showToast('success', t('dashboard.stopSignalSent'));
+      } else {
+        showToast('warning', data.message || t('dashboard.noActiveAnalysis'));
+      }
+    } catch (e: any) {
+      showToast('error', `${t('common.error')}: ` + e.message);
+    }
+  };
+
+  const fetchAllWebsites = async () => {
+    try {
+      const data = await withLoading('fetch-all-ws', () => api.fetchAllWebsiteSources());
+      if (data.success) {
+        showToast('success', t('dashboard.fetchedAllMessages', { count: data.total_new ?? 0 }));
+        loadData();
+      } else {
+        showToast('error', `${t('common.error')}: ` + (data.error || t('common.unknown')));
+      }
+    } catch (e: any) {
+      showToast('error', `${t('common.error')}: ` + e.message);
+    }
+  };
+
+  const analyzeAllWebsites = async () => {
+    try {
+      if (!stats?.ollama_available) {
+        showToast('error', t('dashboard.ollamaUnavailable'));
+        return;
+      }
+      const data = await withLoading('analyze-all-ws', () => api.analyzeAllWebsiteSources());
+      if (data.success) {
+        showToast('success', data.message || t('dashboard.analysisStarted', { count: data.sources ?? 0 }));
+        setTimeout(() => loadData(), 2000);
+      } else {
+        showToast('error', `${t('common.error')}: ` + (data.error || t('common.unknown')));
+      }
+    } catch (e: any) {
+      showToast('error', `${t('common.error')}: ` + e.message);
+    }
+  };
+
+  const stopAllWebsites = async () => {
+    const activeSources = websiteSources.filter(s => wsSourceAnalyzing[s.name]);
+    for (const source of activeSources) {
+      try {
+        requestStop(source.id, source.name);
+        await api.stopWebsiteSource(source.id);
+      } catch {}
+    }
+    showToast('success', t('dashboard.stopSignalSent'));
+  };
+
   const stopBulkOperation = async () => {
     const targetBulkOp = bulkOperation || effectiveBulkOperation;
     if (!targetBulkOp) return;
@@ -478,6 +578,41 @@ const Dashboard = () => {
               <Separator />
 
               <div>
+                <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-1.5">{t('websiteSources.title')}</p>
+                <div className="flex flex-col gap-2">
+                  <Button
+                    className="w-full justify-start"
+                    onClick={() => fetchAllWebsites()}
+                    disabled={loadingActions.has('fetch-all-ws') || loadingActions.has('analyze-all-ws') || anyWebsiteAnalyzing}
+                  >
+                    <RefreshCw size={14} className="mr-2" />
+                    {loadingActions.has('fetch-all-ws') ? t('dashboard.fetching') : anyWebsiteAnalyzing ? t('dashboard.operationInProgress') : t('dashboard.fetchAll')}
+                  </Button>
+                  <Button
+                    className="w-full justify-start"
+                    variant="outline"
+                    onClick={() => analyzeAllWebsites()}
+                    disabled={loadingActions.has('analyze-all-ws') || loadingActions.has('fetch-all-ws') || anyWebsiteAnalyzing}
+                  >
+                    <Bot size={14} className="mr-2" />
+                    {(loadingActions.has('analyze-all-ws') || anyWebsiteAnalyzing) ? t('dashboard.analyzing') : t('dashboard.analyzeAll')}
+                  </Button>
+                  {anyWebsiteAnalyzing && (
+                    <Button
+                      className="w-full justify-start"
+                      variant="destructive"
+                      onClick={() => stopAllWebsites()}
+                    >
+                      <Square size={14} className="mr-2" />
+                      {t('dashboard.stopAnalyzeAll')}
+                    </Button>
+                  )}
+                </div>
+              </div>
+
+              <Separator />
+
+              <div>
                 <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-1.5">{t('dashboard.cronJob')}</p>
                 <div className="flex items-center justify-between p-3 rounded-lg bg-gray-50 border mb-2">
                   <div className="flex items-center gap-2">
@@ -540,154 +675,275 @@ const Dashboard = () => {
           </Card>
         </div>
 
-        {/* Channels List */}
+        {/* Channels / Website Sources List */}
         <div className="lg:col-span-2">
           <Card>
             <CardHeader className="px-4 py-3 pb-2">
               <div className="flex justify-between items-center">
-                <CardTitle className="flex items-center gap-1.5 text-sm">
-                  <Radio size={14} className="text-blue-500" />
-                  {t('dashboard.channels')} ({total})
-                </CardTitle>
+                <div className="flex gap-1 bg-muted p-1 rounded-lg">
+                  <button
+                    onClick={() => setActiveTab('channels')}
+                    className={`flex items-center gap-1 px-3 py-1 rounded-md text-xs font-medium transition-colors ${activeTab === 'channels' ? 'bg-background text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'}`}
+                  >
+                    <Radio size={12} />
+                    {t('dashboard.channels')} ({total})
+                  </button>
+                  <button
+                    onClick={() => setActiveTab('websites')}
+                    className={`flex items-center gap-1 px-3 py-1 rounded-md text-xs font-medium transition-colors ${activeTab === 'websites' ? 'bg-background text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'}`}
+                  >
+                    <RefreshCw size={12} />
+                    {t('websiteSources.title')} ({websiteSources.length})
+                  </button>
+                </div>
                 <Button asChild variant="ghost" size="sm">
-                  <Link to="/channels" className="text-xs">{t('dashboard.manage')} <ChevronRight size={12} className="inline" /></Link>
+                  <Link to={activeTab === 'channels' ? '/channels' : '/websites'} className="text-xs">
+                    {t('dashboard.manage')} <ChevronRight size={12} className="inline" />
+                  </Link>
                 </Button>
               </div>
             </CardHeader>
             <CardContent className="p-0">
-              {initialLoading ? (
-                <div className="px-4 py-8 text-center">
-                  <Loader2 className="w-5 h-5 text-gray-400 animate-spin mx-auto mb-2" />
-                  <p className="text-sm text-gray-500">{t('dashboard.loadingChannels')}</p>
-                </div>
-              ) : channels.length > 0 ? (
+              {activeTab === 'channels' ? (
                 <>
-                  {channels.map((channel) => (
-                    <div key={channel.id} className="px-4 py-3 border-b last:border-b-0 hover:bg-gray-50 transition-colors">
-                      <div className="flex justify-between items-center gap-3">
-                        <div className="min-w-0">
-                          <div className="flex items-center gap-2 mb-0.5">
-                            <p className="font-semibold text-gray-900 truncate">{channel.username}</p>
-                            <Badge variant={channel.is_active ? 'default' : 'secondary'} className="text-xs">
-                              {channel.is_active ? t('channels.active') : t('channels.inactive')}
-                            </Badge>
-                          </div>
-                          {channel.name && <p className="text-xs text-gray-500 truncate">{channel.name}</p>}
-                          <p className="text-xs text-gray-400 mt-0.5">
-                            {(channel.message_count || 0).toLocaleString()} msgs &bull; {(channel.job_count || 0).toLocaleString()} jobs
-                            {(channel.last_fetch_new_count || 0) > 0 && (
-                              <span className="ml-2 inline-flex items-center px-1.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
-                                +{channel.last_fetch_new_count} {t('websites.fetched')}
-                              </span>
-                            )}
-                            {(channel.pending_count || 0) > 0 && (
-                              <span className="ml-2 inline-flex items-center px-1.5 py-0.5 rounded-full text-xs font-medium bg-orange-100 text-orange-800">
-                                {channel.pending_count} {t('dashboard.pendingAnalysis')}
-                              </span>
-                            )}
-                          </p>
-                          {channelProgress[channel.username] && (
-                            <div className="mt-2">
-                              <div className="flex justify-between text-xs mb-1">
-                                <span className={stoppingChannels[channel.username] ? 'text-orange-600 font-medium' : ''}>
-                                  {stoppingChannels[channel.username] ? t('dashboard.stoppingProgress') : t('dashboard.analyzingProgress')}
-                                </span>
-                                <span>{channelProgress[channel.username].analyzed}/{channelProgress[channel.username].total}</span>
+                  {initialLoading ? (
+                    <div className="px-4 py-8 text-center">
+                      <Loader2 className="w-5 h-5 text-gray-400 animate-spin mx-auto mb-2" />
+                      <p className="text-sm text-gray-500">{t('dashboard.loadingChannels')}</p>
+                    </div>
+                  ) : channels.length > 0 ? (
+                    <>
+                      {channels.map((channel) => (
+                        <div key={channel.id} className="px-4 py-3 border-b last:border-b-0 hover:bg-gray-50 transition-colors">
+                          <div className="flex justify-between items-center gap-3">
+                            <div className="min-w-0">
+                              <div className="flex items-center gap-2 mb-0.5">
+                                <p className="font-semibold text-gray-900 truncate">{channel.username}</p>
+                                <Badge variant={channel.is_active ? 'default' : 'secondary'} className="text-xs">
+                                  {channel.is_active ? t('channels.active') : t('channels.inactive')}
+                                </Badge>
                               </div>
-                              <div className="w-full bg-gray-200 rounded-full h-2">
-                                <div
-                                  className={`h-2 rounded-full transition-all ${stoppingChannels[channel.username] ? 'bg-orange-500' : 'bg-blue-600'}`}
-                                  style={{ width: `${(channelProgress[channel.username].total > 0 ? (channelProgress[channel.username].analyzed / channelProgress[channel.username].total) * 100 : 0)}%` }}
-                                />
-                              </div>
-                              {tokenUsage[channel.username] && (
-                                <div className="flex justify-between text-xs mt-1 text-gray-500">
-                                  <span>🤖 {(tokenUsage[channel.username].total / 1000).toFixed(1)}k tokens</span>
-                                  <span>⬆{(tokenUsage[channel.username].input / 1000).toFixed(1)}k ⬇{(tokenUsage[channel.username].output / 1000).toFixed(1)}k</span>
-                                </div>
-                              )}
-                              {messageResults[channel.username] && messageResults[channel.username].length > 0 && (
-                                <div className="mt-2 text-xs">
-                                  <div className="flex gap-2 text-gray-500">
-                                    <span>✓ {messageResults[channel.username].filter((r: any) => r.status === 'success').length}</span>
-                                    <span className="text-orange-500">⚠ {messageResults[channel.username].filter((r: any) => r.status === 'json_cutoff').length}</span>
-                                    <span className="text-red-500">✗ {messageResults[channel.username].filter((r: any) => r.status === 'failed').length}</span>
-                                    <span className="text-gray-400">○ {messageResults[channel.username].filter((r: any) => r.status === 'other').length}</span>
+                              {channel.name && <p className="text-xs text-gray-500 truncate">{channel.name}</p>}
+                              <p className="text-xs text-gray-400 mt-0.5">
+                                {(channel.message_count || 0).toLocaleString()} msgs &bull; {(channel.job_count || 0).toLocaleString()} jobs
+                                {(channel.last_fetch_new_count || 0) > 0 && (
+                                  <span className="ml-2 inline-flex items-center px-1.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
+                                    +{channel.last_fetch_new_count} {t('websites.fetched')}
+                                  </span>
+                                )}
+                                {(channel.pending_count || 0) > 0 && (
+                                  <span className="ml-2 inline-flex items-center px-1.5 py-0.5 rounded-full text-xs font-medium bg-orange-100 text-orange-800">
+                                    {channel.pending_count} {t('dashboard.pendingAnalysis')}
+                                  </span>
+                                )}
+                              </p>
+                              {channelProgress[channel.username] && (
+                                <div className="mt-2">
+                                  <div className="flex justify-between text-xs mb-1">
+                                    <span className={stoppingChannels[channel.username] ? 'text-orange-600 font-medium' : ''}>
+                                      {stoppingChannels[channel.username] ? t('dashboard.stoppingProgress') : t('dashboard.analyzingProgress')}
+                                    </span>
+                                    <span>{channelProgress[channel.username].analyzed}/{channelProgress[channel.username].total}</span>
                                   </div>
+                                  <div className="w-full bg-gray-200 rounded-full h-2">
+                                    <div
+                                      className={`h-2 rounded-full transition-all ${stoppingChannels[channel.username] ? 'bg-orange-500' : 'bg-blue-600'}`}
+                                      style={{ width: `${(channelProgress[channel.username].total > 0 ? (channelProgress[channel.username].analyzed / channelProgress[channel.username].total) * 100 : 0)}%` }}
+                                    />
+                                  </div>
+                                  {tokenUsage[channel.username] && (
+                                    <div className="flex justify-between text-xs mt-1 text-gray-500">
+                                      <span>🤖 {(tokenUsage[channel.username].total / 1000).toFixed(1)}k tokens</span>
+                                      <span>⬆{(tokenUsage[channel.username].input / 1000).toFixed(1)}k ⬇{(tokenUsage[channel.username].output / 1000).toFixed(1)}k</span>
+                                    </div>
+                                  )}
+                                  {messageResults[channel.username] && messageResults[channel.username].length > 0 && (
+                                    <div className="mt-2 text-xs">
+                                      <div className="flex gap-2 text-gray-500">
+                                        <span>✓ {messageResults[channel.username].filter((r: any) => r.status === 'success').length}</span>
+                                        <span className="text-orange-500">⚠ {messageResults[channel.username].filter((r: any) => r.status === 'json_cutoff').length}</span>
+                                        <span className="text-red-500">✗ {messageResults[channel.username].filter((r: any) => r.status === 'failed').length}</span>
+                                        <span className="text-gray-400">○ {messageResults[channel.username].filter((r: any) => r.status === 'other').length}</span>
+                                      </div>
+                                    </div>
+                                  )}
                                 </div>
                               )}
                             </div>
-                          )}
+                            <div className="flex gap-2 flex-shrink-0">
+                              {!(loadingActions.has(`fetch-${channel.id}`) || loadingActions.has(`analyze-${channel.id}`) || !!operations[channel.username]) && (
+                                <>
+                                  <Button
+                                    size="sm"
+                                    variant="outline"
+                                    onClick={() => fetchChannel(channel.id)}
+                                    disabled={loadingActions.has(`fetch-${channel.id}`)}
+                                  >
+                                    <RefreshCw size={12} className="mr-1" />
+                                    {loadingActions.has(`fetch-${channel.id}`) ? t('dashboard.fetching') : t('channels.fetch')}
+                                  </Button>
+                                  <Button
+                                    size="sm"
+                                    onClick={() => analyzeChannel(channel.id)}
+                                    disabled={loadingActions.has(`analyze-${channel.id}`)}
+                                  >
+                                    <Bot size={12} className="mr-1" />
+                                    {loadingActions.has(`analyze-${channel.id}`) ? t('dashboard.analyzing') : t('channels.analyze')}
+                                  </Button>
+                                </>
+                              )}
+                              {(loadingActions.has(`fetch-${channel.id}`) || loadingActions.has(`analyze-${channel.id}`) || !!operations[channel.username]) && (
+                                <Button
+                                  size="sm"
+                                  variant="destructive"
+                                  onClick={() => stopAnalyzeChannel(channel.id, channel.username)}
+                                  title={t('common.stop')}
+                                  disabled={stoppingChannels[channel.id] || stoppingChannels[channel.username]}
+                                >
+                                  <Square size={12} className="mr-1" />
+                                  {stoppingChannels[channel.id] || stoppingChannels[channel.username] ? t('channels.stopping') : t('common.stop')}
+                                </Button>
+                              )}
+                            </div>
+                          </div>
                         </div>
-                        <div className="flex gap-2 flex-shrink-0">
-                          {!(loadingActions.has(`fetch-${channel.id}`) || loadingActions.has(`analyze-${channel.id}`) || !!operations[channel.username]) && (
-                            <>
-                              <Button
-                                size="sm"
-                                variant="outline"
-                                onClick={() => fetchChannel(channel.id)}
-                                disabled={loadingActions.has(`fetch-${channel.id}`)}
-                              >
-                                <RefreshCw size={12} className="mr-1" />
-                                {loadingActions.has(`fetch-${channel.id}`) ? t('dashboard.fetching') : t('channels.fetch')}
-                              </Button>
-                              <Button
-                                size="sm"
-                                onClick={() => analyzeChannel(channel.id)}
-                                disabled={loadingActions.has(`analyze-${channel.id}`)}
-                              >
-                                <Bot size={12} className="mr-1" />
-                                {loadingActions.has(`analyze-${channel.id}`) ? t('dashboard.analyzing') : t('channels.analyze')}
-                              </Button>
-                            </>
-                          )}
-                          {(loadingActions.has(`fetch-${channel.id}`) || loadingActions.has(`analyze-${channel.id}`) || !!operations[channel.username]) && (
-                            <Button
-                              size="sm"
-                              variant="destructive"
-                              onClick={() => stopAnalyzeChannel(channel.id, channel.username)}
-                              title={t('common.stop')}
-                              disabled={stoppingChannels[channel.id] || stoppingChannels[channel.username]}
-                            >
-                              <Square size={12} className="mr-1" />
-                              {stoppingChannels[channel.id] || stoppingChannels[channel.username] ? t('channels.stopping') : t('common.stop')}
-                            </Button>
-                          )}
-                        </div>
+                      ))}
+                      {/* Pagination */}
+                      <div className="px-4 py-3 border-t flex items-center justify-between">
+                        <Button variant="outline" size="sm" onClick={handlePrevious} disabled={offset === 0}>
+                          {t('common.previous')}
+                        </Button>
+                        <span className="text-sm text-muted-foreground">
+                          Page {Math.floor(offset / limit) + 1} of {Math.ceil(total / limit)} ({offset + 1}-{Math.min(offset + limit, total)} of {total})
+                        </span>
+                        <Button variant="outline" size="sm" onClick={handleNext} disabled={offset + limit >= total}>
+                          {t('common.next')}
+                        </Button>
                       </div>
+                    </>
+                  ) : (
+                    <div className="px-4 py-8 text-center">
+                      <Radio size={32} className="text-gray-200 mx-auto mb-3" />
+                      <p className="text-sm text-gray-500">{t('dashboard.noChannelsConfigured')}</p>
+                      <Button asChild variant="outline" size="sm" className="mt-3">
+                        <Link to="/channels">{t('dashboard.addFirstChannel')}</Link>
+                      </Button>
                     </div>
-                  ))}
-                  {/* Pagination */}
-                  <div className="px-4 py-3 border-t flex items-center justify-between">
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={handlePrevious}
-                      disabled={offset === 0}
-                    >
-                      {t('common.previous')}
-                    </Button>
-                    <span className="text-sm text-muted-foreground">
-                      Page {Math.floor(offset / limit) + 1} of {Math.ceil(total / limit)} ({offset + 1}-{Math.min(offset + limit, total)} of {total})
-                    </span>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={handleNext}
-                      disabled={offset + limit >= total}
-                    >
-                      {t('common.next')}
-                    </Button>
-                  </div>
+                  )}
                 </>
               ) : (
-                <div className="px-4 py-8 text-center">
-                  <Radio size={32} className="text-gray-200 mx-auto mb-3" />
-                  <p className="text-sm text-gray-500">{t('dashboard.noChannelsConfigured')}</p>
-                  <Button asChild variant="outline" size="sm" className="mt-3">
-                    <Link to="/channels">{t('dashboard.addFirstChannel')}</Link>
-                  </Button>
-                </div>
+                <>
+                  {websiteSources.length > 0 ? (
+                    websiteSources.map((source) => (
+                      <div key={source.id} className="px-4 py-3 border-b last:border-b-0 hover:bg-gray-50 transition-colors">
+                        <div className="flex justify-between items-center gap-3">
+                          <div className="min-w-0">
+                            <div className="flex items-center gap-2 mb-0.5">
+                              <p className="font-semibold text-gray-900 truncate">{source.name}</p>
+                              <Badge variant={source.is_active ? 'default' : 'secondary'} className="text-xs">
+                                {source.is_active ? t('channels.active') : t('channels.inactive')}
+                              </Badge>
+                              <Badge variant="outline" className="text-xs">{source.site_type}</Badge>
+                            </div>
+                            <a href={source.url} target="_blank" rel="noopener noreferrer" className="text-xs text-blue-500 hover:underline truncate block">
+                              {source.url}
+                            </a>
+                            <p className="text-xs text-gray-400 mt-0.5">
+                              {(source.message_count || 0).toLocaleString()} posts &bull; {(source.job_count || 0).toLocaleString()} jobs
+                              {(source.last_fetch_new_count || 0) > 0 && (
+                                <span className="ml-2 inline-flex items-center px-1.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
+                                  +{source.last_fetch_new_count} {t('websites.fetched')}
+                                </span>
+                              )}
+                              {(source.pending_count || 0) > 0 && (
+                                <span className="ml-2 inline-flex items-center px-1.5 py-0.5 rounded-full text-xs font-medium bg-orange-100 text-orange-800">
+                                  {source.pending_count} {t('dashboard.pendingAnalysis')}
+                                </span>
+                              )}
+                            </p>
+                            {source.last_fetch_at && (
+                              <p className="text-xs text-gray-400 mt-0.5">
+                                {t('websiteSources.lastFetch')}: {new Date(source.last_fetch_at).toLocaleString()}
+                              </p>
+                            )}
+                            {channelProgress[source.name] && (
+                              <div className="mt-2">
+                                <div className="flex justify-between text-xs mb-1">
+                                  <span className={stoppingChannels[source.name] ? 'text-orange-600 font-medium' : 'text-blue-600 font-medium'}>
+                                    {stoppingChannels[source.name] ? t('dashboard.stoppingProgress') : t('dashboard.analyzingProgress')}
+                                  </span>
+                                  <span>{channelProgress[source.name].analyzed}/{channelProgress[source.name].total}</span>
+                                </div>
+                                <div className="w-full bg-gray-200 rounded-full h-2">
+                                  <div
+                                    className={`h-2 rounded-full transition-all ${stoppingChannels[source.name] ? 'bg-orange-500' : 'bg-blue-600'}`}
+                                    style={{ width: `${channelProgress[source.name].total > 0 ? (channelProgress[source.name].analyzed / channelProgress[source.name].total) * 100 : 0}%` }}
+                                  />
+                                </div>
+                                {tokenUsage[source.name] && (
+                                  <div className="flex justify-between text-xs mt-1 text-gray-500">
+                                    <span>🤖 {(tokenUsage[source.name].total / 1000).toFixed(1)}k tokens</span>
+                                    <span>⬆{(tokenUsage[source.name].input / 1000).toFixed(1)}k ⬇{(tokenUsage[source.name].output / 1000).toFixed(1)}k</span>
+                                  </div>
+                                )}
+                                {messageResults[source.name] && messageResults[source.name].length > 0 && (
+                                  <div className="mt-2 text-xs">
+                                    <div className="flex gap-2 text-gray-500">
+                                      <span>✓ {messageResults[source.name].filter((r: any) => r.status === 'success').length}</span>
+                                      <span className="text-orange-500">⚠ {messageResults[source.name].filter((r: any) => r.status === 'json_cutoff').length}</span>
+                                      <span className="text-red-500">✗ {messageResults[source.name].filter((r: any) => r.status === 'failed').length}</span>
+                                      <span className="text-gray-400">○ {messageResults[source.name].filter((r: any) => r.status === 'other').length}</span>
+                                    </div>
+                                  </div>
+                                )}
+                              </div>
+                            )}
+                          </div>
+                          <div className="flex gap-2 flex-shrink-0">
+                            {!(loadingActions.has(`fetch-ws-${source.id}`) || loadingActions.has(`analyze-ws-${source.id}`) || !!wsSourceAnalyzing[source.name]) && (
+                              <>
+                                <Button
+                                  size="sm"
+                                  variant="outline"
+                                  onClick={() => fetchWebsiteSource(source.id)}
+                                >
+                                  <RefreshCw size={12} className="mr-1" />
+                                  {t('channels.fetch')}
+                                </Button>
+                                <Button
+                                  size="sm"
+                                  onClick={() => analyzeWebsiteSource(source.id)}
+                                >
+                                  <Bot size={12} className="mr-1" />
+                                  {t('channels.analyze')}
+                                </Button>
+                              </>
+                            )}
+                            {(loadingActions.has(`fetch-ws-${source.id}`) || loadingActions.has(`analyze-ws-${source.id}`) || !!wsSourceAnalyzing[source.name]) && (
+                              <Button
+                                size="sm"
+                                variant="destructive"
+                                onClick={() => stopWebsiteSource(source.id, source.name)}
+                                disabled={stoppingChannels[source.id] || stoppingChannels[source.name]}
+                              >
+                                <Square size={12} className="mr-1" />
+                                {stoppingChannels[source.id] || stoppingChannels[source.name] ? t('channels.stopping') : t('common.stop')}
+                              </Button>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    ))
+                  ) : (
+                    <div className="px-4 py-8 text-center">
+                      <RefreshCw size={32} className="text-gray-200 mx-auto mb-3" />
+                      <p className="text-sm text-gray-500">{t('websiteSources.noSources')}</p>
+                      <Button asChild variant="outline" size="sm" className="mt-3">
+                        <Link to="/websites">{t('dashboard.manage')}</Link>
+                      </Button>
+                    </div>
+                  )}
+                </>
               )}
             </CardContent>
           </Card>
