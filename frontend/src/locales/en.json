@@ -232,6 +232,7 @@
     "deleteWarning": "Are you sure you want to delete this website source? This action cannot be undone."
   },
   "developers": {
+    "title": "Developers",
     "name": "Name",
     "skills": "Skills",
     "portfolio": "Portfolio",

@@ -8,6 +8,7 @@ from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.connection import get_db
+from web_crawler.config import DEFAULT_DAYS_BACK
 from app.models import WebsiteSource, Message, Job
 from web_crawler import Fetcher, Extractor
 from app.tasks import broadcast_progress, create_operation, update_operation, stop_website_operation, website_stop_events
@@ -231,7 +232,7 @@ def register_website_source_routes(app):
 
             # Fetch RSS — save as Messages, analyze separately via Analyze button
             crawler = Fetcher()
-            fetch_result = await crawler.fetch(source.url)
+            fetch_result = await crawler.fetch(source.url, days_back=DEFAULT_DAYS_BACK)
             rss_entries = fetch_result["content"]
 
             if not rss_entries:

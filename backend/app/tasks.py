@@ -362,7 +362,7 @@ def _resolve_contact(contacts, message) -> tuple[Optional[str], Optional[str]]:
 async def fetch_and_store_messages(
     db: AsyncSession,
     channel: Channel,
-    days_back: int = 15,
+    days_back: int = 2,
     run_id: Optional[int] = None,
     account_id: Optional[int] = None,
     bulk_operation_id: Optional[str] = None,
