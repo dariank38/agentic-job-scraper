@@ -7,6 +7,14 @@ import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
 import { Skeleton } from '@/components/ui/skeleton';
 import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
+import {
   ChevronDown,
   Loader2,
   MessageSquare,
@@ -33,6 +41,7 @@ interface Message {
   sender_first_name?: string;
   has_image: boolean;
   analysis_status: string;
+  skip_reason?: string;
   source_type: string;
   channel?: {
     id: number;
@@ -43,6 +52,15 @@ interface Message {
     id: number;
     name: string;
     url: string;
+  };
+  job?: {
+    id: number;
+    title?: string;
+    company?: string;
+  };
+  developer?: {
+    id: number;
+    name?: string;
   };
 }
 
@@ -58,6 +76,8 @@ const Messages = () => {
   const [searchInput, setSearchInput] = useState('');
   const [statusFilter, setStatusFilter] = useState('all');
   const [reanalyzingId, setReanalyzingId] = useState<number | null>(null);
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
+  const [messageToDelete, setMessageToDelete] = useState<number | null>(null);
   const limit = 8;
   const offset = parseInt(searchParams.get('offset') || '0');
   const { showToast } = useToast();
@@ -137,6 +157,28 @@ const Messages = () => {
       showToast('error', errorMessage);
     } finally {
       setReanalyzingId(null);
+    }
+  };
+
+  const handleDeleteMessage = async () => {
+    if (!messageToDelete) return;
+    try {
+      const data = await api.deleteMessage(messageToDelete);
+      if (data.success) {
+        showToast('success', t('messages.deletedSuccessfully'));
+        loadMessages();
+        setDeleteDialogOpen(false);
+        setMessageToDelete(null);
+      }
+    } catch (e: any) {
+      let errorMessage = `${t('common.failedToDelete')} ${t('messages.title')}`;
+      if (e.response) {
+        const errorData = await e.response.json().catch(() => ({}));
+        errorMessage = errorData.detail || errorMessage;
+      } else if (e.message) {
+        errorMessage = e.message;
+      }
+      showToast('error', errorMessage);
     }
   };
 
@@ -290,21 +332,55 @@ const Messages = () => {
                                   {t('messages.image')}
                                 </Badge>
                               )}
-                              {msg.analysis_status === 'skipped' && (
+                              {msg.job && (
                                 <Button
-                                  variant="ghost"
+                                  variant="outline"
                                   size="sm"
-                                  onClick={(e) => { e.stopPropagation(); reanalyzeSingle(msg.id); }}
-                                  disabled={reanalyzingId === msg.id}
+                                  asChild
                                   className="text-xs h-6 px-2"
                                 >
-                                  {reanalyzingId === msg.id ? (
-                                    <Loader2 className="w-3 h-3 mr-1 animate-spin" />
-                                  ) : (
-                                    <RotateCcw className="w-3 h-3 mr-1" />
-                                  )}
-                                  {t('messages.reanalyze')}
+                                  <a href={`/jobs?jobId=${msg.job.id}`}>
+                                    {t('messages.viewJob')}
+                                  </a>
                                 </Button>
+                              )}
+                              {msg.developer && (
+                                <Button
+                                  variant="outline"
+                                  size="sm"
+                                  asChild
+                                  className="text-xs h-6 px-2"
+                                >
+                                  <a href={`/developers?developerId=${msg.developer.id}`}>
+                                    {t('messages.viewDeveloper')}
+                                  </a>
+                                </Button>
+                              )}
+                              {msg.analysis_status === 'skipped' && (
+                                <>
+                                  <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    onClick={(e) => { e.stopPropagation(); reanalyzeSingle(msg.id); }}
+                                    disabled={reanalyzingId === msg.id}
+                                    className="text-xs h-6 px-2"
+                                  >
+                                    {reanalyzingId === msg.id ? (
+                                      <Loader2 className="w-3 h-3 mr-1 animate-spin" />
+                                    ) : (
+                                      <RotateCcw className="w-3 h-3 mr-1" />
+                                    )}
+                                    {t('messages.reanalyze')}
+                                  </Button>
+                                  <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    onClick={(e) => { e.stopPropagation(); setMessageToDelete(msg.id); setDeleteDialogOpen(true); }}
+                                    className="text-xs h-6 px-2 text-red-600 hover:text-red-700 hover:bg-red-50"
+                                  >
+                                    {t('common.delete')}
+                                  </Button>
+                                </>
                               )}
                             </div>
                             
@@ -334,6 +410,15 @@ const Messages = () => {
                   </summary>
                   <Card className="mt-2 bg-gray-50">
                     <CardContent className="pt-4">
+                      {msg.skip_reason && (
+                        <div className="mb-3 p-2 bg-amber-50 border border-amber-200 rounded-lg">
+                          <div className="flex items-center gap-2 text-xs text-amber-800">
+                            <SkipForward className="w-3.5 h-3.5" />
+                            <span className="font-medium">{t('messages.skipReason')}:</span>
+                            <span>{msg.skip_reason}</span>
+                          </div>
+                        </div>
+                      )}
                       <div className="flex items-center gap-2 mb-3 text-xs text-gray-500">
                         <MessageSquare className="w-3.5 h-3.5" />
                         <span>{t('messages.fullMessage')}</span>
@@ -384,6 +469,27 @@ const Messages = () => {
           </CardContent>
         </Card>
       )}
+
+      {/* Delete Confirmation Dialog */}
+      <Dialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>{t('messages.deleteConfirm')}</DialogTitle>
+            <DialogDescription>
+              {t('messages.deleteWarning')}
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setDeleteDialogOpen(false)}>
+              {t('common.cancel')}
+            </Button>
+            <Button variant="destructive" onClick={handleDeleteMessage}>
+              {t('common.delete')}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
     </>
   );
 };

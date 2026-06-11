@@ -40,15 +40,19 @@ def register_job_routes(app):
         if is_applied is not None:
             query = query.filter(Job.is_applied == is_applied)
 
-        # Apply search filter
+        # Apply search filter — searches title, company, location, summary, company_link, role_type, skills, contact
         if search:
+            from sqlalchemy import cast, String
             search_pattern = f"%{search}%"
             query = query.where(
                 (Job.title.ilike(search_pattern)) |
                 (Job.company.ilike(search_pattern)) |
                 (Job.location.ilike(search_pattern)) |
                 (Job.summary.ilike(search_pattern)) |
-                (Job.company_link.ilike(search_pattern))
+                (Job.company_link.ilike(search_pattern)) |
+                (Job.role_type.ilike(search_pattern)) |
+                (cast(Job.skills, String).ilike(search_pattern)) |
+                (Job.contact.ilike(search_pattern))
             )
 
         # Get total count
@@ -57,12 +61,14 @@ def register_job_routes(app):
         total = total_result.scalar()
 
         # Get jobs with pagination, eagerly load message, channel, and website_source
-        # Order by analyzed_at (works for both telegram and website sources)
+        # Also eagerly load job/developer on message to prevent circular lazy-loading
+        from sqlalchemy import func as sql_func
         jobs_query = query.options(
-            selectinload(Job.message),
+            selectinload(Job.message).selectinload(Message.job),
+            selectinload(Job.message).selectinload(Message.developer),
             selectinload(Job.channel),
             selectinload(Job.website_source)
-        ).order_by(Job.analyzed_at.desc()).offset(offset).limit(limit)
+        ).outerjoin(Job.message).order_by(sql_func.coalesce(Message.date, Job.analyzed_at).desc()).offset(offset).limit(limit)
         jobs_result = await db.execute(jobs_query)
         jobs = jobs_result.scalars().all()
 
@@ -79,7 +85,8 @@ def register_job_routes(app):
         result = await db.execute(
             select(Job).options(
                 selectinload(Job.channel),
-                selectinload(Job.message),
+                selectinload(Job.message).selectinload(Message.job),
+                selectinload(Job.message).selectinload(Message.developer),
                 selectinload(Job.website_source)
             ).filter(Job.id == job_id)
         )

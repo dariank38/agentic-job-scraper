@@ -54,11 +54,23 @@ const Jobs = () => {
   const sourceFilter = searchParams.get('source_type');
   const limit = 10;
   const offset = parseInt(searchParams.get('offset') || '0');
+  const jobIdParam = searchParams.get('jobId');
   const { showToast } = useToast();
 
   useEffect(() => {
     loadJobs();
   }, [offset, searchQuery, appliedFilter, sourceFilter]);
+
+  useEffect(() => {
+    if (jobIdParam && jobs.length > 0) {
+      const jobToSelect = jobs.find(j => j.id === parseInt(jobIdParam));
+      if (jobToSelect) {
+        setSelectedJob(jobToSelect);
+        // Clear the param after selecting
+        setSearchParams({});
+      }
+    }
+  }, [jobIdParam, jobs]);
 
   const loadJobs = async () => {
     try {
@@ -583,7 +595,8 @@ const Jobs = () => {
                       <MessagesSquare className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-gray-600" />
                       <h3 className="text-xs sm:text-sm font-semibold text-gray-900">{t('jobs.originalMessage')}</h3>
                     </div>
-                    <p className="text-sm text-gray-700 leading-relaxed whitespace-pre-wrap break-words">{selectedJob.message?.text || t('jobs.noTextContent')}</p>
+                    <div className="text-sm text-gray-700 leading-relaxed whitespace-pre-wrap break-words prose prose-sm max-w-none"
+                         dangerouslySetInnerHTML={{ __html: selectedJob.message?.text || t('jobs.noTextContent') }} />
                     <div className="mt-3 pt-3 border-t border-gray-200 flex flex-wrap gap-x-4 gap-y-1 text-xs text-gray-500">
                       <span className="flex items-center gap-1">
                         <MessageSquare className="w-3 h-3" />

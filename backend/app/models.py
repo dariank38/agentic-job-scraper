@@ -16,7 +16,7 @@ class Operation(Base):
 
     id = Column(Integer, primary_key=True)
     operation_type = Column(String, nullable=False)  # 'fetch', 'analyze', 'bulk-analyze', 'bulk-fetch-analyze'
-    channel_id = Column(Integer, ForeignKey("channels.id"), nullable=True)
+    channel_id = Column(Integer, ForeignKey("channels.id", ondelete="CASCADE"), nullable=True)
     channel_username = Column(String, nullable=True)
     bulk_operation_id = Column(String, nullable=True)  # Links channels to a bulk operation (e.g., 'analyze-all-abc123')
     status = Column(String, default="running")  # 'running', 'completed', 'stopped', 'error'
@@ -82,6 +82,7 @@ class Message(Base):
     has_image = Column(Boolean, default=False)
     needs_reanalysis = Column(Boolean, default=False)  # Flag for messages that need re-analysis
     analysis_status = Column(String, default="pending")  # pending, analyzed, skipped
+    skip_reason = Column(String, nullable=True)  # Reason why message was skipped
 
     created_at = Column(DateTime, default=datetime.utcnow)
 
@@ -107,6 +108,7 @@ class Message(Base):
             "sender_first_name": self.sender_first_name,
             "has_image": self.has_image,
             "analysis_status": self.analysis_status,
+            "skip_reason": self.skip_reason,
             "source_type": self.source_type,
             "channel": {
                 "id": self.channel.id,
@@ -118,6 +120,15 @@ class Message(Base):
                 "name": self.website_source.name,
                 "url": self.website_source.url,
             } if self.website_source else None,
+            "job": {
+                "id": self.job.id,
+                "title": self.job.title,
+                "company": self.job.company,
+            } if self.job else None,
+            "developer": {
+                "id": self.developer.id,
+                "name": self.developer.name,
+            } if self.developer else None,
         }
 
 
@@ -234,6 +245,74 @@ class Developer(Base):
     def __repr__(self) -> str:
         return f"<Developer {self.id} name={self.name}>"
 
+    @staticmethod
+    def _extract_str(value) -> Optional[str]:
+        """Normalize a field that may be a string, dict, or list to a plain string."""
+        if value is None:
+            return None
+        if isinstance(value, str):
+            # Try to parse as JSON in case it was stored as a raw Python repr
+            try:
+                import json
+                parsed = json.loads(value)
+                if isinstance(parsed, dict) and "value" in parsed:
+                    return str(parsed["value"])
+                if isinstance(parsed, list) and parsed:
+                    first = parsed[0]
+                    if isinstance(first, dict) and "value" in first:
+                        return str(first["value"])
+                    return str(first)
+            except Exception:
+                pass
+            # Handle Python repr format: {'type': '...', 'value': '...'}
+            import re
+            m = re.search(r"'value'\s*:\s*'([^']+)'", value)
+            if m:
+                return m.group(1)
+            return value
+        if isinstance(value, dict):
+            return str(value.get("value") or "")
+        if isinstance(value, list):
+            for item in value:
+                if isinstance(item, dict) and item.get("value"):
+                    return str(item["value"])
+                if item:
+                    return str(item)
+        return str(value)
+
+    @staticmethod
+    def _normalize_portfolio(value):
+        """Normalize portfolio field — returns list of {type, value} dicts or None."""
+        if value is None:
+            return None
+        if isinstance(value, list):
+            return value
+        if isinstance(value, dict):
+            return [value]
+        if isinstance(value, str):
+            import json
+            try:
+                parsed = json.loads(value)
+                if isinstance(parsed, list):
+                    return parsed
+                if isinstance(parsed, dict):
+                    return [parsed]
+            except Exception:
+                pass
+            # Handle Python repr list format
+            import re
+            entries = re.findall(r"\{[^}]+\}", value)
+            result = []
+            for entry in entries:
+                t_match = re.search(r"'type'\s*:\s*'([^']+)'", entry)
+                v_match = re.search(r"'value'\s*:\s*'([^']+)'", entry)
+                if v_match:
+                    result.append({"type": t_match.group(1) if t_match else "Portfolio", "value": v_match.group(1)})
+            if result:
+                return result
+            return value  # Fallback: plain string URL
+        return value
+
     def to_dict(self) -> dict:
         """Convert to dictionary."""
         return {
@@ -245,10 +324,10 @@ class Developer(Base):
             "name": self.name,
             "skills": self.skills or [],
             "experience": self.experience,
-            "portfolio": self.portfolio,
-            "github": self.github,
-            "linkedin": self.linkedin,
-            "contact": self.contact,
+            "portfolio": self._normalize_portfolio(self.portfolio),
+            "github": self._extract_str(self.github),
+            "linkedin": self._extract_str(self.linkedin),
+            "contact": self._extract_str(self.contact),
             "contact_type": self.contact_type,
             "looking_for_work": self.looking_for_work,
             "summary": self.summary,

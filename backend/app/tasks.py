@@ -298,6 +298,11 @@ def _first_contact(value) -> Optional[str]:
             elif item:
                 return str(item)
         return None
+    # Handle single dict case
+    if isinstance(value, dict):
+        v = value.get("value")
+        if v:
+            return v
     return str(value)
 
 
@@ -551,7 +556,7 @@ async def _analyze_single(analyzer, message, channel_username: str):
     try:
         result = await asyncio.wait_for(
             analyzer.analyze_message(message.text),
-            timeout=60,  # Reduced from 120 to 60 seconds
+            timeout=180,  # Timeout for analysis
         )
         elapsed = time.time() - start_time
         logger.info(f"[ANALYZE MSG DONE] Channel: {channel_username} | Msg: {msg_preview}... | Time: {elapsed:.1f}s | Result: {result.get('category') if result else 'none'}")
@@ -559,7 +564,7 @@ async def _analyze_single(analyzer, message, channel_username: str):
     except asyncio.TimeoutError:
         elapsed = time.time() - start_time
         logger.warning(f"[ANALYZE MSG TIMEOUT] Channel: {channel_username} | Msg: {msg_preview}... | Time: {elapsed:.1f}s")
-        return message, None, Exception(f"Analysis timeout after 60s")
+        return message, None, Exception(f"Analysis timeout after 120s")
     except Exception as e:
         elapsed = time.time() - start_time
         logger.error(f"[ANALYZE MSG ERROR] Channel: {channel_username} | Msg: {msg_preview}... | Time: {elapsed:.1f}s | Error: {e}")
@@ -584,11 +589,15 @@ async def analyze_messages(
     try:
         reset_stop_event(channel_id)
 
+        from sqlalchemy.orm import selectinload
         messages_result = await db.execute(
-            select(Message).filter(
+            select(Message).options(
+                selectinload(Message.job),
+                selectinload(Message.developer)
+            ).filter(
                 Message.channel_id == channel_id,
                 Message.analysis_status == "pending",
-            )
+            ).order_by(Message.date.desc())
         )
         messages = messages_result.scalars().all()
         total_messages = len(messages)
@@ -611,7 +620,7 @@ async def analyze_messages(
         analyzed_count = 0
         stopped_count = 0
         total_messages = len(messages)
-        batch_size = 3
+        batch_size = 1
         total_batches = (total_messages + batch_size - 1) // batch_size
 
         total_input_tokens = 0
@@ -651,8 +660,9 @@ async def analyze_messages(
                 if msg.text and should_analyze_message(msg.text):
                     filtered_messages.append(msg)
                 else:
+                    # Delete message instead of saving it
+                    await db.delete(msg)
                     skipped_count += 1
-                    msg.analysis_status = "skipped"
 
             if not filtered_messages:
                 await broadcast_progress("analyze_progress", {"channel": channel_username, "current": batch_num, "total": total_batches, "operation_id": operation_id})
@@ -666,8 +676,8 @@ async def analyze_messages(
                 msg_status = "success"
 
                 if error:
-                    skipped_count += 1
-                    message.analysis_status = "skipped"
+                    # Keep message as pending for retry on timeout/errors
+                    message.analysis_status = "pending"
                     msg_status = "failed"
                     message_results.append({
                         "message_id": message.id,
@@ -677,8 +687,9 @@ async def analyze_messages(
                     continue
 
                 if not result or result.get("category") == "other":
+                    # Delete message instead of saving it
+                    await db.delete(message)
                     skipped_count += 1
-                    message.analysis_status = "skipped"
                     msg_status = "other"
                     message_results.append({
                         "message_id": message.id,
@@ -700,12 +711,13 @@ async def analyze_messages(
                 else:
                     msg_status = "success"
 
-                message_results.append({
+                # Prepare notification data
+                notification_data = {
                     "message_id": message.id,
                     "status": msg_status,
                     "category": category,
                     "confidence": confidence,
-                })
+                }
 
                 # ── JOB POSTING ───────────────────────────────────────────────
                 if category == "job_posting":
@@ -713,9 +725,9 @@ async def analyze_messages(
 
                     is_remote = _to_bool(job_data.get("is_remote"))
                     if is_remote is False:
-                        # On-site only — not relevant for this board
+                        # On-site only — delete message instead of saving it
+                        await db.delete(message)
                         skipped_count += 1
-                        message.analysis_status = "skipped"
                         continue
 
                     # title is no longer a separate LLM field — extract from summary first sentence
@@ -726,6 +738,10 @@ async def analyze_messages(
                     if not title:
                         title = f"[No Title] sender:{message.sender_username or message.sender_id or 'unknown'}"
                     company = _to_str(job_data.get("company"))
+
+                    # Add job details to notification
+                    notification_data["title"] = title
+                    notification_data["company"] = company
 
                     location = _to_str(job_data.get("location"))
                     contact, contact_type = _resolve_contact(job_data.get("contacts"), message)
@@ -738,8 +754,9 @@ async def analyze_messages(
                             )
                         )
                         if existing_job_result.first():
+                            # Delete message for duplicate job instead of saving it
+                            await db.delete(message)
                             skipped_count += 1
-                            message.analysis_status = "skipped"
                             continue
 
                     # Fix: role_type might be a list from Ollama, convert to string
@@ -764,12 +781,25 @@ async def analyze_messages(
                             summary=_to_str(job_data.get("summary")),
                         )
                         db.add(job)
+                        await db.flush()
+                        await db.refresh(job)
                         jobs_added += 1
                         message.analysis_status = "analyzed"
+
+                        # Broadcast new job notification
+                        await broadcast_progress("new_job", {
+                            "job_id": job.id,
+                            "title": job.title,
+                            "company": job.company,
+                            "channel": channel_name,
+                            "is_remote": job.is_remote,
+                            "location": job.location,
+                            "role_type": job.role_type,
+                        })
                     except Exception as e:
                         logger.error(f"[DB ERROR] Failed to save job for msg {message.id}: {e}")
                         skipped_count += 1
-                        message.analysis_status = "skipped"
+                        message.analysis_status = "pending"
                         message_results[-1]["status"] = "db_error"
                         message_results[-1]["error"] = str(e)
 
@@ -787,6 +817,9 @@ async def analyze_messages(
                     if not name:
                         name = message.sender_username or f"sender:{message.sender_id or 'unknown'}"
 
+                    # Add developer name to notification
+                    notification_data["name"] = name
+
                     if name:
                         conditions = [Developer.name == name]
                         if contact:
@@ -801,8 +834,9 @@ async def analyze_messages(
                                 select(Developer).filter(*conditions)
                             )
                             if existing_dev_result.first():
+                                # Delete message for duplicate developer instead of saving it
+                                await db.delete(message)
                                 skipped_count += 1
-                                message.analysis_status = "skipped"
                                 continue
 
                     # Fix: experience might be a list from Ollama, convert to string with newlines
@@ -835,13 +869,17 @@ async def analyze_messages(
                     except Exception as e:
                         logger.error(f"[DB ERROR] Failed to save developer for msg {message.id}: {e}")
                         skipped_count += 1
-                        message.analysis_status = "skipped"
+                        message.analysis_status = "pending"
                         message_results[-1]["status"] = "db_error"
                         message_results[-1]["error"] = str(e)
 
                 else:
+                    # Delete message with unknown category instead of saving it
+                    await db.delete(message)
                     skipped_count += 1
-                    message.analysis_status = "skipped"
+
+                # Append notification data to results
+                message_results.append(notification_data)
 
                 analyzed_count += 1
 
@@ -968,43 +1006,135 @@ async def continuous_scanner(
     fetch_interval_minutes: int = 30,
     sleep_interval_seconds: int = 30,
 ) -> None:
-    """Continuously fetch and analyze messages from channels."""
+    """Continuously fetch and analyze messages from channels and website sources."""
     global cron_running
 
     channel_index = 0
+    website_index = 0
     last_fetch_time: dict[int, datetime] = {}
+    last_website_fetch_time: dict[int, datetime] = {}
 
     while cron_running:
         try:
             async with AsyncSessionLocal() as db:
                 try:
+                    # Process Telegram channels
                     channels_result = await db.execute(select(Channel).filter(Channel.is_active == True))
                     channels = channels_result.scalars().all()
 
-                    if not channels:
-                        await asyncio.sleep(sleep_interval_seconds)
-                        continue
+                    if channels:
+                        channel = channels[channel_index % len(channels)]
+                        channel_index += 1
+                        channel_id = channel.id
 
-                    channel = channels[channel_index % len(channels)]
-                    channel_index += 1
-                    channel_id = channel.id
+                        now = datetime.now(timezone.utc)
+                        last = last_fetch_time.get(channel_id)
+                        due = last is None or (now - last).total_seconds() >= fetch_interval_minutes * 60
 
-                    now = datetime.now(timezone.utc)
-                    last = last_fetch_time.get(channel_id)
-                    due = last is None or (now - last).total_seconds() >= fetch_interval_minutes * 60
+                        if due:
+                            try:
+                                fetch_result = await fetch_and_store_messages(db, channel, days_back=1)
+                                if fetch_result["success"]:
+                                    last_fetch_time[channel_id] = now
+                                    if fetch_result["new_stored"] > 0:
+                                        try:
+                                            await analyze_messages(db, channel)
+                                        except Exception as e:
+                                            logger.error(f"Analyze error in cron: {e}")
+                            except Exception as e:
+                                logger.error(f"Fetch error in cron: {e}")
 
-                    if due:
-                        try:
-                            fetch_result = await fetch_and_store_messages(db, channel, days_back=1)
-                            if fetch_result["success"]:
-                                last_fetch_time[channel_id] = now
-                                if fetch_result["new_stored"] > 0:
-                                    try:
-                                        await analyze_messages(db, channel)
-                                    except Exception as e:
-                                        logger.error(f"Analyze error in cron: {e}")
-                        except Exception as e:
-                            logger.error(f"Fetch error in cron: {e}")
+                    # Process website sources
+                    from app.models import WebsiteSource
+                    from web_crawler import Fetcher
+
+                    website_sources_result = await db.execute(select(WebsiteSource).filter(WebsiteSource.is_active == True))
+                    website_sources = website_sources_result.scalars().all()
+
+                    if website_sources:
+                        website = website_sources[website_index % len(website_sources)]
+                        website_index += 1
+                        website_id = website.id
+
+                        now = datetime.now(timezone.utc)
+                        last_website = last_website_fetch_time.get(website_id)
+                        website_due = last_website is None or (now - last_website).total_seconds() >= fetch_interval_minutes * 60
+
+                        if website_due:
+                            try:
+                                crawler = Fetcher()
+                                fetch_result = await crawler.fetch(website.url)
+                                rss_entries = fetch_result["content"]
+
+                                if rss_entries:
+                                    new_count = 0
+                                    for entry_text in rss_entries:
+                                        # Extract URL from entry
+                                        url = None
+                                        for line in entry_text.split('\n'):
+                                            if line.startswith('Link:'):
+                                                url = line.replace('Link:', '').strip()
+                                                break
+
+                                        # Extract post ID from URL for deduplication
+                                        post_id = None
+                                        if url and '/t/' in url:
+                                            try:
+                                                import re
+                                                match = re.search(r'/t/(\d+)', url)
+                                                if match:
+                                                    post_id = match.group(1)
+                                            except:
+                                                pass
+
+                                        # Use post_id for deduplication if available
+                                        if post_id:
+                                            existing_result = await db.execute(
+                                                select(Message).filter(
+                                                    Message.website_source_id == website.id,
+                                                    Message.website_post_id == f"{website.id}-{post_id}"
+                                                )
+                                            )
+                                        else:
+                                            existing_result = await db.execute(
+                                                select(Message).filter(
+                                                    Message.website_source_id == website.id,
+                                                    Message.text == entry_text
+                                                )
+                                            )
+                                        existing = existing_result.scalar_one_or_none()
+                                        if existing:
+                                            continue
+
+                                        message = Message(
+                                            website_post_id=f"{website.id}-{post_id}" if post_id else f"{website.id}-{hash(entry_text)}",
+                                            website_source_id=website.id,
+                                            source_type="website",
+                                            text=entry_text,
+                                            date=None,
+                                            sender_username=website.name,
+                                            analysis_status="pending",
+                                        )
+                                        db.add(message)
+                                        await db.flush()
+                                        new_count += 1
+
+                                    if new_count > 0:
+                                        website.last_fetch_new_count = new_count
+                                        website.last_fetch_at = func.now()
+                                        last_website_fetch_time[website_id] = now
+                                        await db.commit()
+
+                                        # Analyze the new messages
+                                        try:
+                                            from app.tasks import analyze_website_posts
+                                            await analyze_website_posts(db, website)
+                                        except Exception as e:
+                                            logger.error(f"Analyze website error in cron: {e}")
+                                else:
+                                    last_website_fetch_time[website_id] = now
+                            except Exception as e:
+                                logger.error(f"Website fetch error in cron: {e}")
 
                 except Exception as e:
                     logger.error(f"Cron inner error: {e}")
@@ -1034,11 +1164,15 @@ async def analyze_website_posts(
         return {"success": False, "error": "Ollama not available"}
 
     try:
+        from sqlalchemy.orm import selectinload
         messages_result = await db.execute(
-            select(Message).filter(
+            select(Message).options(
+                selectinload(Message.job),
+                selectinload(Message.developer)
+            ).filter(
                 Message.website_source_id == source_id,
                 Message.analysis_status == "pending",
-            )
+            ).order_by(Message.date.desc())
         )
         messages = messages_result.scalars().all()
         total_messages = len(messages)
@@ -1070,7 +1204,7 @@ async def analyze_website_posts(
         skipped_count = 0
         analyzed_count = 0
         stopped_count = 0
-        batch_size = 3
+        batch_size = 1
         total_batches = (total_messages + batch_size - 1) // batch_size
         total_input_tokens = 0
         total_output_tokens = 0
@@ -1102,11 +1236,13 @@ async def analyze_website_posts(
 
             batch_message_results = []
             for message in filtered_messages:
+                # Capture message ID before any operations to prevent lazy-loading in error handler
+                message_id = message.id
                 try:
                     msg_preview = (message.text or '')[:120].replace('\n', ' ')
-                    logger.info(f"[ANALYZE WEBSITE MSG] id={message.id} | preview={msg_preview!r}")
+                    logger.info(f"[ANALYZE WEBSITE MSG] id={message_id} | preview={msg_preview!r}")
                 except Exception as e:
-                    logger.error(f"[ANALYZE WEBSITE] Failed to load message {message.id}: {e}")
+                    logger.error(f"[ANALYZE WEBSITE] Failed to load message {message_id}: {e}")
                     await db.rollback()
                     batch_message_results.append({"status": "failed", "error": str(e)})
                     continue
@@ -1121,24 +1257,26 @@ async def analyze_website_posts(
                     )
                     total_input_tokens += usage.get("input_tokens", 0)
                     total_output_tokens += usage.get("output_tokens", 0)
-                    logger.info(f"[ANALYZE WEBSITE MSG RESULT] id={message.id} | jobs={len(extracted_data.job_postings)} | developer={'yes' if extracted_data.developer_info else 'no'} | tokens: in={usage.get('input_tokens', 0)} out={usage.get('output_tokens', 0)}")
+                    logger.info(f"[ANALYZE WEBSITE MSG RESULT] id={message_id} | jobs={len(extracted_data.job_postings)} | developer={'yes' if extracted_data.developer_info else 'no'} | tokens: in={usage.get('input_tokens', 0)} out={usage.get('output_tokens', 0)}")
 
                     # Process extracted job postings (V2EX should return 1 per message, take first if multiple)
                     jobs_to_process = extracted_data.job_postings[:1] if len(extracted_data.job_postings) > 1 else extracted_data.job_postings
                     if len(extracted_data.job_postings) > 1:
-                        logger.warning(f"[ANALYZE WEBSITE] Message {message.id} returned {len(extracted_data.job_postings)} jobs, taking first only")
+                        logger.warning(f"[ANALYZE WEBSITE] Message {message_id} returned {len(extracted_data.job_postings)} jobs, taking first only")
 
+                    msg_job_added = 0
                     for job in jobs_to_process:
                         # Check if job already exists for this message
                         existing_job = await db.execute(
-                            select(Job).filter(Job.message_id == message.id)
+                            select(Job).filter(Job.message_id == message_id)
                         )
                         if existing_job.scalar_one_or_none():
+                            # Job already exists, skip and will delete message later
                             continue
 
                         # Create job from extracted data (map to valid Job model fields)
                         job_obj = Job(
-                            message_id=message.id,
+                            message_id=message_id,
                             website_source_id=source_id,
                             channel_name=source_name,
                             title=job.title or "Unknown",
@@ -1149,10 +1287,25 @@ async def analyze_website_posts(
                             summary=job.requirements,
                         )
                         db.add(job_obj)
+                        await db.flush()
+                        await db.refresh(job_obj)
                         jobs_added += 1
-                        logger.info(f"[ANALYZE WEBSITE JOB SAVED] msg_id={message.id} | title={job_obj.title!r} | company={job_obj.company!r} | remote={job_obj.is_remote}")
+                        msg_job_added += 1
+                        logger.info(f"[ANALYZE WEBSITE JOB SAVED] msg_id={message_id} | title={job_obj.title!r} | company={job_obj.company!r} | remote={job_obj.is_remote}")
+
+                        # Broadcast new job notification
+                        await broadcast_progress("new_job", {
+                            "job_id": job_obj.id,
+                            "title": job_obj.title,
+                            "company": job_obj.company,
+                            "channel": source_name,
+                            "is_remote": job_obj.is_remote,
+                            "location": job_obj.location,
+                            "role_type": job_obj.role_type,
+                        })
 
                     # Process developer info if present
+                    msg_dev_added = 0
                     if extracted_data.developer_info:
                         dev = extracted_data.developer_info
                         existing_dev = await db.execute(
@@ -1171,11 +1324,18 @@ async def analyze_website_posts(
                             )
                             db.add(dev_obj)
                             devs_added += 1
+                            msg_dev_added += 1
+                        # If developer already exists, skip and will delete message later
 
-                    message.analysis_status = "analyzed"
-                    analyzed_count += 1
-                    batch_message_results.append({"status": "success"})
-                    logger.info(f"[ANALYZE WEBSITE MSG OK] id={message.id} | status=analyzed | jobs_total={jobs_added}")
+                    # If no job or developer was extracted for this message, delete it
+                    if msg_job_added == 0 and msg_dev_added == 0:
+                        await db.delete(message)
+                        logger.info(f"[ANALYZE WEBSITE MSG DELETED] id={message_id} | No job or developer found")
+                    else:
+                        message.analysis_status = "analyzed"
+                        analyzed_count += 1
+                        batch_message_results.append({"status": "success"})
+                        logger.info(f"[ANALYZE WEBSITE MSG OK] id={message_id} | status=analyzed | jobs_total={jobs_added}")
 
                     # Broadcast per-message progress for real-time UI updates
                     await broadcast_progress("analyze_progress", {
@@ -1192,9 +1352,10 @@ async def analyze_website_posts(
                     })
 
                 except Exception as e:
-                    logger.error(f"[ANALYZE WEBSITE] Error analyzing message {message.id}: {e}", exc_info=True)
+                    logger.error(f"[ANALYZE WEBSITE] Error analyzing message {message_id}: {e}", exc_info=True)
                     await db.rollback()
-                    message.analysis_status = "error"
+                    # Keep message as pending for retry on errors
+                    message.analysis_status = "pending"
                     batch_message_results.append({"status": "failed", "error": str(e)})
                     continue
 

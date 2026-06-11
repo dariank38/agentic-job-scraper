@@ -254,17 +254,6 @@ def register_website_source_routes(app):
             total_entries = len(rss_entries)
 
             for idx, entry_text in enumerate(rss_entries):
-                # Check if message already exists (by text hash)
-                existing_result = await db.execute(
-                    select(Message).filter(
-                        Message.website_source_id == source_id,
-                        Message.text == entry_text
-                    )
-                )
-                existing = existing_result.scalar_one_or_none()
-                if existing:
-                    continue
-
                 # Extract URL and published date from entry
                 url = None
                 published_date = None
@@ -279,8 +268,39 @@ def register_website_source_routes(app):
                         except:
                             pass
 
+                # Extract post ID from URL for deduplication (e.g., 1219380 from https://www.v2ex.com/t/1219380#reply2)
+                post_id = None
+                if url and '/t/' in url:
+                    try:
+                        # Extract the number after /t/ and before # or end
+                        import re
+                        match = re.search(r'/t/(\d+)', url)
+                        if match:
+                            post_id = match.group(1)
+                    except:
+                        pass
+
+                # Use post_id for deduplication if available, otherwise fall back to text
+                if post_id:
+                    existing_result = await db.execute(
+                        select(Message).filter(
+                            Message.website_source_id == source_id,
+                            Message.website_post_id == f"{source_id}-{post_id}"
+                        )
+                    )
+                else:
+                    existing_result = await db.execute(
+                        select(Message).filter(
+                            Message.website_source_id == source_id,
+                            Message.text == entry_text
+                        )
+                    )
+                existing = existing_result.scalar_one_or_none()
+                if existing:
+                    continue
+
                 message = Message(
-                    website_post_id=f"{source_id}-{hash(entry_text)}",
+                    website_post_id=f"{source_id}-{post_id}" if post_id else f"{source_id}-{hash(entry_text)}",
                     website_source_id=source_id,
                     source_type="website",
                     text=entry_text,
@@ -357,18 +377,45 @@ def register_website_source_routes(app):
                     # Save raw RSS entries as Messages (no Ollama extraction yet)
                     new_count = 0
                     for entry_text in rss_entries:
-                        existing_result = await db.execute(
-                            select(Message).filter(
-                                Message.website_source_id == source.id,
-                                Message.text == entry_text
+                        # Extract URL from entry
+                        url = None
+                        for line in entry_text.split('\n'):
+                            if line.startswith('Link:'):
+                                url = line.replace('Link:', '').strip()
+                                break
+
+                        # Extract post ID from URL for deduplication
+                        post_id = None
+                        if url and '/t/' in url:
+                            try:
+                                import re
+                                match = re.search(r'/t/(\d+)', url)
+                                if match:
+                                    post_id = match.group(1)
+                            except:
+                                pass
+
+                        # Use post_id for deduplication if available
+                        if post_id:
+                            existing_result = await db.execute(
+                                select(Message).filter(
+                                    Message.website_source_id == source.id,
+                                    Message.website_post_id == f"{source.id}-{post_id}"
+                                )
                             )
-                        )
+                        else:
+                            existing_result = await db.execute(
+                                select(Message).filter(
+                                    Message.website_source_id == source.id,
+                                    Message.text == entry_text
+                                )
+                            )
                         existing = existing_result.scalar_one_or_none()
                         if existing:
                             continue
 
                         message = Message(
-                            website_post_id=f"{source.id}-{hash(entry_text)}",
+                            website_post_id=f"{source.id}-{post_id}" if post_id else f"{source.id}-{hash(entry_text)}",
                             website_source_id=source.id,
                             source_type="website",
                             text=entry_text,

@@ -1,7 +1,7 @@
 """Message-related API routes."""
 
 from typing import Optional
-from fastapi import Depends
+from fastapi import Depends, HTTPException
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
@@ -44,10 +44,12 @@ def register_message_routes(app):
         total_result = await db.execute(count_query)
         total = total_result.scalar()
 
-        # Get messages with pagination, eagerly load channel and website_source
+        # Get messages with pagination, eagerly load channel, website_source, job, and developer
         messages_query = query.options(
             selectinload(Message.channel),
-            selectinload(Message.website_source)
+            selectinload(Message.website_source),
+            selectinload(Message.job),
+            selectinload(Message.developer)
         ).order_by(Message.date.desc()).offset(offset).limit(limit)
         messages_result = await db.execute(messages_query)
         messages = messages_result.scalars().all()
@@ -58,3 +60,23 @@ def register_message_routes(app):
             "limit": limit,
             "offset": offset,
         }
+
+    @app.delete("/api/messages/{message_id}")
+    async def api_delete_message(message_id: int, db: AsyncSession = Depends(get_db)):
+        """Delete a message and its associated job/developer."""
+        try:
+            result = await db.execute(select(Message).filter(Message.id == message_id))
+            message = result.scalar_one_or_none()
+            if not message:
+                raise HTTPException(status_code=404, detail="Message not found")
+
+            await db.delete(message)
+            await db.commit()
+
+            return {"success": True}
+        except HTTPException:
+            await db.rollback()
+            raise
+        except Exception as e:
+            await db.rollback()
+            raise HTTPException(status_code=500, detail=f"Failed to delete message: {str(e)}")
