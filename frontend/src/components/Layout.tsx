@@ -103,9 +103,30 @@ const WebSocketProgressProvider = ({ children }: { children: React.ReactNode }) 
   const [messageResults, setMessageResults] = useState<Record<string, any[]>>({});
   const wsRef = useRef<WebSocket | null>(null);
   const pollIntervalRef = useRef<number | null>(null);
+  const lastNotificationRef = useRef<Record<string, number>>({});
 
   const requestStop = (channelId: number, channelUsername: string) => {
     setStoppingChannels(prev => ({ ...prev, [channelId]: true, [channelUsername]: true }));
+  };
+
+  // Request notification permission on mount
+  useEffect(() => {
+    if ('Notification' in window && Notification.permission === 'default') {
+      Notification.requestPermission();
+    }
+  }, []);
+
+  const showNotification = (title: string, body: string) => {
+    if ('Notification' in window && Notification.permission === 'granted') {
+      const now = Date.now();
+      const key = `${title}:${body}`;
+      // Debounce: don't show same notification within 5 seconds
+      if (lastNotificationRef.current[key] && now - lastNotificationRef.current[key] < 5000) {
+        return;
+      }
+      lastNotificationRef.current[key] = now;
+      new Notification(title, { body, icon: '/favicon.ico' });
+    }
   };
 
   // Poll operations API as fallback when WebSocket is disconnected
@@ -274,8 +295,25 @@ const WebSocketProgressProvider = ({ children }: { children: React.ReactNode }) 
                   ...prev,
                   [channel]: [...(prev[channel] || []), ...data.message_results!]
                 }));
+                // Show notifications for job/developer discoveries
+                data.message_results.forEach((result: any) => {
+                  if (result.category === 'job_posting') {
+                    const title = result.title || 'Unknown';
+                    const company = result.company || 'Unknown';
+                    showNotification('New Job Found', `${title} at ${company} from ${channel}`);
+                  } else if (result.category === 'personal_info') {
+                    const name = result.name || 'Unknown';
+                    showNotification('New Developer Found', `${name} from ${channel}`);
+                  }
+                });
               }
             } else if (channel && (data.type === 'analyze_complete' || data.type === 'fetch_complete' || data.type === 'error')) {
+              // Show notification for analysis completion
+              if (data.type === 'analyze_complete') {
+                showNotification('Analysis Complete', `Finished analyzing ${channel}`);
+              } else if (data.type === 'error') {
+                showNotification('Analysis Error', `Error analyzing ${channel}`);
+              }
               // End operation - also clear stopping state
               setOperations(prev => {
                 const newOps = { ...prev };

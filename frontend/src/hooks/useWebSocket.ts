@@ -14,8 +14,18 @@ export interface TokenUsage {
   total: number;
 }
 
+export interface NewJobNotification {
+  job_id: number;
+  title: string;
+  company: string;
+  channel: string;
+  is_remote?: boolean;
+  location?: string;
+  role_type?: string;
+}
+
 export interface ProgressUpdate {
-  type: 'fetch_start' | 'fetch_progress' | 'fetch_complete' | 'analyze_start' | 'analyze_progress' | 'analyze_complete' | 'error';
+  type: 'fetch_start' | 'fetch_progress' | 'fetch_complete' | 'analyze_start' | 'analyze_progress' | 'analyze_complete' | 'error' | 'new_job';
   channel?: string;
   channel_id?: number;
   operation_id?: number;
@@ -36,7 +46,33 @@ export interface ProgressUpdate {
   output_tokens?: number;
   total_tokens?: number;
   message_results?: MessageResult[];
+  new_job?: NewJobNotification;
 }
+
+const showJobNotification = (job: NewJobNotification) => {
+  // Request notification permission if not granted
+  if ('Notification' in window && Notification.permission === 'default') {
+    Notification.requestPermission();
+  }
+
+  // Show notification if permission granted
+  if ('Notification' in window && Notification.permission === 'granted') {
+    const notification = new Notification(`New Job: ${job.title}`, {
+      body: `${job.company} • ${job.channel}${job.is_remote ? ' • Remote' : ''}`,
+      icon: '/favicon.ico',
+      tag: `job-${job.job_id}`,
+    });
+
+    // Click notification to navigate to job detail
+    notification.onclick = () => {
+      window.location.href = `/jobs?jobId=${job.job_id}`;
+      notification.close();
+    };
+
+    // Auto-close after 5 seconds
+    setTimeout(() => notification.close(), 5000);
+  }
+};
 
 export const useWebSocket = (url: string) => {
   const [isConnected, setIsConnected] = useState(false);
@@ -60,6 +96,11 @@ export const useWebSocket = (url: string) => {
           try {
             const data = JSON.parse(event.data) as ProgressUpdate;
             setProgress(data);
+
+            // Handle new job notification
+            if (data.type === 'new_job' && data.new_job) {
+              showJobNotification(data.new_job);
+            }
           } catch (e) {
             // Silently ignore parse errors
           }

@@ -7,7 +7,7 @@ import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Badge } from '@/components/ui/badge';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
-import { Search, Square } from 'lucide-react';
+import { Search, Square, RefreshCw, Bot } from 'lucide-react';
 import api from '@/services/api';
 import type { Channel, TelegramAccount } from '@/services/api';
 import { useWebSocketProgress, useToast } from '@/components/Layout';
@@ -232,30 +232,42 @@ const Channels = () => {
     }
   };
 
-  const fetchAnalyzeChannel = async (channelId: number) => {
+  const fetchChannel = async (channelId: number) => {
     try {
-      // Check if Ollama is available before attempting analysis (fetch-analyze includes analysis)
+      const data = await withLoading(`fetch-${channelId}`, () => api.fetchChannel(channelId, selectedAccountId || undefined));
+      if (data.success) {
+        showToast('success', t('dashboard.fetchedMessages', { count: data.new_messages, days: data.days_back_used }));
+        setTimeout(() => loadChannels(), 1500);
+      } else {
+        showToast('error', `${t('common.error')}: ` + (data.error || t('common.unknown')));
+      }
+    } catch (e: any) {
+      showToast('error', `${t('common.error')}: ` + e.message);
+    }
+  };
+
+  const analyzeChannel = async (channelId: number) => {
+    try {
       if (!stats?.ollama_available) {
         showToast('error', t('channels.ollamaUnavailable'));
         return;
       }
 
-      const data = await withLoading(`fetch-analyze-${channelId}`, () => api.fetchAnalyzeChannel(channelId, selectedAccountId || undefined));
+      const data = await withLoading(`analyze-${channelId}`, () => api.analyzeChannel(channelId));
       if (data.success) {
-        showToast('success', t('channels.fetchAnalyzeComplete', { messages: data.total_new_messages, jobs: data.total_jobs, days: data.days_back_used }));
+        if (data.message) {
+          showToast('success', data.message);
+        } else if (data.stopped) {
+          showToast('info', t('dashboard.analyzeStopped', { analyzed: data.analyzed, jobs: data.jobs_found, remaining: data.remaining }));
+        } else {
+          showToast('success', t('dashboard.analyzeComplete', { analyzed: data.analyzed, jobs: data.jobs_found, devs: data.developers_found }));
+        }
         setTimeout(() => loadChannels(), 1500);
       } else {
-        showToast('error', `${t('common.error')}: ${data.error || t('common.error')}`);
+        showToast('error', `${t('common.error')}: ` + (data.error || t('common.unknown')));
       }
     } catch (e: any) {
-      let errorMessage = `${t('common.failedToFetch')} and ${t('common.failedToAnalyze')} ${t('channels.title')}`;
-      if (e.response) {
-        const errorData = await e.response.json().catch(() => ({}));
-        errorMessage = errorData.detail || errorMessage;
-      } else if (e.message) {
-        errorMessage = e.message;
-      }
-      showToast('error', `${t('common.error')}: ${errorMessage}`);
+      showToast('error', `${t('common.error')}: ` + e.message);
     }
   };
 
@@ -418,14 +430,26 @@ const Channels = () => {
                       )}
                     </div>
                     <div className="flex gap-2">
-                      {!(loadingActions.has(`fetch-analyze-${channel.id}`) || !!operations[channel.username]) ? (
-                        <Button
-                          variant="outline"
-                          onClick={() => fetchAnalyzeChannel(channel.id)}
-                          disabled={loadingActions.has(`fetch-analyze-${channel.id}`)}
-                        >
-                          {t('channels.fetch')}
-                        </Button>
+                      {!(loadingActions.has(`fetch-${channel.id}`) || loadingActions.has(`analyze-${channel.id}`) || !!operations[channel.username]) ? (
+                        <>
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={() => fetchChannel(channel.id)}
+                            disabled={loadingActions.has(`fetch-${channel.id}`)}
+                          >
+                            <RefreshCw size={12} className="mr-1" />
+                            {loadingActions.has(`fetch-${channel.id}`) ? t('dashboard.fetching') : t('channels.fetch')}
+                          </Button>
+                          <Button
+                            size="sm"
+                            onClick={() => analyzeChannel(channel.id)}
+                            disabled={loadingActions.has(`analyze-${channel.id}`)}
+                          >
+                            <Bot size={12} className="mr-1" />
+                            {loadingActions.has(`analyze-${channel.id}`) ? t('dashboard.analyzing') : t('channels.analyze')}
+                          </Button>
+                        </>
                       ) : (
                         <Button
                           size="sm"
@@ -441,14 +465,14 @@ const Channels = () => {
                       <Button
                         variant="outline"
                         onClick={() => toggleChannel(channel.id)}
-                        disabled={loadingActions.has(`toggle-${channel.id}`) || !!(loadingActions.has(`fetch-analyze-${channel.id}`) || !!operations[channel.username])}
+                        disabled={loadingActions.has(`toggle-${channel.id}`) || !!(loadingActions.has(`fetch-${channel.id}`) || loadingActions.has(`analyze-${channel.id}`) || !!operations[channel.username])}
                       >
                         {loadingActions.has(`toggle-${channel.id}`) ? t('channels.toggling') : (channel.is_active ? t('channels.disable') : t('channels.enable'))}
                       </Button>
                       <Button
                         variant="destructive"
                         onClick={() => confirmDelete(channel.id)}
-                        disabled={loadingActions.has(`delete-${channel.id}`) || !!(loadingActions.has(`fetch-analyze-${channel.id}`) || !!operations[channel.username])}
+                        disabled={loadingActions.has(`delete-${channel.id}`) || !!(loadingActions.has(`fetch-${channel.id}`) || loadingActions.has(`analyze-${channel.id}`) || !!operations[channel.username])}
                       >
                         {loadingActions.has(`delete-${channel.id}`) ? t('channels.deleting') : t('channels.delete')}
                       </Button>

@@ -7,7 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.connection import get_db
-from app.models import Developer
+from app.models import Developer, Message
 
 
 def register_developer_routes(app):
@@ -26,7 +26,10 @@ def register_developer_routes(app):
         """Get developers as JSON with search and filters."""
         from app.models import Channel
 
-        query = select(Developer).join(Channel).filter(Channel.is_active == True)
+        from sqlalchemy import cast, String
+        query = select(Developer).outerjoin(Developer.channel).filter(
+            (Channel.is_active == True) | (Developer.channel_id.is_(None))
+        )
 
         if looking_for_work is not None:
             query = query.filter(Developer.looking_for_work == looking_for_work)
@@ -40,7 +43,7 @@ def register_developer_routes(app):
             else:
                 query = query.filter(Developer.contact.is_(None))
 
-        # Apply search filter
+        # Apply search filter — searches name, contact, github, linkedin, portfolio, summary, experience, skills
         if search:
             search_pattern = f"%{search}%"
             query = query.where(
@@ -49,7 +52,9 @@ def register_developer_routes(app):
                 (Developer.github.ilike(search_pattern)) |
                 (Developer.linkedin.ilike(search_pattern)) |
                 (Developer.portfolio.ilike(search_pattern)) |
-                (Developer.summary.ilike(search_pattern))
+                (Developer.summary.ilike(search_pattern)) |
+                (Developer.experience.ilike(search_pattern)) |
+                (cast(Developer.skills, String).ilike(search_pattern))
             )
 
         # Get total count
@@ -58,10 +63,14 @@ def register_developer_routes(app):
         total = total_result.scalar()
 
         # Get developers with pagination, eagerly load message and channel
+        # Also eagerly load job/developer on message to prevent circular lazy-loading
+        from app.models import Message
+        from sqlalchemy import func as sql_func
         developers_query = query.options(
-            selectinload(Developer.message),
+            selectinload(Developer.message).selectinload(Message.job),
+            selectinload(Developer.message).selectinload(Message.developer),
             selectinload(Developer.channel)
-        ).order_by(Developer.analyzed_at.desc()).offset(offset).limit(limit)
+        ).outerjoin(Developer.message).order_by(sql_func.coalesce(Message.date, Developer.analyzed_at).desc()).offset(offset).limit(limit)
         developers_result = await db.execute(developers_query)
         developers = developers_result.scalars().all()
 
@@ -78,7 +87,8 @@ def register_developer_routes(app):
         result = await db.execute(
             select(Developer).options(
                 selectinload(Developer.channel),
-                selectinload(Developer.message)
+                selectinload(Developer.message).selectinload(Message.job),
+                selectinload(Developer.message).selectinload(Message.developer)
             ).filter(Developer.id == developer_id)
         )
         developer = result.scalar_one_or_none()
@@ -124,7 +134,8 @@ def register_developer_routes(app):
             result = await db.execute(
                 select(Developer).options(
                     selectinload(Developer.channel),
-                    selectinload(Developer.message)
+                    selectinload(Developer.message).selectinload(Message.job),
+                    selectinload(Developer.message).selectinload(Message.developer)
                 ).filter(Developer.id == developer_id)
             )
             developer = result.scalar_one_or_none()

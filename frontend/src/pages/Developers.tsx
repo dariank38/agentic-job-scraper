@@ -58,11 +58,23 @@ const Developers = () => {
   const contactedFilter = searchParams.get('is_contacted');
   const limit = 10;
   const offset = parseInt(searchParams.get('offset') || '0');
+  const developerIdParam = searchParams.get('developerId');
   const { showToast } = useToast();
 
   useEffect(() => {
     loadDevelopers();
   }, [lookingFilter, contactedFilter, offset, searchQuery]);
+
+  useEffect(() => {
+    if (developerIdParam && developers.length > 0) {
+      const devToSelect = developers.find(d => d.id === parseInt(developerIdParam));
+      if (devToSelect) {
+        setSelectedDeveloper(devToSelect);
+        // Clear the param after selecting
+        setSearchParams({});
+      }
+    }
+  }, [developerIdParam, developers]);
 
   const loadDevelopers = async () => {
     try {
@@ -487,7 +499,7 @@ const Developers = () => {
 
                     <Separator />
 
-                    {/* Contact Links */}
+                    {/* Contact Links — backend normalizes: github/linkedin/contact=string, portfolio=array|string */}
                     {(selectedDeveloper.github || selectedDeveloper.linkedin || selectedDeveloper.portfolio || selectedDeveloper.contact) && (
                       <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                         {selectedDeveloper.github && (
@@ -514,18 +526,44 @@ const Developers = () => {
                             </div>
                           </a>
                         )}
-                        {selectedDeveloper.portfolio && (
-                          <a href={selectedDeveloper.portfolio} target="_blank" rel="noopener noreferrer"
-                             className="flex items-center gap-2 sm:gap-2.5 p-2.5 sm:p-3 rounded-lg bg-emerald-50 hover:bg-emerald-100 transition-colors group">
-                            <div className="w-8 h-8 sm:w-9 sm:h-9 rounded-lg bg-emerald-600 flex items-center justify-center shrink-0">
-                              <Globe className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-white" />
-                            </div>
-                            <div className="min-w-0">
-                              <p className="text-[10px] sm:text-xs text-emerald-600 font-medium">{t('developers.portfolio')}</p>
-                              <p className="text-xs sm:text-sm text-gray-900 truncate group-hover:text-emerald-700 transition-colors">{selectedDeveloper.portfolio}</p>
-                            </div>
-                          </a>
-                        )}
+                        {Array.isArray(selectedDeveloper.portfolio)
+                          ? selectedDeveloper.portfolio.map((item: any, idx: number) => {
+                              const type = item?.type || 'Portfolio';
+                              const value = item?.value;
+                              if (!value) return null;
+                              const getStyle = (t: string) => {
+                                switch (t.toLowerCase()) {
+                                  case 'github': return { icon: '📦', bg: 'bg-gray-900', text: 'text-gray-600', hover: 'hover:bg-gray-100' };
+                                  case 'demo':   return { icon: '🎮', bg: 'bg-purple-600', text: 'text-purple-600', hover: 'hover:bg-purple-100' };
+                                  case 'video':  return { icon: '🎬', bg: 'bg-red-600', text: 'text-red-600', hover: 'hover:bg-red-100' };
+                                  default:       return { icon: '🌐', bg: 'bg-emerald-600', text: 'text-emerald-600', hover: 'hover:bg-emerald-100' };
+                                }
+                              };
+                              const { icon, bg, text, hover } = getStyle(type);
+                              return (
+                                <a key={idx} href={value} target="_blank" rel="noopener noreferrer"
+                                   className={`flex items-center gap-2 sm:gap-2.5 p-2.5 sm:p-3 rounded-lg bg-gray-50 ${hover} transition-colors group`}>
+                                  <div className={`w-8 h-8 sm:w-9 sm:h-9 rounded-lg ${bg} flex items-center justify-center shrink-0 text-lg`}>{icon}</div>
+                                  <div className="min-w-0">
+                                    <p className={`text-[10px] sm:text-xs ${text} font-medium`}>{type}</p>
+                                    <p className="text-xs sm:text-sm text-gray-900 truncate group-hover:text-gray-700 transition-colors">{value}</p>
+                                  </div>
+                                </a>
+                              );
+                            })
+                          : selectedDeveloper.portfolio && (
+                              <a href={selectedDeveloper.portfolio} target="_blank" rel="noopener noreferrer"
+                                 className="flex items-center gap-2 sm:gap-2.5 p-2.5 sm:p-3 rounded-lg bg-emerald-50 hover:bg-emerald-100 transition-colors group">
+                                <div className="w-8 h-8 sm:w-9 sm:h-9 rounded-lg bg-emerald-600 flex items-center justify-center shrink-0">
+                                  <Globe className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-white" />
+                                </div>
+                                <div className="min-w-0">
+                                  <p className="text-[10px] sm:text-xs text-emerald-600 font-medium">{t('developers.portfolio')}</p>
+                                  <p className="text-xs sm:text-sm text-gray-900 truncate group-hover:text-emerald-700 transition-colors">{selectedDeveloper.portfolio}</p>
+                                </div>
+                              </a>
+                            )
+                        }
                         {selectedDeveloper.contact && (
                           <div className="flex items-center gap-2 sm:gap-2.5 p-2.5 sm:p-3 rounded-lg bg-amber-50 border border-amber-100">
                             <div className="w-8 h-8 sm:w-9 sm:h-9 rounded-lg bg-amber-500 flex items-center justify-center shrink-0">
@@ -597,7 +635,8 @@ const Developers = () => {
                           <MessagesSquare className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-gray-600" />
                           <h3 className="text-xs sm:text-sm font-semibold text-gray-900">{t('developers.originalMessage')}</h3>
                         </div>
-                        <p className="text-sm text-gray-700 leading-relaxed whitespace-pre-wrap break-words">{selectedDeveloper.message.text || t('developers.noTextContent')}</p>
+                        <div className="text-sm text-gray-700 leading-relaxed whitespace-pre-wrap break-words prose prose-sm max-w-none"
+                             dangerouslySetInnerHTML={{ __html: selectedDeveloper.message.text || t('developers.noTextContent') }} />
                         <div className="mt-3 pt-3 border-t border-gray-200 flex flex-wrap gap-x-4 gap-y-1 text-xs text-gray-500">
                           <span className="flex items-center gap-1">
                             <User className="w-3 h-3" />

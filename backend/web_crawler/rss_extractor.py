@@ -162,10 +162,20 @@ class Extractor:
 
         contact_info = None
         if emails or phones or socials or persons:
+            # Deduplicate social links (dicts) by converting to tuples
+            socials_dedup = []
+            seen = set()
+            for s in socials:
+                # Convert dict to tuple of sorted items for deduplication
+                s_tuple = tuple(sorted(s.items())) if isinstance(s, dict) else s
+                if s_tuple not in seen:
+                    seen.add(s_tuple)
+                    socials_dedup.append(s)
+
             contact_info = ContactInfo(
                 emails=list(set(emails)),
                 phone_numbers=list(set(phones)),
-                social_links=list(set(socials)),
+                social_links=socials_dedup,
                 contact_persons=list(set(persons))
             )
 

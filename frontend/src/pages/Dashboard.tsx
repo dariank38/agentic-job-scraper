@@ -283,27 +283,7 @@ const Dashboard = () => {
     }
   };
 
-  const fetchAnalyzeAll = async () => {
-    try {
-      // Check if Ollama is available before attempting analysis (fetch-analyze includes analysis)
-      if (!stats?.ollama_available) {
-        showToast('error', t('dashboard.ollamaUnavailable'));
-        return;
-      }
-
-      const data = await withLoading('fetch-analyze-all', () => api.fetchAnalyzeAll());
-      if (data.success) {
-        if (data.operation_id) {
-          setBulkOperation({ id: data.operation_id, type: 'fetch-analyze-all' });
-        }
-        showToast('success', t('dashboard.fetchAnalyzeStarted', { count: data.channels }));
-      } else {
-        showToast('error', `${t('common.error')}: ` + (data.error || t('common.unknown')));
-      }
-    } catch (e: any) {
-      showToast('error', `${t('common.error')}: ` + e.message);
-    }
-  };
+  const [reanalyzeSkippedOperationId, setReanalyzeSkippedOperationId] = useState<string | null>(null);
 
   const reanalyzeSkipped = async () => {
     try {
@@ -314,8 +294,24 @@ const Dashboard = () => {
 
       const data = await withLoading('reanalyze-skipped', () => api.reanalyzeSkipped());
       if (data.success) {
+        setReanalyzeSkippedOperationId(data.operation_id);
         showToast('success', t('dashboard.reanalysisStartedSkipped'));
         setTimeout(() => loadData(), 2000);
+      } else {
+        showToast('error', `${t('common.error')}: ` + (data.error || t('common.unknown')));
+      }
+    } catch (e: any) {
+      showToast('error', `${t('common.error')}: ` + e.message);
+    }
+  };
+
+  const stopReanalyzeSkipped = async () => {
+    if (!reanalyzeSkippedOperationId) return;
+    try {
+      const data = await api.stopBulkOperation(reanalyzeSkippedOperationId);
+      if (data.success) {
+        showToast('success', t('dashboard.operationStopped'));
+        setReanalyzeSkippedOperationId(null);
       } else {
         showToast('error', `${t('common.error')}: ` + (data.error || t('common.unknown')));
       }
@@ -553,15 +549,6 @@ const Dashboard = () => {
                     <Bot size={14} className="mr-2" />
                     {loadingActions.has('analyze-all') ? t('dashboard.analyzing') : (Object.keys(operations).length > 0 || effectiveBulkOperation) ? t('dashboard.operationInProgress') : t('dashboard.analyzeAll')}
                   </Button>
-                  <Button
-                    className="w-full justify-start"
-                    variant="outline"
-                    onClick={() => fetchAnalyzeAll()}
-                    disabled={loadingActions.has('fetch-analyze-all') || Object.keys(operations).length > 0 || effectiveBulkOperation !== null}
-                  >
-                    <Zap size={14} className="mr-2" />
-                    {loadingActions.has('fetch-analyze-all') ? t('dashboard.processing') : (Object.keys(operations).length > 0 || effectiveBulkOperation) ? t('dashboard.operationInProgress') : t('dashboard.fetchAnalyzeAll')}
-                  </Button>
                   {effectiveBulkOperation && (
                     <Button
                       className="w-full justify-start"
@@ -641,15 +628,26 @@ const Dashboard = () => {
               <div>
                 <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-1.5">{t('dashboard.other')}</p>
                 <div className="flex flex-col gap-2">
-                  <Button
-                    className="w-full justify-start"
-                    variant="outline"
-                    onClick={() => reanalyzeSkipped()}
-                    disabled={loadingActions.has('reanalyze-skipped')}
-                  >
-                    <RotateCcw size={14} className="mr-2" />
-                    {loadingActions.has('reanalyze-skipped') ? t('dashboard.reanalyzing') : t('dashboard.reanalyzeSkipped')}
-                  </Button>
+                  {reanalyzeSkippedOperationId ? (
+                    <Button
+                      className="w-full justify-start"
+                      variant="destructive"
+                      onClick={() => stopReanalyzeSkipped()}
+                    >
+                      <Square size={14} className="mr-2" />
+                      {t('dashboard.stop')}
+                    </Button>
+                  ) : (
+                    <Button
+                      className="w-full justify-start"
+                      variant="outline"
+                      onClick={() => reanalyzeSkipped()}
+                      disabled={loadingActions.has('reanalyze-skipped')}
+                    >
+                      <RotateCcw size={14} className="mr-2" />
+                      {loadingActions.has('reanalyze-skipped') ? t('dashboard.reanalyzing') : t('dashboard.reanalyzeSkipped')}
+                    </Button>
+                  )}
                   <Button
                     className="w-full justify-start"
                     variant="outline"

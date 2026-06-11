@@ -303,12 +303,6 @@ const api = {
     return response.json();
   },
 
-  fetchAnalyzeChannel: async (id: number, account_id?: number): Promise<any> => {
-    const query = account_id ? `?account_id=${account_id}` : '';
-    const response = await fetch(`${API_BASE}/api/fetch-analyze/${id}${query}`, { method: 'POST' });
-    return response.json();
-  },
-
   fetchAll: async (): Promise<any> => {
     const response = await fetch(`${API_BASE}/api/fetch-all`, { method: 'POST' });
     return response.json();
@@ -316,11 +310,6 @@ const api = {
 
   analyzeAll: async (): Promise<any> => {
     const response = await fetch(`${API_BASE}/api/analyze-all`, { method: 'POST' });
-    return response.json();
-  },
-
-  fetchAnalyzeAll: async (): Promise<any> => {
-    const response = await fetch(`${API_BASE}/api/fetch-analyze-all`, { method: 'POST' });
     return response.json();
   },
 
@@ -345,6 +334,11 @@ const api = {
 
   reanalyzeMessage: async (messageId: number): Promise<any> => {
     const response = await fetch(`${API_BASE}/api/reanalyze-message/${messageId}`, { method: 'POST' });
+    return response.json();
+  },
+
+  deleteMessage: async (messageId: number): Promise<any> => {
+    const response = await fetch(`${API_BASE}/api/messages/${messageId}`, { method: 'DELETE' });
     return response.json();
   },
 

@@ -96,6 +96,8 @@
     "stopped": "已停止",
     "stopCronJob": "停止定时任务",
     "startCronJob": "启动定时任务",
+    "stop": "停止",
+    "operationStopped": "操作已停止",
     "other": "其他",
     "reanalyzing": "重新分析中...",
     "reanalyzeSkipped": "重新分析已跳过",
@@ -290,7 +292,13 @@
     "analyzing": "分析中",
     "processingMessages": "处理消息中...",
     "allStatus": "全部状态",
-    "searchPlaceholder": "搜索消息..."
+    "searchPlaceholder": "搜索消息...",
+    "skipReason": "跳过原因",
+    "viewJob": "查看职位",
+    "viewDeveloper": "查看开发者",
+    "deleteConfirm": "删除消息",
+    "deleteWarning": "确定要删除此消息吗？这将同时删除关联的职位或开发者。",
+    "deletedSuccessfully": "消息已成功删除"
   },
   "telegramAccounts": {
     "title": "Telegram 账号",

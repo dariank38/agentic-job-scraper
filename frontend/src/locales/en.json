@@ -97,6 +97,8 @@
     "stopped": "Stopped",
     "stopCronJob": "Stop Cron Job",
     "startCronJob": "Start Cron Job",
+    "stop": "Stop",
+    "operationStopped": "Operation stopped",
     "other": "Other",
     "reanalyzing": "Re-analyzing...",
     "reanalyzeSkipped": "Re-analyze Skipped",
@@ -291,7 +293,13 @@
     "analyzing": "Analyzing",
     "processingMessages": "Processing messages...",
     "allStatus": "All Status",
-    "searchPlaceholder": "Search messages..."
+    "searchPlaceholder": "Search messages...",
+    "skipReason": "Skip Reason",
+    "viewJob": "View Job",
+    "viewDeveloper": "View Developer",
+    "deleteConfirm": "Delete Message",
+    "deleteWarning": "Are you sure you want to delete this message? This will also delete any associated job or developer.",
+    "deletedSuccessfully": "Message deleted successfully"
   },
   "telegramAccounts": {
     "title": "Telegram Accounts",
