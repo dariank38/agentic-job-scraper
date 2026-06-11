@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardHeader } from '@/components/ui/card';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Separator } from '@/components/ui/separator';
 import { Input } from '@/components/ui/input';
@@ -636,16 +636,29 @@ const Developers = () => {
           </Card>
         </div>
       ) : (
-        <Card>
-          <CardContent className="pt-12 pb-12 text-center">
-            <User className="w-12 h-12 mx-auto mb-3 text-gray-300" />
-            <p className="text-gray-500 mb-1 font-medium">{t('developers.noDevsFound')}</p>
-            <p className="text-sm text-gray-400 mb-4">{t('developers.goToChannelsHint')}</p>
-            <Button asChild variant="outline">
-              <a href="/channels">{t('developers.goToChannels')}</a>
-            </Button>
-          </CardContent>
-        </Card>
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+          {/* Left Column - Developers List */}
+          <Card className="md:col-span-1">
+            <CardHeader>
+              <CardTitle className="text-lg">{t('developers.title')}</CardTitle>
+            </CardHeader>
+            <CardContent className="p-0">
+              <div className="px-4 pb-4 space-y-1">
+                <p className="text-sm text-gray-500 text-center py-8">{t('developers.noDevsFound')}</p>
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* Right Column - Developer Details */}
+          <Card className="md:col-span-3">
+            <CardContent className="pt-4 pb-4 sm:pt-6 sm:pb-6">
+              <div className="flex flex-col items-center justify-center h-64 text-gray-400">
+                <User className="w-12 h-12 mb-3 opacity-50" />
+                <p className="text-sm">{t('developers.selectDeveloper')}</p>
+              </div>
+            </CardContent>
+          </Card>
+        </div>
       )}
 
       {/* Delete Confirmation Dialog */}
