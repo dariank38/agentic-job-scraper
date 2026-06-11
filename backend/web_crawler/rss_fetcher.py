@@ -3,6 +3,7 @@
 import httpx
 import feedparser
 import logging
+from datetime import datetime, timedelta, timezone
 from typing import Optional, Any
 
 from web_crawler.config import USER_AGENT
@@ -13,16 +14,19 @@ logger = logging.getLogger(__name__)
 class Fetcher:
     """Generic RSS crawler for job postings."""
 
-    async def fetch(self, url: str) -> dict[str, Any]:
+    async def fetch(self, url: str, days_back: int = 2) -> dict[str, Any]:
         """Fetch RSS feed content.
 
         Args:
             url: The RSS feed URL to fetch.
+            days_back: Only include entries published within this many days (default: 2).
 
         Returns:
             Dictionary with 'type' (rss) and 'content' (list of RSS entries).
         """
-        logger.info(f"[RSS FETCH] Fetching from {url}")
+        logger.info(f"[RSS FETCH] Fetching from {url} (days_back={days_back})")
+
+        cutoff_date = datetime.now(timezone.utc) - timedelta(days=days_back)
 
         try:
             async with httpx.AsyncClient(timeout=10) as client:
@@ -32,6 +36,13 @@ class Fetcher:
                     if feed.entries:
                         entries = []
                         for e in feed.entries[:50]:  # Limit to 50 entries
+                            # Parse published date
+                            published = e.get('published_parsed')
+                            if published:
+                                # feedparser returns a time.struct_time, convert to datetime
+                                pub_date = datetime(*published[:6], tzinfo=timezone.utc)
+                                if pub_date < cutoff_date:
+                                    continue  # Skip entries older than days_back
                             # Prefer full content over summary
                             content = ''
                             if e.get('content'):
@@ -44,7 +55,7 @@ class Fetcher:
                             if content:
                                 entry_text += f"Content: {content}\n"
                             entries.append(entry_text)
-                        logger.info(f"[RSS FETCH] Found {len(entries)} entries")
+                        logger.info(f"[RSS FETCH] Found {len(entries)} entries within {days_back} days")
                         return {"type": "rss", "content": entries}
                     else:
                         logger.error(f"[RSS FETCH] No entries found in feed")
@@ -60,16 +71,19 @@ class Fetcher:
 class V2EXFetcher:
     """V2EX-specific RSS fetcher that extracts titles for batch analysis."""
 
-    async def fetch_titles(self, url: str) -> dict[str, Any]:
+    async def fetch_titles(self, url: str, days_back: int = 2) -> dict[str, Any]:
         """Fetch V2EX RSS feed and extract titles for batch analysis.
 
         Args:
             url: The V2EX RSS feed URL.
+            days_back: Only include entries published within this many days (default: 2).
 
         Returns:
             Dictionary with 'type' (v2ex) and 'entries' (list of {title, link, published}).
         """
-        logger.info(f"[V2EX FETCH] Fetching from {url}")
+        logger.info(f"[V2EX FETCH] Fetching from {url} (days_back={days_back})")
+
+        cutoff_date = datetime.now(timezone.utc) - timedelta(days=days_back)
 
         try:
             async with httpx.AsyncClient(timeout=10) as client:
@@ -79,12 +93,19 @@ class V2EXFetcher:
                     if feed.entries:
                         entries = []
                         for e in feed.entries[:50]:  # Limit to 50 entries
+                            # Parse published date
+                            published = e.get('published_parsed')
+                            if published:
+                                # feedparser returns a time.struct_time, convert to datetime
+                                pub_date = datetime(*published[:6], tzinfo=timezone.utc)
+                                if pub_date < cutoff_date:
+                                    continue  # Skip entries older than days_back
                             entries.append({
                                 "title": e.get('title', ''),
                                 "link": e.get('link', ''),
                                 "published": e.get('published', ''),
                             })
-                        logger.info(f"[V2EX FETCH] Found {len(entries)} entries")
+                        logger.info(f"[V2EX FETCH] Found {len(entries)} entries within {days_back} days")
                         return {"type": "v2ex", "entries": entries}
                     else:
                         logger.error(f"[V2EX FETCH] No entries found in feed")
