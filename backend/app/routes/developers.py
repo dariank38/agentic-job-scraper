@@ -152,12 +152,19 @@ def register_developer_routes(app):
 
     @app.delete("/api/developers/{developer_id}")
     async def api_delete_developer(developer_id: int, db: AsyncSession = Depends(get_db)):
-        """Delete a developer."""
+        """Delete a developer and its associated message."""
         try:
             result = await db.execute(select(Developer).filter(Developer.id == developer_id))
             developer = result.scalar_one_or_none()
             if not developer:
                 raise HTTPException(status_code=404, detail="Developer not found")
+
+            # Delete associated message if exists
+            if developer.message_id:
+                message_result = await db.execute(select(Message).filter(Message.id == developer.message_id))
+                message = message_result.scalar_one_or_none()
+                if message:
+                    await db.delete(message)
 
             await db.delete(developer)
             await db.commit()

@@ -148,12 +148,19 @@ def register_job_routes(app):
 
     @app.delete("/api/jobs/{job_id}")
     async def api_delete_job(job_id: int, db: AsyncSession = Depends(get_db)):
-        """Delete a job."""
+        """Delete a job and its associated message."""
         try:
             result = await db.execute(select(Job).filter(Job.id == job_id))
             job = result.scalar_one_or_none()
             if not job:
                 raise HTTPException(status_code=404, detail="Job not found")
+
+            # Delete associated message if exists
+            if job.message_id:
+                message_result = await db.execute(select(Message).filter(Message.id == job.message_id))
+                message = message_result.scalar_one_or_none()
+                if message:
+                    await db.delete(message)
 
             await db.delete(job)
             await db.commit()
