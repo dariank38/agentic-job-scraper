@@ -32,7 +32,16 @@ class Fetcher:
             async with httpx.AsyncClient(timeout=10) as client:
                 r = await client.get(url, headers={"User-Agent": USER_AGENT})
                 if r.status_code == 200:
-                    feed = feedparser.parse(r.text)
+                    # Handle encoding properly for Chinese content
+                    if r.encoding and r.encoding.lower() in ['utf-8', 'utf8']:
+                        content = r.text
+                    else:
+                        # Try to decode as UTF-8 if encoding is not detected
+                        try:
+                            content = r.content.decode('utf-8')
+                        except UnicodeDecodeError:
+                            content = r.text
+                    feed = feedparser.parse(content)
                     if feed.entries:
                         entries = []
                         for e in feed.entries[:50]:  # Limit to 50 entries
@@ -89,7 +98,16 @@ class V2EXFetcher:
             async with httpx.AsyncClient(timeout=10) as client:
                 r = await client.get(url, headers={"User-Agent": USER_AGENT})
                 if r.status_code == 200:
-                    feed = feedparser.parse(r.text)
+                    # Handle encoding properly for Chinese content
+                    if r.encoding and r.encoding.lower() in ['utf-8', 'utf8']:
+                        content = r.text
+                    else:
+                        # Try to decode as UTF-8 if encoding is not detected
+                        try:
+                            content = r.content.decode('utf-8')
+                        except UnicodeDecodeError:
+                            content = r.text
+                    feed = feedparser.parse(content)
                     if feed.entries:
                         entries = []
                         for e in feed.entries[:50]:  # Limit to 50 entries
