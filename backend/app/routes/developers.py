@@ -45,6 +45,7 @@ def register_developer_routes(app):
 
         # Apply search filter — searches name, contact, github, linkedin, portfolio, summary, experience, skills
         if search:
+            from sqlalchemy import cast, String
             search_pattern = f"%{search}%"
             query = query.where(
                 (Developer.name.ilike(search_pattern)) |
@@ -54,7 +55,9 @@ def register_developer_routes(app):
                 (Developer.portfolio.ilike(search_pattern)) |
                 (Developer.summary.ilike(search_pattern)) |
                 (Developer.experience.ilike(search_pattern)) |
-                (cast(Developer.skills, String).ilike(search_pattern))
+                (cast(Developer.skills, String).ilike(search_pattern)) |
+                (Developer.notes.ilike(search_pattern)) |
+                (Developer.translated_text.ilike(search_pattern))
             )
 
         # Get total count

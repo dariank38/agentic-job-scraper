@@ -115,7 +115,7 @@ class AsyncOllamaAnalyzer:
                             "keep_alive": -1,      # keep model loaded
                         },
                     ),
-                    timeout=240.0,  # 14b @ ~10 tok/s: 2048 tokens ≈ 204s + margin
+                    timeout=300.0,  # 14b @ ~10 tok/s: 2048 tokens ≈ 204s + margin
                 )
 
                 response_text = response["response"]

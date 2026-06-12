@@ -16,6 +16,7 @@ def register_message_routes(app):
     @app.get("/api/messages")
     async def api_messages(
         channel_id: Optional[int] = None,
+        website_source_id: Optional[int] = None,
         search: Optional[str] = None,
         analysis_status: Optional[str] = None,
         limit: int = 50,
@@ -28,11 +29,16 @@ def register_message_routes(app):
         if channel_id:
             query = query.filter(Message.channel_id == channel_id)
 
-        # Apply search filter
+        if website_source_id:
+            query = query.filter(Message.website_source_id == website_source_id)
+
+        # Apply search filter - search all text fields
         if search:
             search_pattern = f"%{search}%"
             query = query.where(
-                (Message.text.ilike(search_pattern))
+                (Message.text.ilike(search_pattern)) |
+                (Message.sender_username.ilike(search_pattern)) |
+                (Message.sender_first_name.ilike(search_pattern))
             )
 
         # Apply status filter

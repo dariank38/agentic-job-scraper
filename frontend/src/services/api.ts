@@ -31,7 +31,6 @@ export interface Job {
   is_applied: boolean;
   applied_at?: string;
   notes?: string;
-  analyzed_at?: string;
   channel_id?: number;
   channel_name?: string;
   source_type?: string;
@@ -65,7 +64,6 @@ export interface Developer {
   is_contacted: boolean;
   contacted_at?: string;
   notes?: string;
-  analyzed_at?: string;
   channel: Channel;
   message: {
     id: number;

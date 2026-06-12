@@ -34,49 +34,59 @@ def register_website_source_routes(app):
     @app.get("/api/website-sources")
     async def get_website_sources(db: AsyncSession = Depends(get_db)):
         """Get all website sources."""
-        result = await db.execute(select(WebsiteSource))
-        sources = result.scalars().all()
-
-        # Get job counts per source
-        job_counts_result = await db.execute(
-            select(Job.website_source_id, func.count(Job.id))
-            .filter(Job.website_source_id.isnot(None))
-            .group_by(Job.website_source_id)
+        # Build base query with subqueries for counts
+        message_count_subq = (
+            select(func.count())
+            .where(Message.website_source_id == WebsiteSource.id)
+            .correlate(WebsiteSource)
+            .scalar_subquery()
         )
-        job_counts = {row[0]: row[1] for row in job_counts_result.all()}
-
-        # Get pending message counts per source
-        pending_counts_result = await db.execute(
-            select(Message.website_source_id, func.count(Message.id))
-            .filter(Message.website_source_id.isnot(None), Message.analysis_status == "pending")
-            .group_by(Message.website_source_id)
+        job_count_subq = (
+            select(func.count())
+            .where(Job.website_source_id == WebsiteSource.id)
+            .correlate(WebsiteSource)
+            .scalar_subquery()
         )
-        pending_counts = {row[0]: row[1] for row in pending_counts_result.all()}
-
-        # Get total message counts per source
-        msg_counts_result = await db.execute(
-            select(Message.website_source_id, func.count(Message.id))
-            .filter(Message.website_source_id.isnot(None))
-            .group_by(Message.website_source_id)
+        pending_count_subq = (
+            select(func.count())
+            .where(Message.website_source_id == WebsiteSource.id, Message.analysis_status == "pending")
+            .correlate(WebsiteSource)
+            .scalar_subquery()
         )
-        msg_counts = {row[0]: row[1] for row in msg_counts_result.all()}
+
+        query = select(
+            WebsiteSource,
+            message_count_subq.label("message_count"),
+            job_count_subq.label("job_count"),
+            pending_count_subq.label("pending_count")
+        )
+
+        # Get sources sorted by job_count DESC, message_count DESC
+        sources_result = await db.execute(
+            query.order_by(
+                job_count_subq.desc(),
+                message_count_subq.desc(),
+                WebsiteSource.id
+            )
+        )
+        sources = sources_result.all()
 
         return {
             "success": True,
             "sources": [
                 {
-                    "id": s.id,
-                    "name": s.name,
-                    "url": s.url,
-                    "site_type": s.site_type,
-                    "is_active": s.is_active,
-                    "last_fetch_new_count": s.last_fetch_new_count,
-                    "last_fetch_at": s.last_fetch_at.isoformat() if s.last_fetch_at else None,
-                    "job_count": job_counts.get(s.id, 0),
-                    "message_count": msg_counts.get(s.id, 0),
-                    "pending_count": pending_counts.get(s.id, 0),
+                    "id": row[0].id,
+                    "name": row[0].name,
+                    "url": row[0].url,
+                    "site_type": row[0].site_type,
+                    "is_active": row[0].is_active,
+                    "last_fetch_new_count": row[0].last_fetch_new_count,
+                    "last_fetch_at": row[0].last_fetch_at.isoformat() if row[0].last_fetch_at else None,
+                    "job_count": row[2] or 0,
+                    "message_count": row[1] or 0,
+                    "pending_count": row[3] or 0,
                 }
-                for s in sources
+                for row in sources
             ],
         }
 
@@ -253,20 +263,34 @@ def register_website_source_routes(app):
             messages_added = 0
             total_entries = len(rss_entries)
 
-            for idx, entry_text in enumerate(rss_entries):
-                # Extract URL and published date from entry
-                url = None
-                published_date = None
-                for line in entry_text.split('\n'):
-                    if line.startswith('Link:'):
-                        url = line.replace('Link:', '').strip()
-                    elif line.startswith('Published:'):
-                        date_str = line.replace('Published:', '').strip()
+            for idx, entry in enumerate(rss_entries):
+                # Handle both old string format and new object format
+                if isinstance(entry, dict):
+                    entry_text = entry.get("text", "")
+                    url = entry.get("link", "")
+                    published_str = entry.get("published")
+                    published_date = None
+                    if published_str:
                         try:
-                            parsed_date = datetime.fromisoformat(date_str.replace('Z', '+00:00'))
+                            parsed_date = datetime.fromisoformat(published_str.replace('Z', '+00:00'))
                             published_date = parsed_date.replace(tzinfo=None)
                         except:
                             pass
+                else:
+                    # Legacy string format
+                    entry_text = entry
+                    url = None
+                    published_date = None
+                    for line in entry_text.split('\n'):
+                        if line.startswith('Link:'):
+                            url = line.replace('Link:', '').strip()
+                        elif line.startswith('Published:'):
+                            date_str = line.replace('Published:', '').strip()
+                            try:
+                                parsed_date = datetime.fromisoformat(date_str.replace('Z', '+00:00'))
+                                published_date = parsed_date.replace(tzinfo=None)
+                            except:
+                                pass
 
                 # Extract post ID from URL for deduplication (e.g., 1219380 from https://www.v2ex.com/t/1219380#reply2)
                 post_id = None
@@ -376,13 +400,28 @@ def register_website_source_routes(app):
 
                     # Save raw RSS entries as Messages (no Ollama extraction yet)
                     new_count = 0
-                    for entry_text in rss_entries:
-                        # Extract URL from entry
-                        url = None
-                        for line in entry_text.split('\n'):
-                            if line.startswith('Link:'):
-                                url = line.replace('Link:', '').strip()
-                                break
+                    for entry in rss_entries:
+                        # Handle both old string format and new object format
+                        if isinstance(entry, dict):
+                            entry_text = entry.get("text", "")
+                            url = entry.get("link", "")
+                            published_str = entry.get("published")
+                            published_date = None
+                            if published_str:
+                                try:
+                                    parsed_date = datetime.fromisoformat(published_str.replace('Z', '+00:00'))
+                                    published_date = parsed_date.replace(tzinfo=None)
+                                except:
+                                    pass
+                        else:
+                            # Legacy string format
+                            entry_text = entry
+                            url = None
+                            published_date = None
+                            for line in entry_text.split('\n'):
+                                if line.startswith('Link:'):
+                                    url = line.replace('Link:', '').strip()
+                                    break
 
                         # Extract post ID from URL for deduplication
                         post_id = None
@@ -419,7 +458,7 @@ def register_website_source_routes(app):
                             website_source_id=source.id,
                             source_type="website",
                             text=entry_text,
-                            date=None,
+                            date=published_date,
                             sender_username=source.name,
                             analysis_status="pending",
                         )

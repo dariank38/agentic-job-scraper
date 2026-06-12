@@ -75,6 +75,9 @@ const Messages = () => {
   const [searchQuery, setSearchQuery] = useState('');
   const [searchInput, setSearchInput] = useState('');
   const [statusFilter, setStatusFilter] = useState('all');
+  const [sourceFilter, setSourceFilter] = useState('all');
+  const [channels, setChannels] = useState<any[]>([]);
+  const [websiteSources, setWebsiteSources] = useState<any[]>([]);
   const [reanalyzingId, setReanalyzingId] = useState<number | null>(null);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [messageToDelete, setMessageToDelete] = useState<number | null>(null);
@@ -85,8 +88,25 @@ const Messages = () => {
   const { progress: wsProgress } = useWebSocketProgress();
 
   useEffect(() => {
+    loadChannelsAndSources();
+  }, []);
+
+  useEffect(() => {
     loadMessages();
-  }, [searchParams, searchQuery, statusFilter]);
+  }, [searchParams, searchQuery, statusFilter, sourceFilter]);
+
+  const loadChannelsAndSources = async () => {
+    try {
+      const [channelsData, sourcesData] = await Promise.all([
+        api.getChannels(),
+        api.getWebsiteSources()
+      ]);
+      setChannels(channelsData.channels || []);
+      setWebsiteSources(sourcesData.sources || []);
+    } catch (e) {
+      console.error('Failed to load channels/sources:', e);
+    }
+  };
 
   useEffect(() => {
     if (wsProgress) {
@@ -112,6 +132,13 @@ const Messages = () => {
       const params: any = { limit, offset };
       if (searchQuery) params.search = searchQuery;
       if (statusFilter !== 'all') params.analysis_status = statusFilter;
+      if (sourceFilter !== 'all') {
+        if (sourceFilter.startsWith('channel-')) {
+          params.channel_id = parseInt(sourceFilter.replace('channel-', ''));
+        } else if (sourceFilter.startsWith('website-')) {
+          params.website_source_id = parseInt(sourceFilter.replace('website-', ''));
+        }
+      }
       const data = await api.getMessages(params);
       setMessages(data.messages);
       setTotal(data.total);
@@ -184,46 +211,74 @@ const Messages = () => {
 
   const getStatusInfo = (status: string) => {
     switch (status) {
-      case 'analyzed': 
-        return { 
-          label: t('messages.analyzed'), 
+      case 'analyzed':
+        return {
+          label: t('messages.analyzed'),
           variant: 'default' as const,
           icon: CheckCircle2,
-          color: 'text-green-600 bg-green-100'
+          color: 'text-emerald-700 bg-emerald-50 border-emerald-200'
         };
-      case 'skipped': 
-        return { 
-          label: t('messages.skipped'), 
+      case 'skipped':
+        return {
+          label: t('messages.skipped'),
           variant: 'secondary' as const,
           icon: SkipForward,
-          color: 'text-gray-600 bg-gray-100'
+          color: 'text-slate-600 bg-slate-50 border-slate-200'
         };
-      default: 
-        return { 
-          label: t('messages.pending'), 
+      case 'failed':
+        return {
+          label: t('messages.failed') || 'Failed',
+          variant: 'destructive' as const,
+          icon: Clock,
+          color: 'text-red-700 bg-red-50 border-red-200'
+        };
+      default:
+        return {
+          label: t('messages.pending'),
           variant: 'outline' as const,
           icon: Clock,
-          color: 'text-yellow-600 bg-yellow-100'
+          color: 'text-amber-700 bg-amber-50 border-amber-200'
         };
     }
   };
 
-  const getInitials = (name: string) => {
-    return name.split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2);
+  const getSourceInfo = (sourceType: string) => {
+    switch (sourceType) {
+      case 'telegram':
+        return {
+          gradient: 'from-blue-500 to-cyan-500',
+          icon: 'TG',
+          color: 'text-blue-600 bg-blue-50 border-blue-200'
+        };
+      case 'website':
+        return {
+          gradient: 'from-purple-500 to-pink-500',
+          icon: 'WS',
+          color: 'text-purple-600 bg-purple-50 border-purple-200'
+        };
+      default:
+        return {
+          gradient: 'from-gray-500 to-gray-600',
+          icon: '?',
+          color: 'text-gray-600 bg-gray-50 border-gray-200'
+        };
+    }
   };
 
   return (
     <>
       {/* Header Bar */}
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-4">
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-6">
         <div>
-          <h1 className="text-2xl font-bold tracking-tight">{t('messages.title')}</h1>
-          <p className="text-sm text-muted-foreground mt-0.5">
+          <h1 className="text-3xl font-bold tracking-tight bg-gradient-to-r from-blue-600 to-purple-600 bg-clip-text text-transparent">
+            {t('messages.title')}
+          </h1>
+          <p className="text-sm text-muted-foreground mt-1">
             {total} {t('messages.totalMessages')}
           </p>
         </div>
         <div className="flex gap-2 items-center">
-          <Button variant="outline" size="sm" onClick={loadMessages} disabled={loading}>
+          <Button variant="outline" size="sm" onClick={loadMessages} disabled={loading} className="shadow-sm">
             <RefreshCw className={`w-4 h-4 mr-1.5 ${loading ? 'animate-spin' : ''}`} />
             {t('common.refresh')}
           </Button>
@@ -232,23 +287,23 @@ const Messages = () => {
 
       {/* Analysis Progress */}
       {analyzingChannel && (
-        <Card className="mb-4 border-blue-200 bg-blue-50">
+        <Card className="mb-6 border-2 border-blue-200 bg-gradient-to-r from-blue-50 to-cyan-50 shadow-sm">
           <CardContent className="py-4">
             <div className="flex items-center gap-3">
               <Loader2 className="w-5 h-5 text-blue-600 animate-spin" />
               <div className="flex-1">
-                <p className="font-medium text-blue-900">
-                  Analyzing {analyzingChannel}
+                <p className="font-semibold text-blue-900">
+                  {t('messages.analyzingChannel', { channel: analyzingChannel })}
                 </p>
                 {analysisProgress && (
                   <div className="mt-2">
                     <div className="flex justify-between text-xs mb-1">
-                      <span className="text-blue-700">Processing messages...</span>
-                      <span className="text-blue-700">{analysisProgress.processed} / {analysisProgress.total}</span>
+                      <span className="text-blue-700 font-medium">{t('messages.processingMessages')}</span>
+                      <span className="text-blue-700 font-bold">{analysisProgress.processed} / {analysisProgress.total}</span>
                     </div>
-                    <div className="w-full bg-blue-200 rounded-full h-2">
+                    <div className="w-full bg-blue-200 rounded-full h-2.5 overflow-hidden">
                       <div
-                        className="bg-blue-600 h-2 rounded-full transition-all"
+                        className="bg-gradient-to-r from-blue-500 to-cyan-500 h-2.5 rounded-full transition-all duration-300 ease-out"
                         style={{ width: `${(analysisProgress.processed / analysisProgress.total) * 100}%` }}
                       />
                     </div>
@@ -261,28 +316,50 @@ const Messages = () => {
       )}
 
       {/* Filters */}
-      <Card className="mb-4">
+      <Card className="mb-6 shadow-sm border-slate-200">
         <CardContent className="pt-4 pb-4">
           <div className="flex flex-col sm:flex-row gap-3">
             <div className="relative flex-1">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
               <Input
                 placeholder={t('messages.searchPlaceholder')}
                 value={searchInput}
                 onChange={(e) => setSearchInput(e.target.value)}
                 onKeyDown={(e) => { if (e.key === 'Enter') { setSearchParams({}); setSearchQuery(searchInput); } }}
-                className="pl-9"
+                className="pl-9 border-slate-200 focus:border-blue-400"
               />
             </div>
             <select
+              value={sourceFilter}
+              onChange={(e) => setSourceFilter(e.target.value)}
+              className="px-3 py-2 rounded-md border border-slate-200 text-sm bg-white focus:border-blue-400 focus:outline-none focus:ring-2 focus:ring-blue-100"
+            >
+              <option value="all">{t('messages.allSources') || 'All Sources'}</option>
+              <optgroup label={t('common.channels') || 'Channels'}>
+                {channels.map((ch: any) => (
+                  <option key={`channel-${ch.id}`} value={`channel-${ch.id}`}>
+                    {ch.username || ch.name}
+                  </option>
+                ))}
+              </optgroup>
+              <optgroup label={t('common.websiteSources') || 'Website Sources'}>
+                {websiteSources.map((ws: any) => (
+                  <option key={`website-${ws.id}`} value={`website-${ws.id}`}>
+                    {ws.name}
+                  </option>
+                ))}
+              </optgroup>
+            </select>
+            <select
               value={statusFilter}
               onChange={(e) => setStatusFilter(e.target.value)}
-              className="px-3 py-2 rounded-md border border-gray-200 text-sm bg-white"
+              className="px-3 py-2 rounded-md border border-slate-200 text-sm bg-white focus:border-blue-400 focus:outline-none focus:ring-2 focus:ring-blue-100"
             >
               <option value="all">{t('messages.allStatus')}</option>
               <option value="analyzed">{t('messages.analyzed')}</option>
               <option value="pending">{t('messages.pending')}</option>
               <option value="skipped">{t('messages.skipped')}</option>
+              <option value="failed">{t('messages.failed') || 'Failed'}</option>
             </select>
           </div>
         </CardContent>
@@ -301,33 +378,34 @@ const Messages = () => {
         </div>
       ) : messages.length > 0 ? (
         <>
-          <div className="space-y-3">
+          <div className="space-y-4">
             {messages.map((msg) => {
               const statusInfo = getStatusInfo(msg.analysis_status);
               const StatusIcon = statusInfo.icon;
+              const sourceInfo = getSourceInfo(msg.source_type);
               return (
                 <details key={msg.id} className="group">
                   <summary className="list-none cursor-pointer">
-                    <Card className="transition-all hover:shadow-md border border-gray-200">
+                    <Card className="transition-all hover:shadow-lg border-slate-200 hover:border-blue-300">
                       <CardContent className="py-4">
-                        <div className="flex items-start gap-3">
+                        <div className="flex items-start gap-4">
                           {/* Avatar */}
-                          <div className="w-10 h-10 rounded-lg bg-gradient-to-br from-blue-500 to-blue-600 flex items-center justify-center text-sm font-bold text-white shrink-0">
-                            {getInitials(msg.source_type === 'website' ? msg.website_source?.name || t('common.ws') : msg.channel?.username || t('common.ch'))}
+                          <div className={`w-12 h-12 rounded-xl bg-gradient-to-br ${sourceInfo.gradient} flex items-center justify-center text-sm font-bold text-white shrink-0 shadow-md`}>
+                            {sourceInfo.icon}
                           </div>
-                          
+
                           {/* Content */}
                           <div className="flex-1 min-w-0">
-                            <div className="flex items-center gap-2 mb-1.5 flex-wrap">
-                              <span className="font-semibold text-sm text-gray-900 truncate">
+                            <div className="flex items-center gap-2 mb-2 flex-wrap">
+                              <span className="font-semibold text-sm text-slate-900 truncate">
                                 {msg.source_type === 'website' ? msg.website_source?.name : msg.channel?.username || t('common.unknown')}
                               </span>
-                              <Badge variant={statusInfo.variant} className="text-xs px-2 py-0.5">
+                              <Badge variant={statusInfo.variant} className={`text-xs px-2.5 py-0.5 ${statusInfo.color}`}>
                                 <StatusIcon className="w-3 h-3 mr-1" />
                                 {statusInfo.label}
                               </Badge>
                               {msg.has_image && (
-                                <Badge variant="outline" className="text-xs px-2 py-0.5">
+                                <Badge variant="outline" className="text-xs px-2 py-0.5 border-slate-300">
                                   <ImageIcon className="w-3 h-3 mr-1" />
                                   {t('messages.image')}
                                 </Badge>
@@ -337,7 +415,7 @@ const Messages = () => {
                                   variant="outline"
                                   size="sm"
                                   asChild
-                                  className="text-xs h-6 px-2"
+                                  className="text-xs h-7 px-2.5 border-slate-300 hover:border-blue-400"
                                 >
                                   <a href={`/jobs?jobId=${msg.job.id}`}>
                                     {t('messages.viewJob')}
@@ -349,7 +427,7 @@ const Messages = () => {
                                   variant="outline"
                                   size="sm"
                                   asChild
-                                  className="text-xs h-6 px-2"
+                                  className="text-xs h-7 px-2.5 border-slate-300 hover:border-blue-400"
                                 >
                                   <a href={`/developers?developerId=${msg.developer.id}`}>
                                     {t('messages.viewDeveloper')}
@@ -363,7 +441,7 @@ const Messages = () => {
                                     size="sm"
                                     onClick={(e) => { e.stopPropagation(); reanalyzeSingle(msg.id); }}
                                     disabled={reanalyzingId === msg.id}
-                                    className="text-xs h-6 px-2"
+                                    className="text-xs h-7 px-2.5 text-slate-600 hover:text-slate-900 hover:bg-slate-100"
                                   >
                                     {reanalyzingId === msg.id ? (
                                       <Loader2 className="w-3 h-3 mr-1 animate-spin" />
@@ -376,15 +454,15 @@ const Messages = () => {
                                     variant="ghost"
                                     size="sm"
                                     onClick={(e) => { e.stopPropagation(); setMessageToDelete(msg.id); setDeleteDialogOpen(true); }}
-                                    className="text-xs h-6 px-2 text-red-600 hover:text-red-700 hover:bg-red-50"
+                                    className="text-xs h-7 px-2.5 text-red-600 hover:text-red-700 hover:bg-red-50"
                                   >
                                     {t('common.delete')}
                                   </Button>
                                 </>
                               )}
                             </div>
-                            
-                            <div className="flex items-center gap-3 text-xs text-gray-500 mb-1.5">
+
+                            <div className="flex items-center gap-3 text-xs text-slate-500 mb-2">
                               <span className="flex items-center gap-1">
                                 <Calendar className="w-3 h-3" />
                                 {msg.date ? new Date(msg.date).toLocaleString() : t('common.unknown')}
@@ -396,22 +474,22 @@ const Messages = () => {
                                 </span>
                               )}
                             </div>
-                            
+
                             <div
-                              className="text-sm text-gray-600 line-clamp-2"
+                              className="text-sm text-slate-600 line-clamp-2 leading-relaxed"
                               dangerouslySetInnerHTML={{ __html: msg.text || '<No text content>' }}
                             />
                           </div>
-                          
-                          <ChevronDown className="w-5 h-5 text-gray-400 transition-transform group-open:rotate-180 shrink-0 mt-1" />
+
+                          <ChevronDown className="w-5 h-5 text-slate-400 transition-transform group-open:rotate-180 shrink-0 mt-1" />
                         </div>
                       </CardContent>
                     </Card>
                   </summary>
-                  <Card className="mt-2 bg-gray-50">
+                  <Card className="mt-2 bg-slate-50 border-slate-200">
                     <CardContent className="pt-4">
                       {msg.skip_reason && (
-                        <div className="mb-3 p-2 bg-amber-50 border border-amber-200 rounded-lg">
+                        <div className="mb-3 p-3 bg-amber-50 border border-amber-200 rounded-lg">
                           <div className="flex items-center gap-2 text-xs text-amber-800">
                             <SkipForward className="w-3.5 h-3.5" />
                             <span className="font-medium">{t('messages.skipReason')}:</span>
@@ -419,12 +497,12 @@ const Messages = () => {
                           </div>
                         </div>
                       )}
-                      <div className="flex items-center gap-2 mb-3 text-xs text-gray-500">
+                      <div className="flex items-center gap-2 mb-3 text-xs text-slate-500 font-medium">
                         <MessageSquare className="w-3.5 h-3.5" />
                         <span>{t('messages.fullMessage')}</span>
                       </div>
                       <div
-                        className="text-sm leading-relaxed break-words"
+                        className="text-sm leading-relaxed break-words text-slate-700"
                         dangerouslySetInnerHTML={{ __html: msg.text || '<No text content>' }}
                       />
                     </CardContent>
@@ -435,16 +513,17 @@ const Messages = () => {
           </div>
 
           {/* Pagination */}
-          <div className="flex justify-center gap-3 mt-6">
+          <div className="flex justify-center gap-3 mt-8">
             <Button
               onClick={handlePrevious}
               disabled={offset === 0}
               variant="outline"
               size="sm"
+              className="shadow-sm border-slate-300"
             >
               {t('common.previous')}
             </Button>
-            <span className="flex items-center text-sm text-gray-500">
+            <span className="flex items-center text-sm text-slate-600 font-medium px-3">
               {offset + 1}-{Math.min(offset + limit, total)} / {total}
             </span>
             <Button
@@ -452,18 +531,21 @@ const Messages = () => {
               disabled={offset + limit >= total}
               variant="outline"
               size="sm"
+              className="shadow-sm border-slate-300"
             >
               {t('common.next')}
             </Button>
           </div>
         </>
       ) : (
-        <Card>
-          <CardContent className="pt-12 pb-12 text-center">
-            <MessageSquare className="w-12 h-12 mx-auto mb-3 text-gray-300" />
-            <p className="text-gray-500 mb-1 font-medium">{t('messages.noMessages')}</p>
-            <p className="text-sm text-gray-400 mb-4">{t('messages.fetchHint')}</p>
-            <Button asChild variant="outline">
+        <Card className="border-slate-200 shadow-sm">
+          <CardContent className="pt-16 pb-16 text-center">
+            <div className="w-16 h-16 mx-auto mb-4 rounded-full bg-gradient-to-br from-slate-100 to-slate-200 flex items-center justify-center">
+              <MessageSquare className="w-8 h-8 text-slate-400" />
+            </div>
+            <p className="text-slate-600 mb-2 font-semibold text-lg">{t('messages.noMessages')}</p>
+            <p className="text-sm text-slate-500 mb-6">{t('messages.fetchHint')}</p>
+            <Button asChild variant="outline" className="shadow-sm border-slate-300">
               <a href="/channels">{t('messages.goToChannels')}</a>
             </Button>
           </CardContent>

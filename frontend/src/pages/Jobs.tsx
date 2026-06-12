@@ -371,9 +371,18 @@ const Jobs = () => {
                               )}
                             </div>
                           )}
-                          <div className="flex items-center gap-1 mt-1 text-[10px] text-gray-400">
-                            <MessageSquare className="w-3 h-3" />
-                            {job.channel_name || job.channel?.username || t('common.unknown')}
+                          <div className="flex items-center gap-2 mt-1 text-[10px] text-gray-400">
+                            <span className="flex items-center gap-1">
+                              <MessageSquare className="w-3 h-3" />
+                              {job.channel_name || job.channel?.username || t('common.unknown')}
+                            </span>
+                            <span className="flex items-center gap-1">
+                              <Calendar className="w-3 h-3" />
+                              {job.message?.date
+                                ? new Date(job.message.date).toLocaleDateString()
+                                : t('common.unknown')
+                              }
+                            </span>
                           </div>
                         </div>
                       </div>

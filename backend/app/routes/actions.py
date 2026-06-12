@@ -266,6 +266,7 @@ def register_action_routes(app):
                                 message_id=message.id,
                                 channel_id=message.channel_id,
                                 channel_name=channel.name if channel else None,  # channel is now defined
+                                source_type="telegram",
                                 title=_title,
                                 company=job_data.get("company"),
                                 location=job_data.get("location"),
@@ -517,6 +518,7 @@ def register_action_routes(app):
                     message_id=message.id,
                     channel_id=message.channel_id,
                     channel_name=channel.name if channel else None,
+                    source_type="telegram",
                     confidence=confidence,
                     translated_text=translated_text,
                     title=title,

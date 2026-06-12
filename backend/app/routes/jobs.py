@@ -32,15 +32,12 @@ def register_job_routes(app):
 
         # Filter by source type if specified
         if source_type:
-            if source_type == "telegram":
-                query = query.filter(Job.message_id.isnot(None))
-            elif source_type == "website":
-                query = query.filter(Job.website_source_id.isnot(None))
+            query = query.filter(Job.source_type == source_type)
 
         if is_applied is not None:
             query = query.filter(Job.is_applied == is_applied)
 
-        # Apply search filter — searches title, company, location, summary, company_link, role_type, skills, contact
+        # Apply search filter — searches all text fields
         if search:
             from sqlalchemy import cast, String
             search_pattern = f"%{search}%"
@@ -52,7 +49,10 @@ def register_job_routes(app):
                 (Job.company_link.ilike(search_pattern)) |
                 (Job.role_type.ilike(search_pattern)) |
                 (cast(Job.skills, String).ilike(search_pattern)) |
-                (Job.contact.ilike(search_pattern))
+                (Job.contact.ilike(search_pattern)) |
+                (Job.channel_name.ilike(search_pattern)) |
+                (Job.notes.ilike(search_pattern)) |
+                (Job.translated_text.ilike(search_pattern))
             )
 
         # Get total count

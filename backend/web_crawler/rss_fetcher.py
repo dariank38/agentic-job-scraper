@@ -47,6 +47,7 @@ class Fetcher:
                         for e in feed.entries[:50]:  # Limit to 50 entries
                             # Parse published date
                             published = e.get('published_parsed')
+                            pub_date = None
                             if published:
                                 # feedparser returns a time.struct_time, convert to datetime
                                 pub_date = datetime(*published[:6], tzinfo=timezone.utc)
@@ -63,7 +64,11 @@ class Fetcher:
                             entry_text += f"Published: {e.get('published', '')}\n"
                             if content:
                                 entry_text += f"Content: {content}\n"
-                            entries.append(entry_text)
+                            entries.append({
+                                "text": entry_text,
+                                "link": e.get('link', ''),
+                                "published": pub_date.isoformat() if pub_date else None
+                            })
                         logger.info(f"[RSS FETCH] Found {len(entries)} entries within {days_back} days")
                         return {"type": "rss", "content": entries}
                     else:

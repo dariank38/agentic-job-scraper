@@ -81,7 +81,7 @@ class Message(Base):
     sender_first_name = Column(String, nullable=True)
     has_image = Column(Boolean, default=False)
     needs_reanalysis = Column(Boolean, default=False)  # Flag for messages that need re-analysis
-    analysis_status = Column(String, default="pending")  # pending, analyzed, skipped
+    analysis_status = Column(String, default="pending")  # pending, analyzed, skipped, failed
     skip_reason = Column(String, nullable=True)  # Reason why message was skipped
 
     created_at = Column(DateTime, default=datetime.utcnow)
@@ -199,7 +199,6 @@ class Job(Base):
             "is_applied": self.is_applied,
             "applied_at": self.applied_at.isoformat() if self.applied_at else None,
             "notes": self.notes,
-            "analyzed_at": self.analyzed_at.isoformat() if self.analyzed_at else None,
             "message": self.message.to_dict() if self.message else None,
         }
 
@@ -334,7 +333,6 @@ class Developer(Base):
             "is_contacted": self.is_contacted,
             "contacted_at": self.contacted_at.isoformat() if self.contacted_at else None,
             "notes": self.notes,
-            "analyzed_at": self.analyzed_at.isoformat() if self.analyzed_at else None,
             "message": self.message.to_dict() if self.message else None,
         }
 

@@ -676,8 +676,8 @@ async def analyze_messages(
                 msg_status = "success"
 
                 if error:
-                    # Keep message as pending for retry on timeout/errors
-                    message.analysis_status = "pending"
+                    # Mark message as failed on timeout/errors
+                    message.analysis_status = "failed"
                     msg_status = "failed"
                     message_results.append({
                         "message_id": message.id,
@@ -747,12 +747,19 @@ async def analyze_messages(
                     contact, contact_type = _resolve_contact(job_data.get("contacts"), message)
 
                     if title and company:
-                        existing_job_result = await db.execute(
-                            select(Job).filter(
-                                Job.title == title,
-                                Job.company == company,
+                        # Check for duplicate by title+company, or by company_link if available
+                        company_link = _to_str(job_data.get("company_link"))
+                        if company_link:
+                            existing_job_result = await db.execute(
+                                select(Job).filter(Job.company_link == company_link)
                             )
-                        )
+                        else:
+                            existing_job_result = await db.execute(
+                                select(Job).filter(
+                                    Job.title == title,
+                                    Job.company == company,
+                                )
+                            )
                         if existing_job_result.first():
                             # Delete message for duplicate job instead of saving it
                             await db.delete(message)
@@ -767,6 +774,7 @@ async def analyze_messages(
                             message_id=message.id,
                             channel_id=channel_id,
                             channel_name=channel_name,
+                            source_type="telegram",
                             confidence=confidence,
                             translated_text=translated_text,
                             title=title,
@@ -1266,12 +1274,22 @@ async def analyze_website_posts(
 
                     msg_job_added = 0
                     for job in jobs_to_process:
-                        # Check if job already exists for this message
+                        # Check for duplicate by company_link (post URL) - strict check across all messages
+                        if job.url:
+                            existing_job = await db.execute(
+                                select(Job).filter(Job.company_link == job.url)
+                            )
+                            if existing_job.scalar_one_or_none():
+                                # Job already exists with this URL, skip and will delete message later
+                                logger.info(f"[ANALYZE WEBSITE] Duplicate job detected by URL: {job.url}")
+                                continue
+
+                        # Also check if job already exists for this message (fallback)
                         existing_job = await db.execute(
                             select(Job).filter(Job.message_id == message_id)
                         )
                         if existing_job.scalar_one_or_none():
-                            # Job already exists, skip and will delete message later
+                            # Job already exists for this message, skip and will delete message later
                             continue
 
                         # Create job from extracted data (map to valid Job model fields)
@@ -1279,6 +1297,7 @@ async def analyze_website_posts(
                             message_id=message_id,
                             website_source_id=source_id,
                             channel_name=source_name,
+                            source_type="website",
                             title=job.title or "Unknown",
                             company=job.company or "Unknown",
                             location=job.location,
@@ -1308,24 +1327,43 @@ async def analyze_website_posts(
                     msg_dev_added = 0
                     if extracted_data.developer_info:
                         dev = extracted_data.developer_info
+                        # Check for duplicate by name + portfolio/github/linkin (strict check across all sources)
+                        conditions = [Developer.name == dev.team_name]
+                        portfolio = dev.open_source_links[0] if dev.open_source_links else None
+                        if portfolio:
+                            conditions.append(Developer.portfolio == portfolio)
+                        # Could also add github/linkedin if available in the extracted data
+
+                        if len(conditions) >= 2:
+                            existing_dev = await db.execute(
+                                select(Developer).filter(*conditions)
+                            )
+                            if existing_dev.first():
+                                # Developer already exists, skip and will delete message later
+                                logger.info(f"[ANALYZE WEBSITE] Duplicate developer detected: {dev.team_name}")
+                                continue
+
+                        # Fallback: check within same website source by name
                         existing_dev = await db.execute(
                             select(Developer).filter(
                                 Developer.website_source_id == source_id,
                                 Developer.name == dev.team_name
                             )
                         )
-                        if not existing_dev.first():
-                            dev_obj = Developer(
-                                website_source_id=source_id,
-                                name=dev.team_name,
-                                skills=dev.tech_stack,
-                                portfolio=dev.open_source_links[0] if dev.open_source_links else None,
-                                summary=dev.description,
-                            )
-                            db.add(dev_obj)
-                            devs_added += 1
-                            msg_dev_added += 1
-                        # If developer already exists, skip and will delete message later
+                        if existing_dev.first():
+                            # Developer already exists for this source, skip and will delete message later
+                            continue
+
+                        dev_obj = Developer(
+                            website_source_id=source_id,
+                            name=dev.team_name,
+                            skills=dev.tech_stack,
+                            portfolio=portfolio,
+                            summary=dev.description,
+                        )
+                        db.add(dev_obj)
+                        devs_added += 1
+                        msg_dev_added += 1
 
                     # If no job or developer was extracted for this message, delete it
                     if msg_job_added == 0 and msg_dev_added == 0:
@@ -1354,8 +1392,8 @@ async def analyze_website_posts(
                 except Exception as e:
                     logger.error(f"[ANALYZE WEBSITE] Error analyzing message {message_id}: {e}", exc_info=True)
                     await db.rollback()
-                    # Keep message as pending for retry on errors
-                    message.analysis_status = "pending"
+                    # Mark message as failed on errors
+                    message.analysis_status = "failed"
                     batch_message_results.append({"status": "failed", "error": str(e)})
                     continue
 

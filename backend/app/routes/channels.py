@@ -101,8 +101,32 @@ def register_channel_routes(app):
         db: AsyncSession = Depends(get_db),
     ):
         """Get channels as JSON with pagination, search, and filters."""
-        # Build base query
-        query = select(Channel)
+        # Build base query with subqueries for counts
+        message_count_subq = (
+            select(func.count())
+            .where(Message.channel_id == Channel.id)
+            .correlate(Channel)
+            .scalar_subquery()
+        )
+        job_count_subq = (
+            select(func.count())
+            .where(Job.channel_id == Channel.id)
+            .correlate(Channel)
+            .scalar_subquery()
+        )
+        pending_count_subq = (
+            select(func.count())
+            .where(Message.channel_id == Channel.id, Message.analysis_status == "pending")
+            .correlate(Channel)
+            .scalar_subquery()
+        )
+
+        query = select(
+            Channel,
+            message_count_subq.label("message_count"),
+            job_count_subq.label("job_count"),
+            pending_count_subq.label("pending_count")
+        )
         count_query = select(func.count()).select_from(Channel)
 
         # Apply search filter
@@ -128,33 +152,23 @@ def register_channel_routes(app):
         count_result = await db.execute(count_query)
         total = count_result.scalar() or 0
 
-        # Get channels with pagination
-        channels_result = await db.execute(query.order_by(Channel.id).offset(offset).limit(limit))
-        channels = channels_result.scalars().all()
+        # Get channels with pagination, sorted by job_count DESC, message_count DESC
+        channels_result = await db.execute(
+            query.order_by(
+                job_count_subq.desc(),
+                message_count_subq.desc(),
+                Channel.id
+            ).offset(offset).limit(limit)
+        )
+        channels = channels_result.all()
 
-        # Get counts for each channel using subqueries to avoid join multiplication
+        # Build response data
         channels_data = []
-        for channel in channels:
-            # Count messages
-            msg_count_result = await db.execute(
-                select(func.count()).select_from(Message).filter(Message.channel_id == channel.id)
-            )
-            message_count = msg_count_result.scalar() or 0
-
-            # Count pending messages (not yet analyzed)
-            pending_count_result = await db.execute(
-                select(func.count()).select_from(Message).filter(
-                    Message.channel_id == channel.id,
-                    Message.analysis_status == "pending"
-                )
-            )
-            pending_count = pending_count_result.scalar() or 0
-
-            # Count jobs
-            job_count_result = await db.execute(
-                select(func.count()).select_from(Job).filter(Job.channel_id == channel.id)
-            )
-            job_count = job_count_result.scalar() or 0
+        for row in channels:
+            channel = row[0]
+            message_count = row[1] or 0
+            job_count = row[2] or 0
+            pending_count = row[3] or 0
 
             channels_data.append({
                 "id": channel.id,

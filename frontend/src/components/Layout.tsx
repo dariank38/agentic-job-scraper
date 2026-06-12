@@ -1,7 +1,6 @@
 import { Link, useLocation } from 'react-router-dom';
 import { useState, createContext, useContext, useEffect, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from '@/components/ui/sheet';
 import Footer from '@/components/Footer';
@@ -410,9 +409,6 @@ const Layout = ({ children }: { children: React.ReactNode }) => {
             <span className="font-bold text-foreground tracking-tight">
               Job Scraper
             </span>
-            <Badge variant="secondary" className="rounded-full text-[10px] px-1.5 py-0 h-4">
-              Beta
-            </Badge>
           </Link>
 
           {/* Desktop Navigation */}
