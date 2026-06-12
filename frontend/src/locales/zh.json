@@ -46,7 +46,9 @@
     "telegram": "Telegram",
     "website": "网站",
     "ws": "WS",
-    "ch": "CH"
+    "ch": "CH",
+    "channels": "频道",
+    "websiteSources": "网站来源"
   },
   "nav": {
     "dashboard": "仪表板",

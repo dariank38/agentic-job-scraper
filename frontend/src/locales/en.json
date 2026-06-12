@@ -46,7 +46,9 @@
     "telegram": "Telegram",
     "website": "Website",
     "ws": "WS",
-    "ch": "CH"
+    "ch": "CH",
+    "channels": "Channels",
+    "websiteSources": "Website Sources"
   },
 
   "nav": {
