@@ -181,6 +181,55 @@ async def cleanup_stale_operations():
             await db.rollback()
 
 
+async def cleanup_old_messages():
+    """Delete messages older than 2 days on backend startup.
+    Exceptions:
+    - Keep message if it has an associated job with is_applied = true
+    - Keep message if it has an associated developer with is_contacted = true
+    """
+    from datetime import datetime, timedelta, timezone
+    from app.models import Message, Job, Developer
+
+    async with AsyncSessionLocal() as db:
+        try:
+            cutoff_date = datetime.now(timezone.utc) - timedelta(days=2)
+
+            # Find messages older than 2 days
+            result = await db.execute(
+                select(Message).filter(Message.date < cutoff_date)
+            )
+            old_messages = result.scalars().all()
+
+            if not old_messages:
+                logger.info("[CLEANUP] No old messages found")
+                return
+
+            deleted_count = 0
+            kept_count = 0
+
+            for msg in old_messages:
+                # Check if message has an applied job
+                if msg.job and msg.job.is_applied:
+                    kept_count += 1
+                    continue
+
+                # Check if message has a contacted developer
+                if msg.developer and msg.developer.is_contacted:
+                    kept_count += 1
+                    continue
+
+                # Delete the message (cascade will delete associated job/developer)
+                await db.delete(msg)
+                deleted_count += 1
+
+            await db.commit()
+            logger.info(f"[CLEANUP] Deleted {deleted_count} old messages, kept {kept_count} (applied/contacted)")
+
+        except Exception as e:
+            logger.error(f"[CLEANUP] Failed to cleanup old messages: {e}")
+            await db.rollback()
+
+
 def is_cron_running() -> bool:
     return cron_running
 
@@ -1492,6 +1541,8 @@ async def lifespan(app):
     """Startup and shutdown events."""
     # Cleanup stale operations on startup
     await cleanup_stale_operations()
+    # Cleanup old messages on startup
+    await cleanup_old_messages()
     try:
         yield
     finally:
