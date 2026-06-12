@@ -490,8 +490,7 @@ async def fetch_and_store_messages(
             try:
                 result = await db.execute(
                     select(Message).filter(
-                        Message.telegram_id == msg_data["id"],
-                        Message.channel_id == channel.id,
+                        Message.text == msg_data.get("text"),
                     )
                 )
                 existing = result.scalar_one_or_none()
