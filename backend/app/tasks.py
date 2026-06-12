@@ -556,7 +556,7 @@ async def _analyze_single(analyzer, message, channel_username: str):
     try:
         result = await asyncio.wait_for(
             analyzer.analyze_message(message.text),
-            timeout=180,  # Timeout for analysis
+            timeout=300,  # Timeout for analysis
         )
         elapsed = time.time() - start_time
         logger.info(f"[ANALYZE MSG DONE] Channel: {channel_username} | Msg: {msg_preview}... | Time: {elapsed:.1f}s | Result: {result.get('category') if result else 'none'}")
