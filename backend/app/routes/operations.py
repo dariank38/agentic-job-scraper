@@ -154,3 +154,31 @@ def register_operations_routes(app):
             "started_at": operation.started_at.isoformat() if operation.started_at else None,
             "completed_at": operation.completed_at.isoformat() if operation.completed_at else None,
         }
+
+    @app.get("/api/operations/current-analyzing")
+    async def get_current_analyzing(db: AsyncSession = Depends(get_db)):
+        """Get current analyzing messages for all running operations."""
+        from datetime import datetime, timedelta
+        # Get running operations from the last 10 minutes
+        recent_cutoff = datetime.utcnow() - timedelta(minutes=10)
+        db.expire_all()
+        result = await db.execute(
+            select(Operation).filter(
+                (Operation.status == "running") &
+                (Operation.started_at >= recent_cutoff)
+            )
+        )
+        operations = result.scalars().all()
+
+        # Return minimal info for running operations
+        return {
+            "operations": [
+                {
+                    "channel_username": op.channel_username,
+                    "status": op.status,
+                    "analyzed": op.analyzed,
+                    "total": op.total,
+                }
+                for op in operations
+            ]
+        }

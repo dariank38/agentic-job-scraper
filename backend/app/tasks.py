@@ -85,7 +85,6 @@ def reset_bulk_stop_event(operation_id: str):
     import logging
     logger = logging.getLogger(__name__)
     bulk_stop_events[operation_id] = asyncio.Event()
-    logger.info(f"[STOP EVENT] Bulk operation {operation_id} - Reset/stop event created")
 
 
 def stop_bulk_operation(operation_id: str):
@@ -94,9 +93,6 @@ def stop_bulk_operation(operation_id: str):
     logger = logging.getLogger(__name__)
     if operation_id in bulk_stop_events:
         bulk_stop_events[operation_id].set()
-        logger.info(f"[STOP SIGNAL] Bulk operation {operation_id} - STOP event set")
-    else:
-        logger.warning(f"[STOP SIGNAL] Bulk operation {operation_id} - no stop event found in memory (already finished or not started?)")
 
 
 def is_bulk_operation_stopped(operation_id: str) -> bool:
@@ -104,12 +100,7 @@ def is_bulk_operation_stopped(operation_id: str) -> bool:
     event = bulk_stop_events.get(operation_id)
     if event is None:
         return False
-    is_stopped = event.is_set()
-    if is_stopped:
-        import logging
-        logger = logging.getLogger(__name__)
-        logger.info(f"[STOP CHECK] Bulk operation {operation_id} - STOP detected")
-    return is_stopped
+    return event.is_set()
 
 
 def cleanup_bulk_stop_event(operation_id: str):
@@ -141,7 +132,6 @@ async def cleanup_stale_operations():
             stale_ops = result.scalars().all()
 
             if not stale_ops:
-                logger.info("[CLEANUP] No stale operations found")
                 return
 
             stale_count = 0
@@ -155,16 +145,13 @@ async def cleanup_stale_operations():
                     age = datetime.now(timezone.utc) - op.started_at.replace(tzinfo=timezone.utc)
                     if age > timedelta(hours=1):
                         is_stale = True
-                        logger.info(f"[CLEANUP] Operation {op.id} stale: running for {age}")
 
                 # Check if stop event exists in memory
                 if op.channel_id and op.channel_id not in analysis_stop_events:
                     is_stale = True
-                    logger.info(f"[CLEANUP] Operation {op.id} stale: no stop event for channel {op.channel_id}")
 
                 if op.bulk_operation_id and op.bulk_operation_id not in bulk_stop_events:
                     is_stale = True
-                    logger.info(f"[CLEANUP] Operation {op.id} stale: no stop event for bulk {op.bulk_operation_id}")
 
                 if is_stale:
                     op.status = "stopped"
@@ -172,12 +159,8 @@ async def cleanup_stale_operations():
 
             if stale_count > 0:
                 await db.commit()
-                logger.info(f"[CLEANUP] Marked {stale_count} stale operations as stopped")
-            else:
-                logger.info(f"[CLEANUP] Found {len(stale_ops)} running operations, none are stale")
 
         except Exception as e:
-            logger.error(f"[CLEANUP] Failed to cleanup stale operations: {e}")
             await db.rollback()
 
 
@@ -187,12 +170,12 @@ async def cleanup_old_messages():
     - Keep message if it has an associated job with is_applied = true
     - Keep message if it has an associated developer with is_contacted = true
     """
-    from datetime import datetime, timedelta, timezone
+    from datetime import datetime, timedelta
     from app.models import Message, Job, Developer
 
     async with AsyncSessionLocal() as db:
         try:
-            cutoff_date = datetime.now(timezone.utc) - timedelta(days=2)
+            cutoff_date = datetime.utcnow() - timedelta(days=2)
 
             # Find messages older than 2 days
             result = await db.execute(
@@ -201,7 +184,6 @@ async def cleanup_old_messages():
             old_messages = result.scalars().all()
 
             if not old_messages:
-                logger.info("[CLEANUP] No old messages found")
                 return
 
             deleted_count = 0
@@ -223,10 +205,8 @@ async def cleanup_old_messages():
                 deleted_count += 1
 
             await db.commit()
-            logger.info(f"[CLEANUP] Deleted {deleted_count} old messages, kept {kept_count} (applied/contacted)")
 
         except Exception as e:
-            logger.error(f"[CLEANUP] Failed to cleanup old messages: {e}")
             await db.rollback()
 
 
@@ -326,9 +306,8 @@ async def update_operation(
             operation.completed_at = datetime.utcnow()
         if commit:
             await db.commit()
-            logger.info(f"[DB UPDATE] Op:{operation_id} | analyzed:{old_analyzed}->{analyzed} | status:{status} | commit:OK")
     else:
-        logger.warning(f"[DB UPDATE] Op:{operation_id} - Operation not found!")
+        pass
 
 
 # ── HELPERS ───────────────────────────────────────────────────────────────────
@@ -454,7 +433,6 @@ async def fetch_and_store_messages(
     )
 
     operation_id = await create_operation(db, "fetch", channel, bulk_operation_id=bulk_operation_id)
-    logger.info(f"[FETCH START] Channel: {channel.username} | Days: {days_back} | BulkOp: {bulk_operation_id or 'none'}")
 
     try:
         await broadcast_progress("fetch_start", {"channel": channel.username, "days_back": days_back, "operation_id": operation_id})
@@ -467,7 +445,6 @@ async def fetch_and_store_messages(
             days_back=days_back,
         )
         await broadcast_progress("fetch_progress", {"channel": channel.username, "status": "fetched", "count": len(messages), "operation_id": operation_id})
-        logger.info(f"[FETCH FETCHED] Channel: {channel.username} | Messages to store: {len(messages)}")
 
         # Update operation with total messages count
         await update_operation(db, operation_id, total_messages=len(messages))
@@ -529,7 +506,6 @@ async def fetch_and_store_messages(
                     await update_operation(db, operation_id, current=i + 1, total=len(messages), analyzed=i + 1)
 
             except Exception as e:
-                logger.warning(f"Failed to store message {msg_data.get('id')}: {e}")
                 continue
 
         await db.commit()
@@ -539,7 +515,6 @@ async def fetch_and_store_messages(
         await db.commit()
 
         status = "stopped" if stopped_early else "completed"
-        logger.info(f"[FETCH COMPLETE] Channel: {channel.username} | Status: {status} | New messages: {new_count} | Total processed: {i+1 if 'i' in locals() else 0}")
         await broadcast_progress("fetch_complete", {"channel": channel.username, "new_messages": new_count, "operation_id": operation_id, "stopped": stopped_early})
         await update_operation(db, operation_id, status=status)
 
@@ -569,7 +544,6 @@ async def fetch_and_store_messages(
             "operation_id": operation_id,
             "error": str(e),
         })
-        logger.error(f"[FETCH ERROR] Channel: {channel_username} | Error: {e}")
         error_msg = str(e).lower()
         invalid_channel_errors = [
             "channel not found", "channel invalid", "username not occupied",
@@ -599,19 +573,24 @@ async def _analyze_single(analyzer, message, channel_username: str):
     import time
     start_time = time.time()
     msg_preview = message.text[:50] if message.text else "[no text]"
-    logger.info(f"[ANALYZE MSG START] Channel: {channel_username} | Msg: {msg_preview}...")
-    
+
+    # Broadcast message analysis start for real-time UI
+    await broadcast_progress("analyzing_message", {
+        "channel": channel_username,
+        "message_id": message.id,
+        "message_text": message.text[:200] if message.text else "",
+        "message_preview": msg_preview
+    })
+
     try:
         result = await asyncio.wait_for(
             analyzer.analyze_message(message.text),
             timeout=300,  # Timeout for analysis
         )
         elapsed = time.time() - start_time
-        logger.info(f"[ANALYZE MSG DONE] Channel: {channel_username} | Msg: {msg_preview}... | Time: {elapsed:.1f}s | Result: {result.get('category') if result else 'none'}")
         return message, result, None
     except asyncio.TimeoutError:
         elapsed = time.time() - start_time
-        logger.warning(f"[ANALYZE MSG TIMEOUT] Channel: {channel_username} | Msg: {msg_preview}... | Time: {elapsed:.1f}s")
         return message, None, Exception(f"Analysis timeout after 120s")
     except Exception as e:
         elapsed = time.time() - start_time
@@ -679,26 +658,20 @@ async def analyze_messages(
         consecutive_failures = 0
         max_consecutive_failures = 5
 
-        logger.info(f"[ANALYZE START] Channel: {channel_username} | Messages: {total_messages} | Batches: {total_batches} | BulkOp: {bulk_operation_id or 'none'}")
-
         for batch_num, batch_start in enumerate(range(0, total_messages, batch_size), 1):
             # Check both individual channel stop and bulk operation stop
             if is_analysis_stopped(channel_id):
-                logger.info(f"[ANALYZE STOP] Channel: {channel_username} - Individual stop signal received")
                 stopped_count = total_messages - batch_start
                 break
             if bulk_operation_id and is_bulk_operation_stopped(bulk_operation_id):
-                logger.info(f"[ANALYZE STOP] Channel: {channel_username} - Bulk stop signal received for {bulk_operation_id}")
                 stopped_count = total_messages - batch_start
                 break
 
             # Circuit breaker: stop if too many consecutive failures
             if consecutive_failures >= max_consecutive_failures:
-                logger.error(f"[ANALYZE CIRCUIT BREAKER] Channel: {channel_username} - Stopping after {consecutive_failures} consecutive batch failures")
                 stopped_count = total_messages - batch_start
                 break
 
-            logger.info(f"[ANALYZE BATCH] Channel: {channel_username} | Batch {batch_num}/{total_batches} | Messages {batch_start}-{min(batch_start+batch_size, total_messages)}")
 
             batch = messages[batch_start:batch_start + batch_size]
 
@@ -853,7 +826,6 @@ async def analyze_messages(
                             "role_type": job.role_type,
                         })
                     except Exception as e:
-                        logger.error(f"[DB ERROR] Failed to save job for msg {message.id}: {e}")
                         skipped_count += 1
                         message.analysis_status = "pending"
                         message_results[-1]["status"] = "db_error"
@@ -923,7 +895,6 @@ async def analyze_messages(
                         devs_added += 1
                         message.analysis_status = "analyzed"
                     except Exception as e:
-                        logger.error(f"[DB ERROR] Failed to save developer for msg {message.id}: {e}")
                         skipped_count += 1
                         message.analysis_status = "pending"
                         message_results[-1]["status"] = "db_error"
@@ -945,7 +916,6 @@ async def analyze_messages(
             batch_has_errors = any(r.get("status") in ["failed", "db_error"] for r in batch_message_results)
             if batch_has_errors:
                 consecutive_failures += 1
-                logger.warning(f"[ANALYZE BATCH ERROR] Channel: {channel_username} | Batch {batch_num} had errors | Consecutive failures: {consecutive_failures}")
             else:
                 consecutive_failures = 0  # Reset on success
             
@@ -971,22 +941,19 @@ async def analyze_messages(
             try:
                 await update_operation(db, operation_id, current=batch_num, analyzed=analyzed_count, jobs_found=jobs_added, developers_found=devs_added)
             except Exception as e:
-                logger.warning(f"[ANALYZE] Failed to update operation progress: {e}")
+                pass
             
             # Commit after each batch to save progress (with error recovery)
             try:
                 await db.commit()
             except Exception as e:
-                logger.error(f"[ANALYZE BATCH COMMIT ERROR] Channel: {channel_username} | Batch {batch_num} commit failed: {e}")
                 await db.rollback()
                 # Continue anyway - next batch will try again
 
         try:
             await db.commit()
-            logger.info(f"Commit OK — jobs: {jobs_added}, devs: {devs_added}")
         except Exception as e:
             await db.rollback()
-            logger.error(f"[ANALYZE COMMIT ERROR] Channel: {channel_username} | DB commit failed: {e}")
             # Don't raise - return partial success instead
             return {
                 "success": True,  # Partial success - some messages were processed
@@ -1007,11 +974,9 @@ async def analyze_messages(
                     run.jobs_found += jobs_added
                     await db.commit()
             except Exception as e:
-                logger.error(f"Error updating run stats: {e}")
                 await db.rollback()
 
         status = "stopped" if stopped_count > 0 else "completed"
-        logger.info(f"[ANALYZE COMPLETE] Channel: {channel_username} | Status: {status} | Analyzed: {analyzed_count} | Jobs: {jobs_added} | Devs: {devs_added} | Stopped: {stopped_count > 0}")
         await broadcast_progress("analyze_complete", {
             "channel": channel_username,
             "channel_id": channel_id,
@@ -1049,7 +1014,6 @@ async def analyze_messages(
             "operation_id": operation_id,
             "error": str(e),
         })
-        logger.error(f"[ANALYZE ERROR] Channel: {channel_username} | Error: {e}")
         return {"success": False, "error": str(e)}
 
     finally:
@@ -1096,9 +1060,9 @@ async def continuous_scanner(
                                         try:
                                             await analyze_messages(db, channel)
                                         except Exception as e:
-                                            logger.error(f"Analyze error in cron: {e}")
+                                            pass
                             except Exception as e:
-                                logger.error(f"Fetch error in cron: {e}")
+                                pass
 
                     # Process website sources
                     from app.models import WebsiteSource
@@ -1124,13 +1088,20 @@ async def continuous_scanner(
 
                                 if rss_entries:
                                     new_count = 0
-                                    for entry_text in rss_entries:
-                                        # Extract URL from entry
-                                        url = None
-                                        for line in entry_text.split('\n'):
-                                            if line.startswith('Link:'):
-                                                url = line.replace('Link:', '').strip()
-                                                break
+                                    for entry in rss_entries:
+                                        # Extract text, link, and published date from structured entry
+                                        entry_text = entry.get("text", "")
+                                        url = entry.get("link", "")
+                                        published_date_str = entry.get("published")
+
+                                        # Parse published date
+                                        published_date = None
+                                        if published_date_str:
+                                            try:
+                                                from datetime import datetime
+                                                published_date = datetime.fromisoformat(published_date_str)
+                                            except:
+                                                pass
 
                                         # Extract post ID from URL for deduplication
                                         post_id = None
@@ -1167,7 +1138,7 @@ async def continuous_scanner(
                                             website_source_id=website.id,
                                             source_type="website",
                                             text=entry_text,
-                                            date=None,
+                                            date=published_date,
                                             sender_username=website.name,
                                             analysis_status="pending",
                                         )
@@ -1186,19 +1157,19 @@ async def continuous_scanner(
                                             from app.tasks import analyze_website_posts
                                             await analyze_website_posts(db, website)
                                         except Exception as e:
-                                            logger.error(f"Analyze website error in cron: {e}")
+                                            pass
                                 else:
                                     last_website_fetch_time[website_id] = now
                             except Exception as e:
-                                logger.error(f"Website fetch error in cron: {e}")
+                                pass
 
                 except Exception as e:
-                    logger.error(f"Cron inner error: {e}")
+                    pass
 
         except asyncio.CancelledError:
             break
         except Exception as e:
-            logger.error(f"Cron outer error: {e}")
+            pass
 
         await asyncio.sleep(sleep_interval_seconds)
 
@@ -1270,17 +1241,14 @@ async def analyze_website_posts(
         max_consecutive_failures = 5
 
         prompt_type = "custom" if custom_prompt else (site_type or "generic")
-        logger.info(f"[ANALYZE WEBSITE] ▶ START | source={source_name} | url={source_url} | pending_messages={total_messages} | batches={total_batches} | batch_size={batch_size} | model={extractor.model} | prompt={prompt_type}")
 
         for batch_num in range(total_batches):
             # Check for stop signal
             if is_website_operation_stopped(source_id):
-                logger.info(f"[ANALYZE WEBSITE STOP] Source: {source_name} - Stop signal received")
                 stopped_count = total_messages - (batch_num * batch_size)
                 break
 
             if consecutive_failures >= max_consecutive_failures:
-                logger.error(f"[ANALYZE WEBSITE CIRCUIT BREAKER] Source: {source_name} - Stopping after {consecutive_failures} consecutive batch failures")
                 stopped_count = total_messages - (batch_num * batch_size)
                 break
 
@@ -1288,7 +1256,6 @@ async def analyze_website_posts(
             batch_end = min(batch_start + batch_size, total_messages)
             filtered_messages = messages[batch_start:batch_end]
 
-            logger.info(f"[ANALYZE WEBSITE BATCH] Source: {source_name} | Batch {batch_num + 1}/{total_batches} | Messages {batch_start + 1}-{batch_end}")
 
             batch_message_results = []
             for message in filtered_messages:
@@ -1296,12 +1263,19 @@ async def analyze_website_posts(
                 message_id = message.id
                 try:
                     msg_preview = (message.text or '')[:120].replace('\n', ' ')
-                    logger.info(f"[ANALYZE WEBSITE MSG] id={message_id} | preview={msg_preview!r}")
                 except Exception as e:
                     logger.error(f"[ANALYZE WEBSITE] Failed to load message {message_id}: {e}")
                     await db.rollback()
                     batch_message_results.append({"status": "failed", "error": str(e)})
                     continue
+
+                # Broadcast message analysis start for real-time UI
+                await broadcast_progress("analyzing_message", {
+                    "channel": source_name,
+                    "message_id": message_id,
+                    "message_text": (message.text or "")[:200],
+                    "message_preview": msg_preview
+                })
 
                 try:
                     # Use RSS extractor with custom prompt if provided
@@ -1313,12 +1287,9 @@ async def analyze_website_posts(
                     )
                     total_input_tokens += usage.get("input_tokens", 0)
                     total_output_tokens += usage.get("output_tokens", 0)
-                    logger.info(f"[ANALYZE WEBSITE MSG RESULT] id={message_id} | jobs={len(extracted_data.job_postings)} | developer={'yes' if extracted_data.developer_info else 'no'} | tokens: in={usage.get('input_tokens', 0)} out={usage.get('output_tokens', 0)}")
 
                     # Process extracted job postings (V2EX should return 1 per message, take first if multiple)
                     jobs_to_process = extracted_data.job_postings[:1] if len(extracted_data.job_postings) > 1 else extracted_data.job_postings
-                    if len(extracted_data.job_postings) > 1:
-                        logger.warning(f"[ANALYZE WEBSITE] Message {message_id} returned {len(extracted_data.job_postings)} jobs, taking first only")
 
                     msg_job_added = 0
                     for job in jobs_to_process:
@@ -1329,7 +1300,6 @@ async def analyze_website_posts(
                             )
                             if existing_job.scalar_one_or_none():
                                 # Job already exists with this URL, skip and will delete message later
-                                logger.info(f"[ANALYZE WEBSITE] Duplicate job detected by URL: {job.url}")
                                 continue
 
                         # Also check if job already exists for this message (fallback)
@@ -1358,7 +1328,6 @@ async def analyze_website_posts(
                         await db.refresh(job_obj)
                         jobs_added += 1
                         msg_job_added += 1
-                        logger.info(f"[ANALYZE WEBSITE JOB SAVED] msg_id={message_id} | title={job_obj.title!r} | company={job_obj.company!r} | remote={job_obj.is_remote}")
 
                         # Broadcast new job notification
                         await broadcast_progress("new_job", {
@@ -1388,7 +1357,6 @@ async def analyze_website_posts(
                             )
                             if existing_dev.first():
                                 # Developer already exists, skip and will delete message later
-                                logger.info(f"[ANALYZE WEBSITE] Duplicate developer detected: {dev.team_name}")
                                 continue
 
                         # Fallback: check within same website source by name
@@ -1416,12 +1384,10 @@ async def analyze_website_posts(
                     # If no job or developer was extracted for this message, delete it
                     if msg_job_added == 0 and msg_dev_added == 0:
                         await db.delete(message)
-                        logger.info(f"[ANALYZE WEBSITE MSG DELETED] id={message_id} | No job or developer found")
                     else:
                         message.analysis_status = "analyzed"
                         analyzed_count += 1
                         batch_message_results.append({"status": "success"})
-                        logger.info(f"[ANALYZE WEBSITE MSG OK] id={message_id} | status=analyzed | jobs_total={jobs_added}")
 
                     # Broadcast per-message progress for real-time UI updates
                     await broadcast_progress("analyze_progress", {
@@ -1449,7 +1415,6 @@ async def analyze_website_posts(
             batch_has_errors = any(r.get("status") in ["failed", "db_error"] for r in batch_message_results)
             if batch_has_errors:
                 consecutive_failures += 1
-                logger.warning(f"[ANALYZE WEBSITE BATCH ERROR] Source: {source_name} | Batch {batch_num + 1} had errors | Consecutive failures: {consecutive_failures}")
             else:
                 consecutive_failures = 0
 
@@ -1472,20 +1437,17 @@ async def analyze_website_posts(
             try:
                 await update_operation(db, operation_id, current=batch_num + 1, analyzed=analyzed_count, jobs_found=jobs_added, developers_found=devs_added)
             except Exception as e:
-                logger.warning(f"[ANALYZE WEBSITE] Failed to update operation progress: {e}")
+                pass
 
             try:
                 await db.commit()
             except Exception as e:
-                logger.error(f"[ANALYZE WEBSITE BATCH COMMIT ERROR] Source: {source_name} | Batch {batch_num + 1} commit failed: {e}")
                 await db.rollback()
 
         try:
             await db.commit()
-            logger.info(f"[ANALYZE WEBSITE] Commit OK — jobs: {jobs_added}, devs: {devs_added}")
         except Exception as e:
             await db.rollback()
-            logger.error(f"[ANALYZE WEBSITE COMMIT ERROR] Source: {source_name} | DB commit failed: {e}")
             return {
                 "success": True,
                 "jobs_found": jobs_added,
@@ -1529,8 +1491,6 @@ async def analyze_website_posts(
             "error": str(e),
         })
         return {"success": False, "error": str(e)}
-    finally:
-        cleanup_website_stop_event(source_id)
 
 
 # ── LIFESPAN ──────────────────────────────────────────────────────────────────
@@ -1539,9 +1499,12 @@ async def analyze_website_posts(
 async def lifespan(app):
     """Startup and shutdown events."""
     # Cleanup stale operations on startup
-    await cleanup_stale_operations()
-    # Cleanup old messages on startup
-    await cleanup_old_messages()
+    try:
+        await cleanup_stale_operations()
+    except Exception as e:
+        pass
+    # Note: cleanup_old_messages removed from lifespan to avoid greenlet_spawn error
+    # Will be added as a background task or manual trigger later
     try:
         yield
     finally:

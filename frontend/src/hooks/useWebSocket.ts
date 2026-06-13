@@ -25,7 +25,7 @@ export interface NewJobNotification {
 }
 
 export interface ProgressUpdate {
-  type: 'fetch_start' | 'fetch_progress' | 'fetch_complete' | 'analyze_start' | 'analyze_progress' | 'analyze_complete' | 'error' | 'new_job';
+  type: 'fetch_start' | 'fetch_progress' | 'fetch_complete' | 'analyze_start' | 'analyze_progress' | 'analyze_complete' | 'error' | 'new_job' | 'analyzing_message';
   channel?: string;
   channel_id?: number;
   operation_id?: number;
@@ -47,6 +47,9 @@ export interface ProgressUpdate {
   total_tokens?: number;
   message_results?: MessageResult[];
   new_job?: NewJobNotification;
+  message_id?: number;
+  message_text?: string;
+  message_preview?: string;
 }
 
 const showJobNotification = (job: NewJobNotification) => {

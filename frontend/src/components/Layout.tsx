@@ -47,6 +47,7 @@ interface WebSocketProgressContextType {
   stoppingChannels: Record<string, boolean>;
   tokenUsage: Record<string, { input: number; output: number; total: number }>;
   messageResults: Record<string, any[]>;
+  currentAnalyzingMessage: Record<string, { message_id?: number; message_text: string; message_preview: string }>;
   requestStop: (channelId: number, channelUsername: string) => void;
 }
 
@@ -100,6 +101,7 @@ const WebSocketProgressProvider = ({ children }: { children: React.ReactNode }) 
   const [stoppingChannels, setStoppingChannels] = useState<Record<string, boolean>>({});
   const [tokenUsage, setTokenUsage] = useState<Record<string, { input: number; output: number; total: number }>>({});
   const [messageResults, setMessageResults] = useState<Record<string, any[]>>({});
+  const [currentAnalyzingMessage, setCurrentAnalyzingMessage] = useState<Record<string, { message_id?: number; message_text: string; message_preview: string }>>({});
   const wsRef = useRef<WebSocket | null>(null);
   const pollIntervalRef = useRef<number | null>(null);
   const lastNotificationRef = useRef<Record<string, number>>({});
@@ -207,6 +209,31 @@ const WebSocketProgressProvider = ({ children }: { children: React.ReactNode }) 
     }
   }, []);
 
+  // Fetch current analyzing state on mount (for page refresh scenario)
+  useEffect(() => {
+    const fetchCurrentAnalyzing = async () => {
+      try {
+        const data = await api.getCurrentAnalyzing();
+        if (data.operations && data.operations.length > 0) {
+          // For each running operation, set a placeholder analyzing message
+          const analyzingState: Record<string, { message_id?: number; message_text: string; message_preview: string }> = {};
+          data.operations.forEach((op: any) => {
+            if (op.status === 'running' && op.channel_username) {
+              analyzingState[op.channel_username] = {
+                message_text: '',
+                message_preview: `Analyzing ${op.analyzed}/${op.total} messages...`,
+              };
+            }
+          });
+          setCurrentAnalyzingMessage(analyzingState);
+        }
+      } catch (e) {
+        // Silently ignore errors
+      }
+    };
+    fetchCurrentAnalyzing();
+  }, []);
+
   // Save progress to localStorage whenever it changes
   useEffect(() => {
     if (progress) {
@@ -262,6 +289,15 @@ const WebSocketProgressProvider = ({ children }: { children: React.ReactNode }) 
                 [channel]: {
                   analyzed: data.processed || data.analyzed || 0,
                   total: data.total_messages || data.total || 0,
+                }
+              }));
+            } else if (channel && data.type === 'analyzing_message') {
+              setCurrentAnalyzingMessage(prev => ({
+                ...prev,
+                [channel]: {
+                  message_id: data.message_id,
+                  message_text: data.message_text || "",
+                  message_preview: data.message_preview || ""
                 }
               }));
             } else if (channel && data.type === 'analyze_progress') {
@@ -341,6 +377,12 @@ const WebSocketProgressProvider = ({ children }: { children: React.ReactNode }) 
                 delete newResults[channel];
                 return newResults;
               });
+              // Clear current analyzing message for completed channel
+              setCurrentAnalyzingMessage(prev => {
+                const newMessages = { ...prev };
+                delete newMessages[channel];
+                return newMessages;
+              });
             }
           } catch (e) {
             // Silently ignore parse errors
@@ -371,7 +413,7 @@ const WebSocketProgressProvider = ({ children }: { children: React.ReactNode }) 
   }, []);
 
   return (
-    <WebSocketProgressContext.Provider value={{ progress, isConnected, channelProgress, operations, bulkOperations, stoppingChannels, tokenUsage, messageResults, requestStop }}>
+    <WebSocketProgressContext.Provider value={{ progress, isConnected, channelProgress, operations, bulkOperations, stoppingChannels, tokenUsage, messageResults, currentAnalyzingMessage, requestStop }}>
       {children}
     </WebSocketProgressContext.Provider>
   );
