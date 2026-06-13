@@ -320,16 +320,6 @@ const api = {
     return response.json();
   },
 
-  reanalyzeMessages: async (): Promise<any> => {
-    const response = await fetch(`${API_BASE}/api/reanalyze`, { method: 'POST' });
-    return response.json();
-  },
-
-  reanalyzeSkipped: async (): Promise<any> => {
-    const response = await fetch(`${API_BASE}/api/reanalyze-skipped`, { method: 'POST' });
-    return response.json();
-  },
-
   reanalyzeMessage: async (messageId: number): Promise<any> => {
     const response = await fetch(`${API_BASE}/api/reanalyze-message/${messageId}`, { method: 'POST' });
     return response.json();
@@ -382,6 +372,11 @@ const api = {
 
   getOperations: async (): Promise<any> => {
     const response = await fetch(`${API_BASE}/api/operations`);
+    return response.json();
+  },
+
+  getCurrentAnalyzing: async (): Promise<any> => {
+    const response = await fetch(`${API_BASE}/api/operations/current-analyzing`);
     return response.json();
   },
 

@@ -5,7 +5,6 @@ import { useTranslation } from 'react-i18next';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
-import { Separator } from '@/components/ui/separator';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { DailyJobsChart } from '@/components/DailyJobsChart';
 import { DailyDevelopersChart } from '@/components/DailyDevelopersChart';
@@ -23,8 +22,6 @@ import {
   RefreshCw,
   Play,
   Square,
-  Trash2,
-  RotateCcw,
   ChevronRight,
   Loader2,
   Zap,
@@ -51,7 +48,7 @@ const Dashboard = () => {
   const limit = 10;
   const offset = parseInt(searchParams.get('offset') || '0');
 
-  const { progress: wsProgress, channelProgress, operations, bulkOperations, stoppingChannels, tokenUsage, messageResults, requestStop } = useWebSocketProgress();
+  const { progress: wsProgress, channelProgress, operations, bulkOperations, stoppingChannels, tokenUsage, messageResults, currentAnalyzingMessage, requestStop } = useWebSocketProgress();
 
   useEffect(() => {
     if (wsProgress && (wsProgress.type === 'analyze_complete' || wsProgress.type === 'error' || wsProgress.type === 'fetch_complete')) {
@@ -283,63 +280,6 @@ const Dashboard = () => {
     }
   };
 
-  const [reanalyzeSkippedOperationId, setReanalyzeSkippedOperationId] = useState<string | null>(null);
-
-  const reanalyzeSkipped = async () => {
-    try {
-      if (!stats?.ollama_available) {
-        showToast('error', t('dashboard.ollamaUnavailable'));
-        return;
-      }
-
-      const data = await withLoading('reanalyze-skipped', () => api.reanalyzeSkipped());
-      if (data.success) {
-        setReanalyzeSkippedOperationId(data.operation_id);
-        showToast('success', t('dashboard.reanalysisStartedSkipped'));
-        setTimeout(() => loadData(), 2000);
-      } else {
-        showToast('error', `${t('common.error')}: ` + (data.error || t('common.unknown')));
-      }
-    } catch (e: any) {
-      showToast('error', `${t('common.error')}: ` + e.message);
-    }
-  };
-
-  const stopReanalyzeSkipped = async () => {
-    if (!reanalyzeSkippedOperationId) return;
-    try {
-      const data = await api.stopBulkOperation(reanalyzeSkippedOperationId);
-      if (data.success) {
-        showToast('success', t('dashboard.operationStopped'));
-        setReanalyzeSkippedOperationId(null);
-      } else {
-        showToast('error', `${t('common.error')}: ` + (data.error || t('common.unknown')));
-      }
-    } catch (e: any) {
-      showToast('error', `${t('common.error')}: ` + e.message);
-    }
-  };
-
-  const reanalyzeMessages = async () => {
-    try {
-      // Check if Ollama is available before attempting analysis
-      if (!stats?.ollama_available) {
-        showToast('error', t('dashboard.ollamaUnavailable'));
-        return;
-      }
-
-      const data = await withLoading('reanalyze', () => api.reanalyzeMessages());
-      if (data.success) {
-        showToast('success', t('dashboard.reanalysisComplete', { count: data.reanalyzed }));
-        setTimeout(() => loadData(), 1500);
-      } else {
-        showToast('error', `${t('common.error')}: ` + (data.error || t('common.unknown')));
-      }
-    } catch (e: any) {
-      showToast('error', `${t('common.error')}: ` + e.message);
-    }
-  };
-
   const fetchWebsiteSource = async (sourceId: number) => {
     try {
       const data = await withLoading(`fetch-ws-${sourceId}`, () => api.fetchWebsiteSource(sourceId));
@@ -457,311 +397,318 @@ const Dashboard = () => {
   ];
 
   return (
-    <div className="space-y-6">
-      {/* Analytics Charts */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        <Card>
-          <CardHeader className="px-4 py-3 pb-2">
-            <CardTitle className="text-sm flex items-center gap-2">
-              <Briefcase size={14} className="text-blue-500" />
-              {t('dashboard.dailyJobPostings')}
+    <div className="flex gap-6">
+      {/* Sidebar Navigation */}
+      <div className="w-72 shrink-0 space-y-4">
+        {/* Quick Actions - Glassmorphism */}
+        <Card className="backdrop-blur-xl bg-white/70 border border-white/20 shadow-lg">
+          <CardHeader className="px-4 py-3">
+            <CardTitle className="text-sm font-semibold flex items-center gap-2">
+              <Zap size={16} className="text-yellow-500" />
+              {t('dashboard.quickActions')}
             </CardTitle>
           </CardHeader>
-          <CardContent className="px-4 pb-4 pt-0">
-            <DailyJobsChart days={30} />
+          <CardContent className="px-4 pb-4 space-y-3">
+            <div className="space-y-2">
+              <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">{t('dashboard.allChannels')}</p>
+              <div className="flex gap-2">
+                <Button
+                  onClick={() => fetchAll()}
+                  disabled={loadingActions.has('fetch-all') || Object.keys(operations).length > 0 || effectiveBulkOperation !== null}
+                  size="sm"
+                  className="flex-1 h-8"
+                >
+                  <RefreshCw size={12} className="mr-1" />
+                  {t('dashboard.fetchAll')}
+                </Button>
+                <Button
+                  variant="outline"
+                  onClick={() => analyzeAll()}
+                  disabled={loadingActions.has('analyze-all') || Object.keys(operations).length > 0 || effectiveBulkOperation !== null}
+                  size="sm"
+                  className="flex-1 h-8"
+                >
+                  <Bot size={12} className="mr-1" />
+                  {t('dashboard.analyzeAll')}
+                </Button>
+              </div>
+              {effectiveBulkOperation && (
+                <Button
+                  variant="destructive"
+                  onClick={() => stopBulkOperation()}
+                  size="sm"
+                  className="w-full h-7 text-xs"
+                >
+                  <Square size={10} className="mr-1" />
+                  {effectiveBulkOperation.type === 'analyze-all' ? t('dashboard.stopAnalyzeAll') : t('dashboard.stopFetchAnalyzeAll')}
+                </Button>
+              )}
+            </div>
+            <div className="space-y-2">
+              <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">{t('websiteSources.title')}</p>
+              <div className="flex gap-2">
+                <Button
+                  onClick={() => fetchAllWebsites()}
+                  disabled={loadingActions.has('fetch-all-ws') || loadingActions.has('analyze-all-ws') || anyWebsiteAnalyzing}
+                  size="sm"
+                  className="flex-1 h-8"
+                >
+                  <RefreshCw size={12} className="mr-1" />
+                  {t('dashboard.fetchAll')}
+                </Button>
+                <Button
+                  variant="outline"
+                  onClick={() => analyzeAllWebsites()}
+                  disabled={loadingActions.has('analyze-all-ws') || loadingActions.has('fetch-all-ws') || anyWebsiteAnalyzing}
+                  size="sm"
+                  className="flex-1 h-8"
+                >
+                  <Bot size={12} className="mr-1" />
+                  {t('dashboard.analyzeAll')}
+                </Button>
+              </div>
+              {anyWebsiteAnalyzing && (
+                <Button
+                  variant="destructive"
+                  onClick={() => stopAllWebsites()}
+                  size="sm"
+                  className="w-full h-7 text-xs"
+                >
+                  <Square size={10} className="mr-1" />
+                  {t('dashboard.stopAnalyzeAll')}
+                </Button>
+              )}
+            </div>
+            <div className="space-y-2">
+              <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">{t('dashboard.cronJob')}</p>
+              <div className="flex items-center justify-between p-2 rounded-lg bg-muted/50">
+                <div className="flex items-center gap-2">
+                  <Timer size={12} className={cronRunning ? 'text-green-500' : 'text-gray-400'} />
+                  <span className="text-xs font-medium">{cronRunning ? t('dashboard.running') : t('dashboard.stopped')}</span>
+                </div>
+                <Button
+                  variant={cronRunning ? 'destructive' : 'default'}
+                  onClick={() => toggleCron()}
+                  size="sm"
+                  className="h-7 px-2"
+                >
+                  {cronRunning ? <Square size={10} /> : <Play size={10} />}
+                </Button>
+              </div>
+            </div>
+            <div className="space-y-2">
+              <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">{t('dashboard.other')}</p>
+              <Button
+                variant="destructive"
+                onClick={() => setCleanupDialogOpen(true)}
+                disabled={loadingActions.has('cleanup')}
+                size="sm"
+                className="w-full h-7 text-xs"
+              >
+                {t('dashboard.cleanupOldMessages')}
+              </Button>
+            </div>
           </CardContent>
         </Card>
-        <Card>
-          <CardHeader className="px-4 py-3 pb-2">
-            <CardTitle className="text-sm flex items-center gap-2">
-              <Users size={14} className="text-purple-500" />
-              {t('dashboard.dailyDevelopersContacted')}
-            </CardTitle>
+
+        {/* Statistics - Glassmorphism */}
+        <Card className="backdrop-blur-xl bg-white/70 border border-white/20 shadow-lg">
+          <CardHeader className="px-4 py-3">
+            <CardTitle className="text-sm font-semibold">{t('dashboard.statistics')}</CardTitle>
           </CardHeader>
-          <CardContent className="px-4 pb-4 pt-0">
-            <DailyDevelopersChart days={30} />
-          </CardContent>
-        </Card>
-        <Card>
-          <CardHeader className="px-4 py-3 pb-2">
-            <CardTitle className="text-sm flex items-center gap-2">
-              <CheckCircle2 size={14} className="text-green-500" />
-              {t('dashboard.dailyJobsApplied')}
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="px-4 pb-4 pt-0">
-            <DailyJobsAppliedChart days={30} />
+          <CardContent className="px-4 pb-4 space-y-2">
+            {statItems.map(({ icon: Icon, value, label, color }) => (
+              <div key={label} className="flex items-center gap-3 p-2 rounded-lg bg-gradient-to-r from-white/50 to-white/30 hover:from-white/70 hover:to-white/50 transition-all">
+                <div className={`p-1.5 rounded-md ${color} shrink-0`}>
+                  <Icon size={14} />
+                </div>
+                <div className="min-w-0">
+                  <p className="text-xs text-muted-foreground">{label}</p>
+                  <p className="text-base font-bold">{value}</p>
+                </div>
+              </div>
+            ))}
           </CardContent>
         </Card>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Left Sidebar */}
-        <div className="lg:col-span-1 space-y-4">
-          {/* Stats */}
-          <Card>
-            <CardHeader className="px-4 py-3 pb-2">
-              <CardTitle className="text-sm">{t('dashboard.statistics')}</CardTitle>
-            </CardHeader>
-            <CardContent className="px-4 pb-4 pt-0">
-              <div className="grid grid-cols-2 gap-2">
-                {statItems.map(({ icon: Icon, value, label, color }) => (
-                  <div key={label} className="flex items-center gap-2 p-2 rounded-lg bg-gray-50">
-                    <div className={`p-1.5 rounded-md ${color} shrink-0`}>
-                      <Icon size={14} />
-                    </div>
-                    <div className="min-w-0">
-                      <p className="text-xs font-medium text-muted-foreground">{label}</p>
-                      <p className="text-base font-bold truncate">{value}</p>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </CardContent>
-          </Card>
-
-          {/* Quick Actions */}
-          <Card>
-            <CardHeader className="px-4 py-3 pb-2">
-              <CardTitle className="flex items-center gap-1.5 text-sm">
-                <Zap size={14} className="text-yellow-500" />
-                {t('dashboard.quickActions')}
+      {/* Main Content - No Scroll */}
+      <div className="flex-1 space-y-4">
+        {/* Daily Statistics Charts */}
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <Card className="backdrop-blur-xl bg-white/70 border border-white/20 shadow-lg">
+            <CardHeader className="px-4 py-3">
+              <CardTitle className="text-xs font-medium flex items-center gap-2">
+                <Briefcase size={14} className="text-blue-500" />
+                {t('dashboard.dailyJobPostings')}
               </CardTitle>
             </CardHeader>
-            <CardContent className="px-4 pb-4 pt-0 space-y-3">
-              <div>
-                <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-1.5">{t('dashboard.allChannels')}</p>
-                <div className="flex flex-col gap-2">
-                  <Button
-                    className="w-full justify-start"
-                    onClick={() => fetchAll()}
-                    disabled={loadingActions.has('fetch-all') || Object.keys(operations).length > 0 || effectiveBulkOperation !== null}
-                  >
-                    <RefreshCw size={14} className="mr-2" />
-                    {loadingActions.has('fetch-all') ? t('dashboard.fetching') : (Object.keys(operations).length > 0 || effectiveBulkOperation) ? t('dashboard.operationInProgress') : t('dashboard.fetchAll')}
-                  </Button>
-                  <Button
-                    className="w-full justify-start"
-                    variant="outline"
-                    onClick={() => analyzeAll()}
-                    disabled={loadingActions.has('analyze-all') || Object.keys(operations).length > 0 || effectiveBulkOperation !== null}
-                  >
-                    <Bot size={14} className="mr-2" />
-                    {loadingActions.has('analyze-all') ? t('dashboard.analyzing') : (Object.keys(operations).length > 0 || effectiveBulkOperation) ? t('dashboard.operationInProgress') : t('dashboard.analyzeAll')}
-                  </Button>
-                  {effectiveBulkOperation && (
-                    <Button
-                      className="w-full justify-start"
-                      variant="destructive"
-                      onClick={() => stopBulkOperation()}
-                    >
-                      <Square size={14} className="mr-2" />
-                      {effectiveBulkOperation.type === 'analyze-all' ? t('dashboard.stopAnalyzeAll') : t('dashboard.stopFetchAnalyzeAll')}
-                    </Button>
-                  )}
-                </div>
-              </div>
-
-              <Separator />
-
-              <div>
-                <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-1.5">{t('websiteSources.title')}</p>
-                <div className="flex flex-col gap-2">
-                  <Button
-                    className="w-full justify-start"
-                    onClick={() => fetchAllWebsites()}
-                    disabled={loadingActions.has('fetch-all-ws') || loadingActions.has('analyze-all-ws') || anyWebsiteAnalyzing}
-                  >
-                    <RefreshCw size={14} className="mr-2" />
-                    {loadingActions.has('fetch-all-ws') ? t('dashboard.fetching') : anyWebsiteAnalyzing ? t('dashboard.operationInProgress') : t('dashboard.fetchAll')}
-                  </Button>
-                  <Button
-                    className="w-full justify-start"
-                    variant="outline"
-                    onClick={() => analyzeAllWebsites()}
-                    disabled={loadingActions.has('analyze-all-ws') || loadingActions.has('fetch-all-ws') || anyWebsiteAnalyzing}
-                  >
-                    <Bot size={14} className="mr-2" />
-                    {(loadingActions.has('analyze-all-ws') || anyWebsiteAnalyzing) ? t('dashboard.analyzing') : t('dashboard.analyzeAll')}
-                  </Button>
-                  {anyWebsiteAnalyzing && (
-                    <Button
-                      className="w-full justify-start"
-                      variant="destructive"
-                      onClick={() => stopAllWebsites()}
-                    >
-                      <Square size={14} className="mr-2" />
-                      {t('dashboard.stopAnalyzeAll')}
-                    </Button>
-                  )}
-                </div>
-              </div>
-
-              <Separator />
-
-              <div>
-                <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-1.5">{t('dashboard.cronJob')}</p>
-                <div className="flex items-center justify-between p-3 rounded-lg bg-gray-50 border mb-2">
-                  <div className="flex items-center gap-2">
-                    <Timer size={14} className={cronRunning ? 'text-green-500' : 'text-gray-400'} />
-                    <span className="text-sm font-medium">{cronRunning ? t('dashboard.running') : t('dashboard.stopped')}</span>
-                    {cronRunning && (
-                      <span className="w-2 h-2 rounded-full bg-green-400 animate-pulse" />
-                    )}
-                  </div>
-                  <Badge variant={cronRunning ? 'default' : 'secondary'}>
-                    {cronRunning ? 'Active' : 'Idle'}
-                  </Badge>
-                </div>
-                <Button
-                  className="w-full justify-start"
-                  variant={cronRunning ? 'destructive' : 'default'}
-                  onClick={() => toggleCron()}
-                >
-                  {cronRunning ? <Square size={14} className="mr-2" /> : <Play size={14} className="mr-2" />}
-                  {cronRunning ? t('dashboard.stopCronJob') : t('dashboard.startCronJob')}
-                </Button>
-              </div>
-
-              <Separator />
-
-              <div>
-                <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-1.5">{t('dashboard.other')}</p>
-                <div className="flex flex-col gap-2">
-                  {reanalyzeSkippedOperationId ? (
-                    <Button
-                      className="w-full justify-start"
-                      variant="destructive"
-                      onClick={() => stopReanalyzeSkipped()}
-                    >
-                      <Square size={14} className="mr-2" />
-                      {t('dashboard.stop')}
-                    </Button>
-                  ) : (
-                    <Button
-                      className="w-full justify-start"
-                      variant="outline"
-                      onClick={() => reanalyzeSkipped()}
-                      disabled={loadingActions.has('reanalyze-skipped')}
-                    >
-                      <RotateCcw size={14} className="mr-2" />
-                      {loadingActions.has('reanalyze-skipped') ? t('dashboard.reanalyzing') : t('dashboard.reanalyzeSkipped')}
-                    </Button>
-                  )}
-                  <Button
-                    className="w-full justify-start"
-                    variant="outline"
-                    onClick={() => reanalyzeMessages()}
-                    disabled={loadingActions.has('reanalyze')}
-                  >
-                    <RefreshCw size={14} className="mr-2" />
-                    {loadingActions.has('reanalyze') ? t('dashboard.reanalyzing') : t('dashboard.reanalyzeAll')}
-                  </Button>
-                  <Button
-                    className="w-full justify-start"
-                    variant="destructive"
-                    onClick={() => setCleanupDialogOpen(true)}
-                    disabled={loadingActions.has('cleanup')}
-                  >
-                    <Trash2 size={14} className="mr-2" />
-                    {loadingActions.has('cleanup') ? t('common.cleaning') : t('dashboard.cleanupOldMessages')}
-                  </Button>
-                </div>
-              </div>
-
+            <CardContent className="px-4 pb-4 pt-0">
+              <DailyJobsChart days={30} />
+            </CardContent>
+          </Card>
+          <Card className="backdrop-blur-xl bg-white/70 border border-white/20 shadow-lg">
+            <CardHeader className="px-4 py-3">
+              <CardTitle className="text-xs font-medium flex items-center gap-2">
+                <Users size={14} className="text-purple-500" />
+                {t('dashboard.dailyDevelopersContacted')}
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="px-4 pb-4 pt-0">
+              <DailyDevelopersChart days={30} />
+            </CardContent>
+          </Card>
+          <Card className="backdrop-blur-xl bg-white/70 border border-white/20 shadow-lg">
+            <CardHeader className="px-4 py-3">
+              <CardTitle className="text-xs font-medium flex items-center gap-2">
+                <CheckCircle2 size={14} className="text-green-500" />
+                {t('dashboard.dailyJobsApplied')}
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="px-4 pb-4 pt-0">
+              <DailyJobsAppliedChart days={30} />
             </CardContent>
           </Card>
         </div>
 
-        {/* Channels / Website Sources List */}
-        <div className="lg:col-span-2">
-          <Card>
-            <CardHeader className="px-4 py-3 pb-2">
-              <div className="flex justify-between items-center">
-                <div className="flex gap-1 bg-muted p-1 rounded-lg">
-                  <button
-                    onClick={() => setActiveTab('channels')}
-                    className={`flex items-center gap-1 px-3 py-1 rounded-md text-xs font-medium transition-colors ${activeTab === 'channels' ? 'bg-background text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'}`}
-                  >
-                    <Radio size={12} />
-                    {t('dashboard.channels')} ({total})
-                  </button>
-                  <button
-                    onClick={() => setActiveTab('websites')}
-                    className={`flex items-center gap-1 px-3 py-1 rounded-md text-xs font-medium transition-colors ${activeTab === 'websites' ? 'bg-background text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'}`}
-                  >
-                    <RefreshCw size={12} />
-                    {t('websiteSources.title')} ({websiteSources.length})
-                  </button>
-                </div>
-                <Button asChild variant="ghost" size="sm">
-                  <Link to={activeTab === 'channels' ? '/channels' : '/websites'} className="text-xs">
-                    {t('dashboard.manage')} <ChevronRight size={12} className="inline" />
-                  </Link>
-                </Button>
+        {/* Live Analysis */}
+        <Card className="backdrop-blur-xl bg-white/70 border border-white/20 shadow-lg">
+          <CardHeader className="px-4 py-3">
+            <CardTitle className="text-sm font-medium flex items-center gap-2">
+              <Bot size={16} className="text-blue-500" />
+              {t('dashboard.liveAnalysis')}
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="px-4 pb-4">
+            {Object.keys(currentAnalyzingMessage).length === 0 && Object.keys(messageResults).length === 0 ? (
+              <div className="text-center py-8">
+                <Bot size={32} className="text-muted-foreground/30 mx-auto mb-2" />
+                <p className="text-xs text-muted-foreground">{t('dashboard.noActiveAnalysis')}</p>
               </div>
-            </CardHeader>
+            ) : (
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3 max-h-64 overflow-y-auto">
+                {Object.entries(currentAnalyzingMessage).map(([channel, msg]) => (
+                  <div key={channel} className="border border-blue-200 rounded-lg p-3 bg-gradient-to-br from-blue-50 to-blue-100/50">
+                    <div className="flex items-center gap-2 mb-2">
+                      <Loader2 size={14} className="text-blue-600 animate-spin" />
+                      <span className="text-xs font-semibold text-blue-900">{channel}</span>
+                    </div>
+                    <p className="text-xs text-gray-700 line-clamp-2">{msg.message_text || msg.message_preview}</p>
+                  </div>
+                ))}
+                {Object.entries(messageResults).map(([channel, results]) => (
+                  <div key={channel} className="border border-border rounded-lg p-3 bg-gradient-to-br from-muted to-muted/50">
+                    <div className="flex items-center gap-2 mb-2">
+                      <Radio size={14} className="text-blue-500" />
+                      <span className="text-xs font-semibold">{channel}</span>
+                      <Badge variant="secondary" className="text-xs">{results.length}</Badge>
+                    </div>
+                    <div className="space-y-1">
+                      {results.slice(-2).map((result: any, idx: number) => (
+                        <div key={idx} className="bg-white p-2 rounded border text-xs">
+                          <Badge variant={result.status === 'success' ? 'default' : result.status === 'failed' ? 'destructive' : 'secondary'} className="text-[10px]">
+                            {result.status}
+                          </Badge>
+                          <span className="ml-1 font-medium">{result.category}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </CardContent>
+        </Card>
+
+        {/* Channels / Website Sources */}
+        <Card className="backdrop-blur-xl bg-white/70 border border-white/20 shadow-lg">
+          <CardHeader className="px-4 py-3">
+            <div className="flex justify-between items-center">
+              <div className="flex gap-1 bg-muted p-1 rounded-lg">
+                <button
+                  onClick={() => setActiveTab('channels')}
+                  className={`flex items-center gap-2 px-3 py-1.5 rounded-md text-xs font-medium transition-all ${activeTab === 'channels' ? 'bg-background text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'}`}
+                >
+                  <Radio size={12} />
+                  {t('dashboard.channels')} ({total})
+                </button>
+                <button
+                  onClick={() => setActiveTab('websites')}
+                  className={`flex items-center gap-2 px-3 py-1.5 rounded-md text-xs font-medium transition-all ${activeTab === 'websites' ? 'bg-background text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'}`}
+                >
+                  <RefreshCw size={12} />
+                  {t('websiteSources.title')} ({websiteSources.length})
+                </button>
+              </div>
+              <Button asChild variant="ghost" size="sm" className="h-8">
+                <Link to={activeTab === 'channels' ? '/channels' : '/websites'} className="text-xs">
+                  {t('dashboard.manage')} <ChevronRight size={12} className="inline ml-1" />
+                </Link>
+              </Button>
+            </div>
+          </CardHeader>
+
             <CardContent className="p-0">
               {activeTab === 'channels' ? (
                 <>
                   {initialLoading ? (
-                    <div className="px-4 py-8 text-center">
-                      <Loader2 className="w-5 h-5 text-gray-400 animate-spin mx-auto mb-2" />
-                      <p className="text-sm text-gray-500">{t('dashboard.loadingChannels')}</p>
+                    <div className="px-6 py-12 text-center">
+                      <Loader2 className="w-6 h-6 text-muted-foreground/50 animate-spin mx-auto mb-3" />
+                      <p className="text-sm text-muted-foreground">{t('dashboard.loadingChannels')}</p>
                     </div>
                   ) : channels.length > 0 ? (
                     <>
                       {channels.map((channel) => (
-                        <div key={channel.id} className="px-4 py-3 border-b last:border-b-0 hover:bg-gray-50 transition-colors">
-                          <div className="flex justify-between items-center gap-3">
-                            <div className="min-w-0">
-                              <div className="flex items-center gap-2 mb-0.5">
-                                <p className="font-semibold text-gray-900 truncate">{channel.username}</p>
+                        <div key={channel.id} className="px-6 py-4 border-b border-border last:border-b-0 hover:bg-muted/50 transition-colors">
+                          <div className="flex justify-between items-center gap-4">
+                            <div className="min-w-0 flex-1">
+                              <div className="flex items-center gap-2 mb-1">
+                                <p className="font-semibold text-foreground truncate">{channel.username}</p>
                                 <Badge variant={channel.is_active ? 'default' : 'secondary'} className="text-xs">
                                   {channel.is_active ? t('channels.active') : t('channels.inactive')}
                                 </Badge>
                               </div>
-                              {channel.name && <p className="text-xs text-gray-500 truncate">{channel.name}</p>}
-                              <p className="text-xs text-gray-400 mt-0.5">
+                              {channel.name && <p className="text-sm text-muted-foreground truncate">{channel.name}</p>}
+                              <p className="text-xs text-muted-foreground mt-1.5">
                                 {(channel.message_count || 0).toLocaleString()} msgs &bull; {(channel.job_count || 0).toLocaleString()} jobs
                                 {(channel.last_fetch_new_count || 0) > 0 && (
-                                  <span className="ml-2 inline-flex items-center px-1.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
+                                  <span className="ml-2 inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
                                     +{channel.last_fetch_new_count} {t('websites.fetched')}
                                   </span>
                                 )}
                                 {(channel.pending_count || 0) > 0 && (
-                                  <span className="ml-2 inline-flex items-center px-1.5 py-0.5 rounded-full text-xs font-medium bg-orange-100 text-orange-800">
+                                  <span className="ml-2 inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-orange-100 text-orange-800">
                                     {channel.pending_count} {t('dashboard.pendingAnalysis')}
                                   </span>
                                 )}
                               </p>
                               {channelProgress[channel.username] && (
-                                <div className="mt-2">
-                                  <div className="flex justify-between text-xs mb-1">
-                                    <span className={stoppingChannels[channel.username] ? 'text-orange-600 font-medium' : ''}>
+                                <div className="mt-3">
+                                  <div className="flex justify-between text-xs mb-1.5">
+                                    <span className={stoppingChannels[channel.username] ? 'text-orange-600 font-medium' : 'text-blue-600 font-medium'}>
                                       {stoppingChannels[channel.username] ? t('dashboard.stoppingProgress') : t('dashboard.analyzingProgress')}
                                     </span>
-                                    <span>{channelProgress[channel.username].analyzed}/{channelProgress[channel.username].total}</span>
+                                    <span className="text-muted-foreground">{channelProgress[channel.username].analyzed}/{channelProgress[channel.username].total}</span>
                                   </div>
-                                  <div className="w-full bg-gray-200 rounded-full h-2">
+                                  <div className="w-full bg-muted rounded-full h-2.5">
                                     <div
-                                      className={`h-2 rounded-full transition-all ${stoppingChannels[channel.username] ? 'bg-orange-500' : 'bg-blue-600'}`}
+                                      className={`h-2.5 rounded-full transition-all ${stoppingChannels[channel.username] ? 'bg-orange-500' : 'bg-blue-600'}`}
                                       style={{ width: `${(channelProgress[channel.username].total > 0 ? (channelProgress[channel.username].analyzed / channelProgress[channel.username].total) * 100 : 0)}%` }}
                                     />
                                   </div>
                                   {tokenUsage[channel.username] && (
-                                    <div className="flex justify-between text-xs mt-1 text-gray-500">
+                                    <div className="flex justify-between text-xs mt-1.5 text-muted-foreground">
                                       <span>🤖 {(tokenUsage[channel.username].total / 1000).toFixed(1)}k tokens</span>
                                       <span>⬆{(tokenUsage[channel.username].input / 1000).toFixed(1)}k ⬇{(tokenUsage[channel.username].output / 1000).toFixed(1)}k</span>
                                     </div>
                                   )}
                                   {messageResults[channel.username] && messageResults[channel.username].length > 0 && (
                                     <div className="mt-2 text-xs">
-                                      <div className="flex gap-2 text-gray-500">
+                                      <div className="flex gap-2 text-muted-foreground">
                                         <span>✓ {messageResults[channel.username].filter((r: any) => r.status === 'success').length}</span>
                                         <span className="text-orange-500">⚠ {messageResults[channel.username].filter((r: any) => r.status === 'json_cutoff').length}</span>
                                         <span className="text-red-500">✗ {messageResults[channel.username].filter((r: any) => r.status === 'failed').length}</span>
-                                        <span className="text-gray-400">○ {messageResults[channel.username].filter((r: any) => r.status === 'other').length}</span>
+                                        <span className="text-muted-foreground/50">○ {messageResults[channel.username].filter((r: any) => r.status === 'other').length}</span>
                                       </div>
                                     </div>
                                   )}
@@ -776,16 +723,18 @@ const Dashboard = () => {
                                     variant="outline"
                                     onClick={() => fetchChannel(channel.id)}
                                     disabled={loadingActions.has(`fetch-${channel.id}`)}
+                                    className="h-9"
                                   >
-                                    <RefreshCw size={12} className="mr-1" />
+                                    <RefreshCw size={14} className="mr-2" />
                                     {loadingActions.has(`fetch-${channel.id}`) ? t('dashboard.fetching') : t('channels.fetch')}
                                   </Button>
                                   <Button
                                     size="sm"
                                     onClick={() => analyzeChannel(channel.id)}
                                     disabled={loadingActions.has(`analyze-${channel.id}`)}
+                                    className="h-9"
                                   >
-                                    <Bot size={12} className="mr-1" />
+                                    <Bot size={14} className="mr-2" />
                                     {loadingActions.has(`analyze-${channel.id}`) ? t('dashboard.analyzing') : t('channels.analyze')}
                                   </Button>
                                 </>
@@ -797,8 +746,9 @@ const Dashboard = () => {
                                   onClick={() => stopAnalyzeChannel(channel.id, channel.username)}
                                   title={t('common.stop')}
                                   disabled={stoppingChannels[channel.id] || stoppingChannels[channel.username]}
+                                  className="h-9"
                                 >
-                                  <Square size={12} className="mr-1" />
+                                  <Square size={14} className="mr-2" />
                                   {stoppingChannels[channel.id] || stoppingChannels[channel.username] ? t('channels.stopping') : t('common.stop')}
                                 </Button>
                               )}
@@ -807,23 +757,23 @@ const Dashboard = () => {
                         </div>
                       ))}
                       {/* Pagination */}
-                      <div className="px-4 py-3 border-t flex items-center justify-between">
-                        <Button variant="outline" size="sm" onClick={handlePrevious} disabled={offset === 0}>
+                      <div className="px-6 py-4 border-t border-border flex items-center justify-between bg-muted/30">
+                        <Button variant="outline" size="sm" onClick={handlePrevious} disabled={offset === 0} className="h-9">
                           {t('common.previous')}
                         </Button>
                         <span className="text-sm text-muted-foreground">
                           Page {Math.floor(offset / limit) + 1} of {Math.ceil(total / limit)} ({offset + 1}-{Math.min(offset + limit, total)} of {total})
                         </span>
-                        <Button variant="outline" size="sm" onClick={handleNext} disabled={offset + limit >= total}>
+                        <Button variant="outline" size="sm" onClick={handleNext} disabled={offset + limit >= total} className="h-9">
                           {t('common.next')}
                         </Button>
                       </div>
                     </>
                   ) : (
-                    <div className="px-4 py-8 text-center">
-                      <Radio size={32} className="text-gray-200 mx-auto mb-3" />
-                      <p className="text-sm text-gray-500">{t('dashboard.noChannelsConfigured')}</p>
-                      <Button asChild variant="outline" size="sm" className="mt-3">
+                    <div className="px-6 py-12 text-center">
+                      <Radio size={48} className="text-muted-foreground/20 mx-auto mb-4" />
+                      <p className="text-sm text-muted-foreground">{t('dashboard.noChannelsConfigured')}</p>
+                      <Button asChild variant="outline" size="sm" className="mt-4 h-9">
                         <Link to="/channels">{t('dashboard.addFirstChannel')}</Link>
                       </Button>
                     </div>
@@ -833,64 +783,64 @@ const Dashboard = () => {
                 <>
                   {websiteSources.length > 0 ? (
                     websiteSources.map((source) => (
-                      <div key={source.id} className="px-4 py-3 border-b last:border-b-0 hover:bg-gray-50 transition-colors">
-                        <div className="flex justify-between items-center gap-3">
-                          <div className="min-w-0">
-                            <div className="flex items-center gap-2 mb-0.5">
-                              <p className="font-semibold text-gray-900 truncate">{source.name}</p>
+                      <div key={source.id} className="px-6 py-4 border-b border-border last:border-b-0 hover:bg-muted/50 transition-colors">
+                        <div className="flex justify-between items-center gap-4">
+                          <div className="min-w-0 flex-1">
+                            <div className="flex items-center gap-2 mb-1">
+                              <p className="font-semibold text-foreground truncate">{source.name}</p>
                               <Badge variant={source.is_active ? 'default' : 'secondary'} className="text-xs">
                                 {source.is_active ? t('channels.active') : t('channels.inactive')}
                               </Badge>
                               <Badge variant="outline" className="text-xs">{source.site_type}</Badge>
                             </div>
-                            <a href={source.url} target="_blank" rel="noopener noreferrer" className="text-xs text-blue-500 hover:underline truncate block">
+                            <a href={source.url} target="_blank" rel="noopener noreferrer" className="text-sm text-blue-500 hover:underline truncate block">
                               {source.url}
                             </a>
-                            <p className="text-xs text-gray-400 mt-0.5">
+                            <p className="text-xs text-muted-foreground mt-1.5">
                               {(source.message_count || 0).toLocaleString()} posts &bull; {(source.job_count || 0).toLocaleString()} jobs
                               {(source.last_fetch_new_count || 0) > 0 && (
-                                <span className="ml-2 inline-flex items-center px-1.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
+                                <span className="ml-2 inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
                                   +{source.last_fetch_new_count} {t('websites.fetched')}
                                 </span>
                               )}
                               {(source.pending_count || 0) > 0 && (
-                                <span className="ml-2 inline-flex items-center px-1.5 py-0.5 rounded-full text-xs font-medium bg-orange-100 text-orange-800">
+                                <span className="ml-2 inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-orange-100 text-orange-800">
                                   {source.pending_count} {t('dashboard.pendingAnalysis')}
                                 </span>
                               )}
                             </p>
                             {source.last_fetch_at && (
-                              <p className="text-xs text-gray-400 mt-0.5">
+                              <p className="text-xs text-muted-foreground mt-1">
                                 {t('websiteSources.lastFetch')}: {new Date(source.last_fetch_at).toLocaleString()}
                               </p>
                             )}
                             {channelProgress[source.name] && (
-                              <div className="mt-2">
-                                <div className="flex justify-between text-xs mb-1">
+                              <div className="mt-3">
+                                <div className="flex justify-between text-xs mb-1.5">
                                   <span className={stoppingChannels[source.name] ? 'text-orange-600 font-medium' : 'text-blue-600 font-medium'}>
                                     {stoppingChannels[source.name] ? t('dashboard.stoppingProgress') : t('dashboard.analyzingProgress')}
                                   </span>
-                                  <span>{channelProgress[source.name].analyzed}/{channelProgress[source.name].total}</span>
+                                  <span className="text-muted-foreground">{channelProgress[source.name].analyzed}/{channelProgress[source.name].total}</span>
                                 </div>
-                                <div className="w-full bg-gray-200 rounded-full h-2">
+                                <div className="w-full bg-muted rounded-full h-2.5">
                                   <div
-                                    className={`h-2 rounded-full transition-all ${stoppingChannels[source.name] ? 'bg-orange-500' : 'bg-blue-600'}`}
+                                    className={`h-2.5 rounded-full transition-all ${stoppingChannels[source.name] ? 'bg-orange-500' : 'bg-blue-600'}`}
                                     style={{ width: `${channelProgress[source.name].total > 0 ? (channelProgress[source.name].analyzed / channelProgress[source.name].total) * 100 : 0}%` }}
                                   />
                                 </div>
                                 {tokenUsage[source.name] && (
-                                  <div className="flex justify-between text-xs mt-1 text-gray-500">
+                                  <div className="flex justify-between text-xs mt-1.5 text-muted-foreground">
                                     <span>🤖 {(tokenUsage[source.name].total / 1000).toFixed(1)}k tokens</span>
                                     <span>⬆{(tokenUsage[source.name].input / 1000).toFixed(1)}k ⬇{(tokenUsage[source.name].output / 1000).toFixed(1)}k</span>
                                   </div>
                                 )}
                                 {messageResults[source.name] && messageResults[source.name].length > 0 && (
                                   <div className="mt-2 text-xs">
-                                    <div className="flex gap-2 text-gray-500">
+                                    <div className="flex gap-2 text-muted-foreground">
                                       <span>✓ {messageResults[source.name].filter((r: any) => r.status === 'success').length}</span>
                                       <span className="text-orange-500">⚠ {messageResults[source.name].filter((r: any) => r.status === 'json_cutoff').length}</span>
                                       <span className="text-red-500">✗ {messageResults[source.name].filter((r: any) => r.status === 'failed').length}</span>
-                                      <span className="text-gray-400">○ {messageResults[source.name].filter((r: any) => r.status === 'other').length}</span>
+                                      <span className="text-muted-foreground/50">○ {messageResults[source.name].filter((r: any) => r.status === 'other').length}</span>
                                     </div>
                                   </div>
                                 )}
@@ -904,15 +854,17 @@ const Dashboard = () => {
                                   size="sm"
                                   variant="outline"
                                   onClick={() => fetchWebsiteSource(source.id)}
+                                  className="h-9"
                                 >
-                                  <RefreshCw size={12} className="mr-1" />
+                                  <RefreshCw size={14} className="mr-2" />
                                   {t('channels.fetch')}
                                 </Button>
                                 <Button
                                   size="sm"
                                   onClick={() => analyzeWebsiteSource(source.id)}
+                                  className="h-9"
                                 >
-                                  <Bot size={12} className="mr-1" />
+                                  <Bot size={14} className="mr-2" />
                                   {t('channels.analyze')}
                                 </Button>
                               </>
@@ -923,8 +875,9 @@ const Dashboard = () => {
                                 variant="destructive"
                                 onClick={() => stopWebsiteSource(source.id, source.name)}
                                 disabled={stoppingChannels[source.id] || stoppingChannels[source.name]}
+                                className="h-9"
                               >
-                                <Square size={12} className="mr-1" />
+                                <Square size={14} className="mr-2" />
                                 {stoppingChannels[source.id] || stoppingChannels[source.name] ? t('channels.stopping') : t('common.stop')}
                               </Button>
                             )}
@@ -933,10 +886,10 @@ const Dashboard = () => {
                       </div>
                     ))
                   ) : (
-                    <div className="px-4 py-8 text-center">
-                      <RefreshCw size={32} className="text-gray-200 mx-auto mb-3" />
-                      <p className="text-sm text-gray-500">{t('websiteSources.noSources')}</p>
-                      <Button asChild variant="outline" size="sm" className="mt-3">
+                    <div className="px-6 py-12 text-center">
+                      <RefreshCw size={48} className="text-muted-foreground/20 mx-auto mb-4" />
+                      <p className="text-sm text-muted-foreground">{t('websiteSources.noSources')}</p>
+                      <Button asChild variant="outline" size="sm" className="mt-4 h-9">
                         <Link to="/websites">{t('dashboard.manage')}</Link>
                       </Button>
                     </div>
@@ -945,7 +898,6 @@ const Dashboard = () => {
               )}
             </CardContent>
           </Card>
-        </div>
       </div>
 
       {/* Cleanup Confirmation Dialog */}
