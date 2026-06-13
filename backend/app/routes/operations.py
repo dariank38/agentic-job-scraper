@@ -129,32 +129,6 @@ def register_operations_routes(app):
         await db.commit()
         return {"fixed": fixed_count, "operations": [op.id for op in stuck_ops]}
 
-    @app.get("/api/operations/{operation_id}")
-    async def get_operation(operation_id: int, db: AsyncSession = Depends(get_db)):
-        """Get a specific operation by ID."""
-        result = await db.execute(select(Operation).filter(Operation.id == operation_id))
-        operation = result.scalar_one_or_none()
-
-        if not operation:
-            return {"error": "Operation not found"}
-
-        return {
-            "id": operation.id,
-            "operation_type": operation.operation_type,
-            "channel_id": operation.channel_id,
-            "channel_username": operation.channel_username,
-            "status": operation.status,
-            "current": operation.current,
-            "total": operation.total,
-            "total_messages": operation.total_messages,
-            "analyzed": operation.analyzed,
-            "jobs_found": operation.jobs_found,
-            "developers_found": operation.developers_found,
-            "error_message": operation.error_message,
-            "started_at": operation.started_at.isoformat() if operation.started_at else None,
-            "completed_at": operation.completed_at.isoformat() if operation.completed_at else None,
-        }
-
     @app.get("/api/operations/current-analyzing")
     async def get_current_analyzing(db: AsyncSession = Depends(get_db)):
         """Get current analyzing messages for all running operations."""
@@ -181,4 +155,30 @@ def register_operations_routes(app):
                 }
                 for op in operations
             ]
+        }
+
+    @app.get("/api/operations/{operation_id}")
+    async def get_operation(operation_id: int, db: AsyncSession = Depends(get_db)):
+        """Get a specific operation by ID."""
+        result = await db.execute(select(Operation).filter(Operation.id == operation_id))
+        operation = result.scalar_one_or_none()
+
+        if not operation:
+            return {"error": "Operation not found"}
+
+        return {
+            "id": operation.id,
+            "operation_type": operation.operation_type,
+            "channel_id": operation.channel_id,
+            "channel_username": operation.channel_username,
+            "status": operation.status,
+            "current": operation.current,
+            "total": operation.total,
+            "total_messages": operation.total_messages,
+            "analyzed": operation.analyzed,
+            "jobs_found": operation.jobs_found,
+            "developers_found": operation.developers_found,
+            "error_message": operation.error_message,
+            "started_at": operation.started_at.isoformat() if operation.started_at else None,
+            "completed_at": operation.completed_at.isoformat() if operation.completed_at else None,
         }

@@ -268,9 +268,9 @@ const Developers = () => {
       </div>
 
       {(developers.length > 0 || searchQuery) ? (
-        <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
+        <div className="grid grid-cols-1 lg:grid-cols-5 gap-4">
           {/* Left Sidebar - Developer List */}
-          <Card className="md:col-span-2">
+          <Card className="lg:col-span-2">
             <CardHeader className="pb-3">
               <div className="space-y-3">
                 {/* Search */}
@@ -285,7 +285,7 @@ const Developers = () => {
                   />
                 </div>
                 {/* Filters */}
-                <div className="flex gap-2">
+                <div className="flex flex-col sm:flex-row gap-2">
                   <select
                     id="looking-filter"
                     defaultValue={lookingFilter || ''}
@@ -379,13 +379,14 @@ const Developers = () => {
               {/* Pagination */}
               {developers.length > 0 && (
                 <div className="px-4 pb-4 pt-0">
-                  <div className="flex items-center justify-between pt-3 border-t">
-                    <div className="flex gap-2">
+                  <div className="flex flex-col sm:flex-row items-center justify-between gap-3 pt-3 border-t">
+                    <div className="flex gap-2 w-full sm:w-auto">
                       <Button
                         variant="outline"
                         size="sm"
                         onClick={() => handleFirst()}
                         disabled={offset === 0}
+                        className="flex-1 sm:flex-none"
                       >
                         {t('common.first')}
                       </Button>
@@ -394,19 +395,21 @@ const Developers = () => {
                         size="sm"
                         onClick={handlePrevious}
                         disabled={offset === 0}
+                        className="flex-1 sm:flex-none"
                       >
                         {t('common.previous')}
                       </Button>
                     </div>
-                    <span className="text-sm text-muted-foreground">
-                      {t('common.page')} {Math.floor(offset / limit) + 1} / {Math.ceil(total / limit)} ({offset + 1}-{Math.min(offset + limit, total)} / {total})
+                    <span className="text-sm text-muted-foreground text-center">
+                      {t('common.page')} {Math.floor(offset / limit) + 1} / {Math.ceil(total / limit)}
                     </span>
-                    <div className="flex gap-2">
+                    <div className="flex gap-2 w-full sm:w-auto">
                       <Button
                         variant="outline"
                         size="sm"
                         onClick={handleNext}
                         disabled={offset + limit >= total}
+                        className="flex-1 sm:flex-none"
                       >
                         {t('common.next')}
                       </Button>
@@ -415,6 +418,7 @@ const Developers = () => {
                         size="sm"
                         onClick={() => handleLast()}
                         disabled={offset + limit >= total}
+                        className="flex-1 sm:flex-none"
                       >
                         {t('common.last')}
                       </Button>
@@ -426,7 +430,7 @@ const Developers = () => {
           </Card>
 
           {/* Right Column - Developer Details */}
-          <Card className="md:col-span-3 overflow-visible">
+          <Card className="lg:col-span-3 overflow-visible">
             <CardContent className="pt-4 pb-4 sm:pt-6 sm:pb-6">
                 {selectedDeveloper ? (
                   <div className="space-y-6">

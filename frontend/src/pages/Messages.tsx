@@ -26,6 +26,8 @@ import {
   SkipForward,
   Search,
   RotateCcw,
+  ChevronDown,
+  ChevronUp,
 } from 'lucide-react';
 import api from '@/services/api';
 import { useWebSocketProgress, useToast } from '@/components/Layout';
@@ -80,6 +82,7 @@ const Messages = () => {
   const [reanalyzingId, setReanalyzingId] = useState<number | null>(null);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [messageToDelete, setMessageToDelete] = useState<number | null>(null);
+  const [expandedMessageId, setExpandedMessageId] = useState<number | null>(null);
   const limit = 8;
   const offset = parseInt(searchParams.get('offset') || '0');
   const { showToast } = useToast();
@@ -324,7 +327,7 @@ const Messages = () => {
             <select
               value={sourceFilter}
               onChange={(e) => setSourceFilter(e.target.value)}
-              className="px-3 py-2 rounded-md border text-sm bg-background focus:outline-none focus:ring-2 focus:ring-ring"
+              className="px-3 py-2 rounded-md border text-sm bg-background focus:outline-none focus:ring-2 focus:ring-ring w-full sm:w-auto"
             >
               <option value="all">{t('messages.allSources') || 'All Sources'}</option>
               <optgroup label={t('common.channels') || 'Channels'}>
@@ -345,7 +348,7 @@ const Messages = () => {
             <select
               value={statusFilter}
               onChange={(e) => setStatusFilter(e.target.value)}
-              className="px-3 py-2 rounded-md border text-sm bg-background focus:outline-none focus:ring-2 focus:ring-ring"
+              className="px-3 py-2 rounded-md border text-sm bg-background focus:outline-none focus:ring-2 focus:ring-ring w-full sm:w-auto"
             >
               <option value="all">{t('messages.allStatus')}</option>
               <option value="analyzed">{t('messages.analyzed')}</option>
@@ -451,6 +454,14 @@ const Messages = () => {
                               </Button>
                             </>
                           )}
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => setExpandedMessageId(expandedMessageId === msg.id ? null : msg.id)}
+                            className="text-xs h-7 px-2 ml-auto sm:ml-0"
+                          >
+                            {expandedMessageId === msg.id ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
+                          </Button>
                         </div>
 
                         <div className="flex items-center gap-3 text-xs text-muted-foreground mb-2">
@@ -466,10 +477,17 @@ const Messages = () => {
                           )}
                         </div>
 
-                        <div
-                          className="text-sm text-muted-foreground line-clamp-2 leading-relaxed"
-                          dangerouslySetInnerHTML={{ __html: msg.text || '<No text content>' }}
-                        />
+                        {expandedMessageId === msg.id ? (
+                          <div
+                            className="text-sm text-muted-foreground leading-relaxed"
+                            dangerouslySetInnerHTML={{ __html: msg.text || '<No text content>' }}
+                          />
+                        ) : (
+                          <div
+                            className="text-sm text-muted-foreground line-clamp-2 leading-relaxed"
+                            dangerouslySetInnerHTML={{ __html: msg.text || '<No text content>' }}
+                          />
+                        )}
                       </div>
                     </div>
                   </CardContent>

@@ -62,11 +62,11 @@ _SPAM_PATTERN = re.compile(
 )
 
 def should_analyze_message(text: str) -> bool:
-    """Return False only for obvious spam. Everything else goes to Ollama."""
-    # if not text or len(text.strip()) < 10:
-    #     return False
-    # if _SPAM_PATTERN.search(text):
-    #     return False
+    """Return False for obvious spam and very short messages. Job posts are typically longer."""
+    if not text or len(text.strip()) < 50:
+        return False
+    if _SPAM_PATTERN.search(text):
+        return False
     return True
 
 
