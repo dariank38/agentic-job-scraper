@@ -7,6 +7,8 @@ export interface Channel {
   name?: string;
   description?: string;
   is_active: boolean;
+  is_listened?: number | boolean;  // Backend uses INTEGER (0/1), frontend handles both
+  telegram_account_id?: number;
   message_count?: number;
   pending_count?: number;
   job_count?: number;
@@ -383,36 +385,51 @@ const api = {
     return response.json();
   },
 
-  stopListener: async (): Promise<any> => {
-    const response = await fetch(`${API_BASE}/api/listener/stop`, { method: 'POST' });
+  stopListener: async (telegramAccountId?: number): Promise<any> => {
+    const url = telegramAccountId
+      ? `${API_BASE}/api/listener/stop?telegram_account_id=${telegramAccountId}`
+      : `${API_BASE}/api/listener/stop`;
+    const response = await fetch(url, { method: 'POST' });
     return response.json();
   },
 
-  getListenerStatus: async (): Promise<any> => {
-    const response = await fetch(`${API_BASE}/api/listener/status`);
+  getListenerStatus: async (telegramAccountId?: number): Promise<any> => {
+    const url = telegramAccountId
+      ? `${API_BASE}/api/listener/status?telegram_account_id=${telegramAccountId}`
+      : `${API_BASE}/api/listener/status`;
+    const response = await fetch(url);
     return response.json();
   },
 
-  addListenerChannels: async (channelUsernames: string[]): Promise<any> => {
+  addListenerChannels: async (channelUsernames: string[], telegramAccountId?: number): Promise<any> => {
     const response = await fetch(`${API_BASE}/api/listener/add-channels`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ channel_usernames: channelUsernames }),
+      body: JSON.stringify({
+        channel_usernames: channelUsernames,
+        telegram_account_id: telegramAccountId,
+      }),
     });
     return response.json();
   },
 
-  removeListenerChannels: async (channelUsernames: string[]): Promise<any> => {
+  removeListenerChannels: async (channelUsernames: string[], telegramAccountId?: number): Promise<any> => {
     const response = await fetch(`${API_BASE}/api/listener/remove-channels`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ channel_usernames: channelUsernames }),
+      body: JSON.stringify({
+        channel_usernames: channelUsernames,
+        telegram_account_id: telegramAccountId,
+      }),
     });
     return response.json();
   },
 
-  getListenerChannels: async (): Promise<any> => {
-    const response = await fetch(`${API_BASE}/api/listener/channels`);
+  getListenerChannels: async (telegramAccountId?: number): Promise<any> => {
+    const url = telegramAccountId
+      ? `${API_BASE}/api/listener/channels?telegram_account_id=${telegramAccountId}`
+      : `${API_BASE}/api/listener/channels`;
+    const response = await fetch(url);
     return response.json();
   },
 

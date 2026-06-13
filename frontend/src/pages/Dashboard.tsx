@@ -1,7 +1,6 @@
 import { useEffect, useState } from 'react';
-import { Link } from 'react-router-dom';
-import { useSearchParams } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
+import { useNavigate } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -22,43 +21,42 @@ import {
   RefreshCw,
   Play,
   Square,
-  ChevronRight,
-  Loader2,
   Zap,
+  Calendar,
+  MapPin,
+  Mail,
+  ExternalLink,
 } from 'lucide-react';
 import api from '@/services/api';
-import type { Channel, Stats, WebsiteSource } from '@/services/api';
+import type { Channel, Stats, WebsiteSource, Job, Developer, TelegramAccount } from '@/services/api';
 import { useWebSocketProgress, useToast } from '@/components/Layout';
 
 const Dashboard = () => {
   const { t } = useTranslation();
+  const navigate = useNavigate();
   const [stats, setStats] = useState<Stats | null>(null);
   const [channels, setChannels] = useState<Channel[]>([]);
   const [websiteSources, setWebsiteSources] = useState<WebsiteSource[]>([]);
-  const [activeTab, setActiveTab] = useState('channels');
   const [loadingActions, setLoadingActions] = useState<Set<string>>(new Set());
   const { showToast } = useToast();
   const [cronRunning, setCronRunning] = useState(false);
-  const [initialLoading, setInitialLoading] = useState(true);
-  const [total, setTotal] = useState(0);
-  const [searchParams, setSearchParams] = useSearchParams();
   const [cleanupDialogOpen, setCleanupDialogOpen] = useState(false);
   const [cleanupDays, setCleanupDays] = useState(30);
   const [bulkOperation, setBulkOperation] = useState<{ id: string; type: 'analyze-all' | 'fetch-analyze-all' } | null>(null);
   const [listenerRunning, setListenerRunning] = useState(false);
   const [listenerDialogOpen, setListenerDialogOpen] = useState(false);
-  const [selectedChannels, setSelectedChannels] = useState<string[]>([]);
-  const [autoAnalyze, setAutoAnalyze] = useState(false);
   const [listenedChannels, setListenedChannels] = useState<string[]>([]);
-  const [manageChannelsDialogOpen, setManageChannelsDialogOpen] = useState(false);
-  const limit = 10;
-  const offset = parseInt(searchParams.get('offset') || '0');
+  const [recentJobs, setRecentJobs] = useState<Job[]>([]);
+  const [recentDevelopers, setRecentDevelopers] = useState<Developer[]>([]);
+  const [telegramAccounts, setTelegramAccounts] = useState<TelegramAccount[]>([]);
 
-  const { progress: wsProgress, channelProgress, operations, bulkOperations, stoppingChannels, tokenUsage, messageResults, currentAnalyzingMessage, requestStop } = useWebSocketProgress();
+  const { progress: wsProgress, channelProgress, operations, bulkOperations, requestStop, currentAnalyzingMessage } = useWebSocketProgress();
 
   useEffect(() => {
     if (wsProgress && (wsProgress.type === 'analyze_complete' || wsProgress.type === 'error' || wsProgress.type === 'fetch_complete')) {
       loadData();
+      loadRecentJobs();
+      loadRecentDevelopers();
     }
   }, [wsProgress]);
 
@@ -90,41 +88,50 @@ const Dashboard = () => {
     loadData();
     checkCronStatus();
     checkListenerStatus();
+    loadRecentJobs();
+    loadRecentDevelopers();
     const interval = setInterval(() => {
       loadData();
       checkCronStatus();
       checkListenerStatus();
     }, 10000);
     return () => clearInterval(interval);
-  }, [offset]);
+  }, []);
 
-  const loadData = async () => {
+  const loadRecentJobs = async () => {
     try {
-      const [statsData, channelsData, sourcesData] = await Promise.all([
-        api.getStats(),
-        api.getChannels({ limit, offset }),
-        api.getWebsiteSources(),
-      ]);
-      setStats(statsData);
-      setChannels(channelsData.channels);
-      setTotal(channelsData.total || 0);
-      setWebsiteSources(sourcesData.sources || []);
-      setInitialLoading(false);
-    } catch (error) {
-      setInitialLoading(false);
+      const data = await api.getJobs({ limit: 1, offset: 0 });
+      setRecentJobs(data.jobs || []);
+    } catch (e: any) {
+      // Silently ignore errors
     }
   };
 
-  const handleNext = () => {
-    const newOffset = offset + limit;
-    setSearchParams({ offset: newOffset.toString() });
+  const loadRecentDevelopers = async () => {
+    try {
+      const data = await api.getDevelopers({ limit: 1, offset: 0 });
+      setRecentDevelopers(data.developers || []);
+    } catch (e: any) {
+      // Silently ignore errors
+    }
   };
 
-  const handlePrevious = () => {
-    const newOffset = Math.max(0, offset - limit);
-    setSearchParams({ offset: newOffset.toString() });
+  const loadData = async () => {
+    try {
+      const [statsData, channelsData, sourcesData, accountsData] = await Promise.all([
+        api.getStats(),
+        api.getChannels({ limit: 1000 }), // Get all channels without pagination
+        api.getWebsiteSources(),
+        api.getTelegramAccounts(),
+      ]);
+      setStats(statsData);
+      setChannels(channelsData.channels);
+      setWebsiteSources(sourcesData.sources || []);
+      setTelegramAccounts(accountsData);
+    } catch (error) {
+      // Silently ignore errors
+    }
   };
-
 
   const withLoading = async <T,>(
     actionKey: string,
@@ -142,63 +149,6 @@ const Dashboard = () => {
     }
   };
 
-  const fetchChannel = async (channelId: number) => {
-    try {
-      const data = await withLoading(`fetch-${channelId}`, () => api.fetchChannel(channelId));
-      if (data.success) {
-        showToast('success', t('dashboard.fetchedMessages', { count: data.new_messages, days: data.days_back_used }));
-        loadData();
-      } else {
-        showToast('error', `${t('common.error')}: ` + (data.error || t('common.unknown')));
-      }
-    } catch (e: any) {
-      showToast('error', `${t('common.error')}: ` + e.message);
-    }
-  };
-
-  const analyzeChannel = async (channelId: number) => {
-    try {
-      // Check if Ollama is available before attempting analysis
-      if (!stats?.ollama_available) {
-        showToast('error', t('dashboard.ollamaUnavailable'));
-        return;
-      }
-
-      const data = await withLoading(`analyze-${channelId}`, () => api.analyzeChannel(channelId));
-      if (data.success) {
-        if (data.message) {
-          // Background task started
-          showToast('success', data.message);
-        } else if (data.stopped) {
-          showToast('info', t('dashboard.analyzeStopped', { analyzed: data.analyzed, jobs: data.jobs_found, remaining: data.remaining }));
-        } else {
-          showToast('success', t('dashboard.analyzeComplete', { analyzed: data.analyzed, jobs: data.jobs_found, devs: data.developers_found }));
-        }
-        // Reload data after a delay to see results
-        setTimeout(() => loadData(), 3000);
-      } else {
-        showToast('error', `${t('common.error')}: ` + (data.error || data.message || t('common.unknown')));
-      }
-    } catch (e: any) {
-      showToast('error', `${t('common.error')}: ` + e.message);
-    }
-  };
-
-  const stopAnalyzeChannel = async (channelId: number, channelUsername: string) => {
-    try {
-      // Mark channel as stopping immediately for UI feedback
-      requestStop(channelId, channelUsername);
-      const data = await api.stopAnalyze(channelId);
-      if (data.success) {
-        showToast('success', t('dashboard.stopSignalSent'));
-      } else {
-        showToast('warning', data.message || t('dashboard.noActiveAnalysis'));
-      }
-    } catch (e: any) {
-      showToast('error', `${t('common.error')}: ` + e.message);
-    }
-  };
-
   const checkCronStatus = async () => {
     try {
       const data = await api.getCronStatus();
@@ -210,38 +160,46 @@ const Dashboard = () => {
     }
   };
 
+  // Check listener status across all accounts
   const checkListenerStatus = async () => {
     try {
-      const data = await api.getListenerStatus();
-      setListenerRunning(data.running || false);
-      if (data.running) {
-        const channelsData = await api.getListenerChannels();
-        setListenedChannels(channelsData.listening_to || []);
-      } else {
-        setListenedChannels([]);
-      }
-    } catch (e: any) {
-      console.error('Failed to check listener status:', e);
-    }
-  };
+      // Get all authenticated accounts
+      const accounts = telegramAccounts.length > 0 ? telegramAccounts : await api.getTelegramAccounts();
+      const authenticatedAccounts = accounts.filter((a: TelegramAccount) => a.is_authenticated);
 
-  const startListener = async () => {
-    try {
-      if (selectedChannels.length === 0) {
-        showToast('error', 'Please select at least one channel');
+      if (authenticatedAccounts.length === 0) {
+        setListenerRunning(false);
+        setListenedChannels([]);
         return;
       }
-      const data = await api.startListener(selectedChannels, autoAnalyze);
-      if (data.success) {
-        showToast('success', 'Listener started successfully');
-        setListenerRunning(true);
-        setListenerDialogOpen(false);
-        setSelectedChannels([]);
-      } else {
-        showToast('error', data.error || 'Failed to start listener');
+
+      // Check all accounts and merge listened channels
+      const allListenedChannels: string[] = [];
+      let anyRunning = false;
+
+      for (const account of authenticatedAccounts) {
+        try {
+          const statusData = await api.getListenerStatus(account.id);
+          if (statusData.running) {
+            anyRunning = true;
+            const channelsData = await api.getListenerChannels(account.id);
+            if (channelsData.listening_to) {
+              // Normalize usernames to include @ prefix
+              const normalizedChannels = channelsData.listening_to.map((username: string) =>
+                username.startsWith('@') ? username : `@${username}`
+              );
+              allListenedChannels.push(...normalizedChannels);
+            }
+          }
+        } catch (e) {
+          // Skip accounts that fail
+        }
       }
-    } catch (e: any) {
-      showToast('error', `Failed to start listener: ${e.message}`);
+
+      setListenerRunning(anyRunning);
+      setListenedChannels([...new Set(allListenedChannels)]);
+    } catch (e) {
+      // Silently ignore
     }
   };
 
@@ -249,45 +207,53 @@ const Dashboard = () => {
     try {
       const data = await api.stopListener();
       if (data.success) {
-        showToast('success', 'Listener stopped successfully');
+        showToast('success', t('dashboard.listenerStopped'));
         setListenerRunning(false);
         setListenedChannels([]);
       } else {
-        showToast('error', data.error || 'Failed to stop listener');
+        showToast('error', data.error || t('dashboard.failedToStopListener'));
       }
     } catch (e: any) {
-      showToast('error', `Failed to stop listener: ${e.message}`);
+      showToast('error', `${t('dashboard.failedToStopListener')}: ${e.message}`);
     }
   };
 
-  const addChannels = async (channelUsernames: string[]) => {
+  // Simple toggle listener for a single channel - uses channel's assigned account automatically
+  const toggleChannelListener = async (channel: Channel) => {
+    const actionKey = `listener-toggle-${channel.id}`;
     try {
-      const data = await api.addListenerChannels(channelUsernames);
-      if (data.success) {
-        showToast('success', 'Channels added successfully');
-        setListenedChannels(data.listening_to || []);
-      } else {
-        showToast('error', data.error || 'Failed to add channels');
-      }
-    } catch (e: any) {
-      showToast('error', `Failed to add channels: ${e.message}`);
-    }
-  };
+      setLoadingActions(prev => new Set(prev).add(actionKey));
 
-  const removeChannels = async (channelUsernames: string[]) => {
-    try {
-      const data = await api.removeListenerChannels(channelUsernames);
-      if (data.success) {
-        showToast('success', 'Channels removed successfully');
-        setListenedChannels(data.listening_to || []);
-        if (data.listening_to.length === 0) {
-          setListenerRunning(false);
+      const isListening = listenedChannels.includes(channel.username);
+      const accountId = channel.telegram_account_id;
+
+      if (isListening) {
+        // Stop listening
+        const data = await api.removeListenerChannels([channel.username], accountId);
+        if (data.success) {
+          setListenedChannels(data.listening_to || []);
+        } else {
+          showToast('error', data.error || t('dashboard.failedToStopListener'));
         }
       } else {
-        showToast('error', data.error || 'Failed to remove channels');
+        // Add channel - backend will auto-start listener if needed
+        const data = await api.addListenerChannels([channel.username], accountId);
+        if (data.success) {
+          setListenerRunning(true);
+        } else {
+          showToast('error', data.error || t('dashboard.failedToAddChannel'));
+        }
+        // Refresh listened channels list to get updated status
+        await checkListenerStatus();
       }
     } catch (e: any) {
-      showToast('error', `Failed to remove channels: ${e.message}`);
+      showToast('error', `${t('dashboard.failedToToggleListener')}: ${e.message}`);
+    } finally {
+      setLoadingActions(prev => {
+        const next = new Set(prev);
+        next.delete(actionKey);
+        return next;
+      });
     }
   };
 
@@ -363,52 +329,6 @@ const Dashboard = () => {
         setCleanupDialogOpen(false);
       } else {
         showToast('error', `${t('common.error')}: ` + (data.message || t('common.unknown')));
-      }
-    } catch (e: any) {
-      showToast('error', `${t('common.error')}: ` + e.message);
-    }
-  };
-
-  const fetchWebsiteSource = async (sourceId: number) => {
-    try {
-      const data = await withLoading(`fetch-ws-${sourceId}`, () => api.fetchWebsiteSource(sourceId));
-      if (data.success) {
-        showToast('success', t('dashboard.fetchedMessages', { count: data.new_messages ?? data.fetched ?? 0, days: data.days_back_used ?? 0 }));
-        loadData();
-      } else {
-        showToast('error', `${t('common.error')}: ` + (data.error || data.detail || t('common.unknown')));
-      }
-    } catch (e: any) {
-      showToast('error', `${t('common.error')}: ` + e.message);
-    }
-  };
-
-  const analyzeWebsiteSource = async (sourceId: number) => {
-    try {
-      if (!stats?.ollama_available) {
-        showToast('error', t('dashboard.ollamaUnavailable'));
-        return;
-      }
-      const data = await withLoading(`analyze-ws-${sourceId}`, () => api.analyzeWebsiteSource(sourceId));
-      if (data.success) {
-        showToast('success', data.message || t('dashboard.analyzeComplete', { analyzed: data.analyzed ?? 0, jobs: data.jobs_found ?? 0, devs: 0 }));
-        setTimeout(() => loadData(), 2000);
-      } else {
-        showToast('error', `${t('common.error')}: ` + (data.error || data.detail || t('common.unknown')));
-      }
-    } catch (e: any) {
-      showToast('error', `${t('common.error')}: ` + e.message);
-    }
-  };
-
-  const stopWebsiteSource = async (sourceId: number, sourceName: string) => {
-    try {
-      requestStop(sourceId, sourceName);
-      const data = await api.stopWebsiteSource(sourceId);
-      if (data.success) {
-        showToast('success', t('dashboard.stopSignalSent'));
-      } else {
-        showToast('warning', data.message || t('dashboard.noActiveAnalysis'));
       }
     } catch (e: any) {
       showToast('error', `${t('common.error')}: ` + e.message);
@@ -586,34 +506,34 @@ const Dashboard = () => {
               </div>
             </div>
             <div className="space-y-2">
-              <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Real-time Listener</p>
+              <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">{t('dashboard.realTimeListener')}</p>
               <div className="flex items-center justify-between p-2 rounded-lg bg-muted/50">
                 <div className="flex items-center gap-2">
                   <Radio size={12} className={listenerRunning ? 'text-green-500' : 'text-gray-400'} />
-                  <span className="text-xs font-medium">{listenerRunning ? 'Listening' : 'Stopped'}</span>
+                  <span className="text-xs font-medium">{listenerRunning ? t('dashboard.listening') : t('dashboard.stopped')}</span>
                   {listenedChannels.length > 0 && (
                     <span className="text-xs text-muted-foreground">({listenedChannels.length})</span>
                   )}
                 </div>
                 <div className="flex gap-1">
-                  {listenerRunning && (
-                    <Button
-                      variant="outline"
-                      onClick={() => setManageChannelsDialogOpen(true)}
-                      size="sm"
-                      className="h-7 px-2"
-                    >
-                      Manage
-                    </Button>
-                  )}
                   <Button
-                    variant={listenerRunning ? 'destructive' : 'default'}
-                    onClick={() => listenerRunning ? stopListener() : setListenerDialogOpen(true)}
+                    variant="outline"
+                    onClick={() => setListenerDialogOpen(true)}
                     size="sm"
                     className="h-7 px-2"
                   >
-                    {listenerRunning ? <Square size={10} /> : <Play size={10} />}
+                    {t('dashboard.manage')}
                   </Button>
+                  {listenerRunning && (
+                    <Button
+                      variant="destructive"
+                      onClick={() => stopListener()}
+                      size="sm"
+                      className="h-7 px-2"
+                    >
+                      <Square size={10} />
+                    </Button>
+                  )}
                 </div>
               </div>
             </div>
@@ -692,333 +612,231 @@ const Dashboard = () => {
           </Card>
         </div>
 
-        {/* Live Analysis */}
+        {/* Current Analyzing Message */}
+        {Object.keys(currentAnalyzingMessage).length > 0 && (
+          <Card className="backdrop-blur-xl bg-white/70 border border-white/20 shadow-lg">
+            <CardHeader className="px-4 py-3">
+              <CardTitle className="text-sm font-medium flex items-center gap-2">
+                <Bot size={14} className="text-blue-500" />
+                {t('dashboard.currentlyAnalyzing')}
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="px-4 pb-4 space-y-2">
+              {Object.entries(currentAnalyzingMessage).map(([channelUsername, data]) => (
+                <div key={channelUsername} className="p-3 rounded-lg bg-gradient-to-r from-blue-50/50 to-purple-50/50 border border-blue-100">
+                  <div className="flex items-center gap-2 mb-2">
+                    <MessageSquare size={14} className="text-blue-500" />
+                    <span className="text-sm font-medium text-blue-700">{channelUsername}</span>
+                  </div>
+                  {data.message_preview && (
+                    <p className="text-sm text-gray-600 line-clamp-3">{data.message_preview}</p>
+                  )}
+                  {data.message_text && !data.message_preview && (
+                    <p className="text-sm text-gray-600 line-clamp-3">{data.message_text.substring(0, 200)}...</p>
+                  )}
+                </div>
+              ))}
+            </CardContent>
+          </Card>
+        )}
+
+        {/* Recent Jobs */}
         <Card className="backdrop-blur-xl bg-white/70 border border-white/20 shadow-lg">
           <CardHeader className="px-4 py-3">
             <CardTitle className="text-sm font-medium flex items-center gap-2">
-              <Bot size={16} className="text-blue-500" />
-              {t('dashboard.liveAnalysis')}
+              <Briefcase size={14} className="text-blue-500" />
+              {t('dashboard.recentJobs')}
             </CardTitle>
           </CardHeader>
           <CardContent className="px-4 pb-4">
-            {Object.keys(currentAnalyzingMessage).length === 0 && Object.keys(messageResults).length === 0 ? (
-              <div className="text-center py-8">
-                <Bot size={32} className="text-muted-foreground/30 mx-auto mb-2" />
-                <p className="text-xs text-muted-foreground">{t('dashboard.noActiveAnalysis')}</p>
+            {recentJobs.length === 0 ? (
+              <div className="text-center py-6">
+                <Briefcase size={32} className="text-muted-foreground/30 mx-auto mb-2" />
+                <p className="text-xs text-muted-foreground">{t('dashboard.noRecentJobs')}</p>
               </div>
             ) : (
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 max-h-64 overflow-y-auto">
-                {Object.entries(currentAnalyzingMessage).map(([channel, msg]) => (
-                  <div key={channel} className="border border-blue-200 rounded-lg p-3 bg-gradient-to-br from-blue-50 to-blue-100/50">
-                    <div className="flex items-center gap-2 mb-2">
-                      <Loader2 size={14} className="text-blue-600 animate-spin" />
-                      <span className="text-xs font-semibold text-blue-900">{channel}</span>
-                    </div>
-                    <p className="text-xs text-gray-700 line-clamp-2">{msg.message_text || msg.message_preview}</p>
-                  </div>
-                ))}
-                {Object.entries(messageResults).map(([channel, results]) => (
-                  <div key={channel} className="border border-border rounded-lg p-3 bg-gradient-to-br from-muted to-muted/50">
-                    <div className="flex items-center gap-2 mb-2">
-                      <Radio size={14} className="text-blue-500" />
-                      <span className="text-xs font-semibold">{channel}</span>
-                      <Badge variant="secondary" className="text-xs">{results.length}</Badge>
-                    </div>
-                    <div className="space-y-1">
-                      {results.slice(-2).map((result: any, idx: number) => (
-                        <div key={idx} className="bg-white p-2 rounded border text-xs">
-                          <Badge variant={result.status === 'success' ? 'default' : result.status === 'failed' ? 'destructive' : 'secondary'} className="text-[10px]">
-                            {result.status}
-                          </Badge>
-                          <span className="ml-1 font-medium">{result.category}</span>
+              <div className="space-y-2">
+                {recentJobs.map((job) => {
+                  const skills = job.skills || [];
+                  return (
+                    <div key={job.id} className="p-3 rounded-lg bg-gradient-to-r from-white/50 to-white/30 hover:from-white/70 hover:to-white/50 transition-all border border-border">
+                      <div className="flex items-center gap-2 mb-0.5">
+                        <span className="font-medium text-sm truncate flex-1">
+                          {job.title || t('jobs.untitledJob')}
+                        </span>
+                        {job.is_applied && (
+                          <Badge variant="default" className="text-xs h-5 px-1.5">{t('jobs.applied')}</Badge>
+                        )}
+                      </div>
+                      <p className="text-sm text-gray-500 truncate">
+                        {job.company || t('jobs.unknownCompany')}
+                      </p>
+                      {job.location && (
+                        <p className="text-sm text-gray-500 truncate">
+                          <MapPin className="w-3 h-3 inline mr-1" />
+                          {job.location}
+                        </p>
+                      )}
+                      {job.role_type && (
+                        <div className="flex gap-1 flex-wrap">
+                          {job.role_type.split('|').map((role, idx) => (
+                            <Badge
+                              key={idx}
+                              variant="secondary"
+                              className="text-xs h-5 px-1.5 bg-blue-50 text-blue-700 border-blue-200"
+                            >
+                              {role.trim()}
+                            </Badge>
+                          ))}
                         </div>
-                      ))}
+                      )}
+                      {job.contact && (
+                        <p className="text-sm text-gray-500 truncate">
+                          <Mail className="w-3 h-3 inline mr-1" />
+                          {job.contact}
+                        </p>
+                      )}
+                      {job.summary && (
+                        <p className="text-sm text-gray-600 mt-2 line-clamp-2">
+                          {job.summary}
+                        </p>
+                      )}
+                      {skills.length > 0 && (
+                        <div className="flex gap-1 mt-1.5 flex-wrap">
+                          {skills.slice(0, 3).map((skill: string, idx: number) => (
+                            <span key={idx} className="text-sm px-1.5 py-0.5 bg-gray-100 text-gray-600 rounded-md">
+                              {skill}
+                            </span>
+                          ))}
+                          {skills.length > 3 && (
+                            <span className="text-xs text-gray-400">+{skills.length - 3}</span>
+                          )}
+                        </div>
+                      )}
+                      <div className="flex items-center gap-2 mt-1 text-xs text-gray-400">
+                        <span className="flex items-center gap-1">
+                          <MessageSquare className="w-3 h-3" />
+                          {job.channel_name || job.channel?.username || t('common.unknown')}
+                        </span>
+                        <span className="flex items-center gap-1">
+                          <Calendar className="w-3 h-3" />
+                          {job.message?.date
+                            ? new Date(job.message.date).toLocaleDateString()
+                            : t('common.unknown')
+                          }
+                        </span>
+                      </div>
+                      <div className="mt-2 pt-2 border-t">
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          className="w-full text-xs"
+                          onClick={() => navigate(`/jobs?jobId=${job.id}`)}
+                        >
+                          {t('common.view')}
+                        </Button>
+                      </div>
                     </div>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             )}
           </CardContent>
         </Card>
 
-        {/* Channels / Website Sources */}
+        {/* Recent Developers */}
         <Card className="backdrop-blur-xl bg-white/70 border border-white/20 shadow-lg">
           <CardHeader className="px-4 py-3">
-            <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
-              <div className="flex gap-1 bg-muted p-1 rounded-lg w-full sm:w-auto">
-                <button
-                  onClick={() => setActiveTab('channels')}
-                  className={`flex items-center gap-2 px-3 py-1.5 rounded-md text-xs font-medium transition-all flex-1 sm:flex-none justify-center ${activeTab === 'channels' ? 'bg-background text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'}`}
-                >
-                  <Radio size={12} />
-                  {t('dashboard.channels')} ({total})
-                </button>
-                <button
-                  onClick={() => setActiveTab('websites')}
-                  className={`flex items-center gap-2 px-3 py-1.5 rounded-md text-xs font-medium transition-all flex-1 sm:flex-none justify-center ${activeTab === 'websites' ? 'bg-background text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'}`}
-                >
-                  <RefreshCw size={12} />
-                  {t('websiteSources.title')} ({websiteSources.length})
-                </button>
-              </div>
-              <Button asChild variant="ghost" size="sm" className="h-8 w-full sm:w-auto">
-                <Link to={activeTab === 'channels' ? '/channels' : '/websites'} className="text-xs">
-                  {t('dashboard.manage')} <ChevronRight size={12} className="inline ml-1" />
-                </Link>
-              </Button>
-            </div>
+            <CardTitle className="text-sm font-medium flex items-center gap-2">
+              <Users size={14} className="text-purple-500" />
+              {t('dashboard.recentDevelopers')}
+            </CardTitle>
           </CardHeader>
-
-            <CardContent className="p-0">
-              {activeTab === 'channels' ? (
-                <>
-                  {initialLoading ? (
-                    <div className="px-6 py-12 text-center">
-                      <Loader2 className="w-6 h-6 text-muted-foreground/50 animate-spin mx-auto mb-3" />
-                      <p className="text-sm text-muted-foreground">{t('dashboard.loadingChannels')}</p>
-                    </div>
-                  ) : channels.length > 0 ? (
-                    <>
-                      {channels.map((channel) => (
-                        <div key={channel.id} className="px-6 py-4 border-b border-border last:border-b-0 hover:bg-muted/50 transition-colors">
-                          <div className="flex justify-between items-center gap-4">
-                            <div className="min-w-0 flex-1">
-                              <div className="flex items-center gap-2 mb-1">
-                                <p className="font-semibold text-foreground truncate">{channel.username}</p>
-                                <Badge variant={channel.is_active ? 'default' : 'secondary'} className="text-xs">
-                                  {channel.is_active ? t('channels.active') : t('channels.inactive')}
-                                </Badge>
-                              </div>
-                              {channel.name && <p className="text-sm text-muted-foreground truncate">{channel.name}</p>}
-                              <p className="text-xs text-muted-foreground mt-1.5">
-                                {(channel.message_count || 0).toLocaleString()} msgs &bull; {(channel.job_count || 0).toLocaleString()} jobs
-                                {(channel.last_fetch_new_count || 0) > 0 && (
-                                  <span className="ml-2 inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
-                                    +{channel.last_fetch_new_count} {t('websites.fetched')}
-                                  </span>
-                                )}
-                                {(channel.pending_count || 0) > 0 && (
-                                  <span className="ml-2 inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-orange-100 text-orange-800">
-                                    {channel.pending_count} {t('dashboard.pendingAnalysis')}
-                                  </span>
-                                )}
-                              </p>
-                              {channelProgress[channel.username] && (
-                                <div className="mt-3">
-                                  <div className="flex justify-between text-xs mb-1.5">
-                                    <span className={stoppingChannels[channel.username] ? 'text-orange-600 font-medium' : 'text-blue-600 font-medium'}>
-                                      {stoppingChannels[channel.username] ? t('dashboard.stoppingProgress') : t('dashboard.analyzingProgress')}
-                                    </span>
-                                    <span className="text-muted-foreground">{channelProgress[channel.username].analyzed}/{channelProgress[channel.username].total}</span>
-                                  </div>
-                                  <div className="w-full bg-muted rounded-full h-2.5">
-                                    <div
-                                      className={`h-2.5 rounded-full transition-all ${stoppingChannels[channel.username] ? 'bg-orange-500' : 'bg-blue-600'}`}
-                                      style={{ width: `${(channelProgress[channel.username].total > 0 ? (channelProgress[channel.username].analyzed / channelProgress[channel.username].total) * 100 : 0)}%` }}
-                                    />
-                                  </div>
-                                  {tokenUsage[channel.username] && (
-                                    <div className="flex justify-between text-xs mt-1.5 text-muted-foreground">
-                                      <span>🤖 {(tokenUsage[channel.username].total / 1000).toFixed(1)}k tokens</span>
-                                      <span>⬆{(tokenUsage[channel.username].input / 1000).toFixed(1)}k ⬇{(tokenUsage[channel.username].output / 1000).toFixed(1)}k</span>
-                                    </div>
-                                  )}
-                                  {messageResults[channel.username] && messageResults[channel.username].length > 0 && (
-                                    <div className="mt-2 text-xs">
-                                      <div className="flex gap-2 text-muted-foreground">
-                                        <span>✓ {messageResults[channel.username].filter((r: any) => r.status === 'success').length}</span>
-                                        <span className="text-orange-500">⚠ {messageResults[channel.username].filter((r: any) => r.status === 'json_cutoff').length}</span>
-                                        <span className="text-red-500">✗ {messageResults[channel.username].filter((r: any) => r.status === 'failed').length}</span>
-                                        <span className="text-muted-foreground/50">○ {messageResults[channel.username].filter((r: any) => r.status === 'other').length}</span>
-                                      </div>
-                                    </div>
-                                  )}
-                                </div>
-                              )}
-                            </div>
-                            <div className="flex gap-2 flex-shrink-0">
-                              {!(loadingActions.has(`fetch-${channel.id}`) || loadingActions.has(`analyze-${channel.id}`) || !!operations[channel.username]) && (
-                                <>
-                                  <Button
-                                    size="sm"
-                                    variant="outline"
-                                    onClick={() => fetchChannel(channel.id)}
-                                    disabled={loadingActions.has(`fetch-${channel.id}`)}
-                                    className="h-9"
-                                  >
-                                    <RefreshCw size={14} className="mr-2" />
-                                    {loadingActions.has(`fetch-${channel.id}`) ? t('dashboard.fetching') : t('channels.fetch')}
-                                  </Button>
-                                  <Button
-                                    size="sm"
-                                    onClick={() => analyzeChannel(channel.id)}
-                                    disabled={loadingActions.has(`analyze-${channel.id}`)}
-                                    className="h-9"
-                                  >
-                                    <Bot size={14} className="mr-2" />
-                                    {loadingActions.has(`analyze-${channel.id}`) ? t('dashboard.analyzing') : t('channels.analyze')}
-                                  </Button>
-                                </>
-                              )}
-                              {(loadingActions.has(`fetch-${channel.id}`) || loadingActions.has(`analyze-${channel.id}`) || !!operations[channel.username]) && (
-                                <Button
-                                  size="sm"
-                                  variant="destructive"
-                                  onClick={() => stopAnalyzeChannel(channel.id, channel.username)}
-                                  title={t('common.stop')}
-                                  disabled={stoppingChannels[channel.id] || stoppingChannels[channel.username]}
-                                  className="h-9"
-                                >
-                                  <Square size={14} className="mr-2" />
-                                  {stoppingChannels[channel.id] || stoppingChannels[channel.username] ? t('channels.stopping') : t('common.stop')}
-                                </Button>
-                              )}
-                            </div>
-                          </div>
-                        </div>
-                      ))}
-                      {/* Pagination */}
-                      <div className="px-6 py-4 border-t border-border flex items-center justify-between bg-muted/30">
-                        <Button variant="outline" size="sm" onClick={handlePrevious} disabled={offset === 0} className="h-9">
-                          {t('common.previous')}
-                        </Button>
-                        <span className="text-sm text-muted-foreground">
-                          Page {Math.floor(offset / limit) + 1} of {Math.ceil(total / limit)} ({offset + 1}-{Math.min(offset + limit, total)} of {total})
+          <CardContent className="px-4 pb-4">
+            {recentDevelopers.length === 0 ? (
+              <div className="text-center py-6">
+                <Users size={32} className="text-muted-foreground/30 mx-auto mb-2" />
+                <p className="text-xs text-muted-foreground">{t('dashboard.noRecentDevelopers')}</p>
+              </div>
+            ) : (
+              <div className="space-y-2">
+                {recentDevelopers.map((dev) => {
+                  const skills = dev.skills || [];
+                  return (
+                    <div key={dev.id} className="p-3 rounded-lg bg-gradient-to-r from-white/50 to-white/30 hover:from-white/70 hover:to-white/50 transition-all border border-border">
+                      <div className="flex items-center gap-2 mb-0.5">
+                        <span className="font-medium text-sm truncate flex-1">
+                          {dev.name || t('developers.unnamedDeveloper')}
                         </span>
-                        <Button variant="outline" size="sm" onClick={handleNext} disabled={offset + limit >= total} className="h-9">
-                          {t('common.next')}
+                        {dev.is_contacted && (
+                          <Badge variant="default" className="text-xs h-5 px-1.5">{t('developers.contacted')}</Badge>
+                        )}
+                      </div>
+                      <p className="text-sm text-gray-500 truncate">
+                        {dev.looking_for_work ? t('developers.lookingForWork') : t('developers.notLooking')}
+                      </p>
+                      {dev.experience && (
+                        <p className="text-sm text-gray-500 truncate">
+                          <Briefcase className="w-3 h-3 inline mr-1" />
+                          {dev.experience}
+                        </p>
+                      )}
+                      {dev.contact && (
+                        <p className="text-sm text-gray-500 truncate">
+                          <Mail className="w-3 h-3 inline mr-1" />
+                          {dev.contact}
+                        </p>
+                      )}
+                      {dev.github && (
+                        <p className="text-sm text-gray-500 truncate">
+                          <ExternalLink className="w-3 h-3 inline mr-1" />
+                          GitHub: {dev.github}
+                        </p>
+                      )}
+                      {dev.linkedin && (
+                        <p className="text-sm text-gray-500 truncate">
+                          <ExternalLink className="w-3 h-3 inline mr-1" />
+                          LinkedIn: {dev.linkedin}
+                        </p>
+                      )}
+                      {dev.summary && (
+                        <p className="text-sm text-gray-600 mt-2 line-clamp-2">
+                          {dev.summary}
+                        </p>
+                      )}
+                      {skills.length > 0 && (
+                        <div className="flex gap-1 mt-1.5 flex-wrap">
+                          {skills.slice(0, 3).map((skill: string, idx: number) => (
+                            <span key={idx} className="text-sm px-1.5 py-0.5 bg-gray-100 text-gray-600 rounded-md">
+                              {skill}
+                            </span>
+                          ))}
+                          {skills.length > 3 && (
+                            <span className="text-xs text-gray-400">+{skills.length - 3}</span>
+                          )}
+                        </div>
+                      )}
+                      <div className="flex items-center gap-1 mt-1 text-xs text-gray-400">
+                        <MessageSquare className="w-3 h-3" />
+                        @{dev.channel?.username || t('common.unknown')}
+                      </div>
+                      <div className="mt-2 pt-2 border-t">
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          className="w-full text-xs"
+                          onClick={() => navigate(`/developers?developerId=${dev.id}`)}
+                        >
+                          {t('common.view')}
                         </Button>
                       </div>
-                    </>
-                  ) : (
-                    <div className="px-6 py-12 text-center">
-                      <Radio size={48} className="text-muted-foreground/20 mx-auto mb-4" />
-                      <p className="text-sm text-muted-foreground">{t('dashboard.noChannelsConfigured')}</p>
-                      <Button asChild variant="outline" size="sm" className="mt-4 h-9">
-                        <Link to="/channels">{t('dashboard.addFirstChannel')}</Link>
-                      </Button>
                     </div>
-                  )}
-                </>
-              ) : (
-                <>
-                  {websiteSources.length > 0 ? (
-                    websiteSources.map((source) => (
-                      <div key={source.id} className="px-6 py-4 border-b border-border last:border-b-0 hover:bg-muted/50 transition-colors">
-                        <div className="flex justify-between items-center gap-4">
-                          <div className="min-w-0 flex-1">
-                            <div className="flex items-center gap-2 mb-1">
-                              <p className="font-semibold text-foreground truncate">{source.name}</p>
-                              <Badge variant={source.is_active ? 'default' : 'secondary'} className="text-xs">
-                                {source.is_active ? t('channels.active') : t('channels.inactive')}
-                              </Badge>
-                              <Badge variant="outline" className="text-xs">{source.site_type}</Badge>
-                            </div>
-                            <a href={source.url} target="_blank" rel="noopener noreferrer" className="text-sm text-blue-500 hover:underline truncate block">
-                              {source.url}
-                            </a>
-                            <p className="text-xs text-muted-foreground mt-1.5">
-                              {(source.message_count || 0).toLocaleString()} posts &bull; {(source.job_count || 0).toLocaleString()} jobs
-                              {(source.last_fetch_new_count || 0) > 0 && (
-                                <span className="ml-2 inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
-                                  +{source.last_fetch_new_count} {t('websites.fetched')}
-                                </span>
-                              )}
-                              {(source.pending_count || 0) > 0 && (
-                                <span className="ml-2 inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-orange-100 text-orange-800">
-                                  {source.pending_count} {t('dashboard.pendingAnalysis')}
-                                </span>
-                              )}
-                            </p>
-                            {source.last_fetch_at && (
-                              <p className="text-xs text-muted-foreground mt-1">
-                                {t('websiteSources.lastFetch')}: {new Date(source.last_fetch_at).toLocaleString()}
-                              </p>
-                            )}
-                            {channelProgress[source.name] && (
-                              <div className="mt-3">
-                                <div className="flex justify-between text-xs mb-1.5">
-                                  <span className={stoppingChannels[source.name] ? 'text-orange-600 font-medium' : 'text-blue-600 font-medium'}>
-                                    {stoppingChannels[source.name] ? t('dashboard.stoppingProgress') : t('dashboard.analyzingProgress')}
-                                  </span>
-                                  <span className="text-muted-foreground">{channelProgress[source.name].analyzed}/{channelProgress[source.name].total}</span>
-                                </div>
-                                <div className="w-full bg-muted rounded-full h-2.5">
-                                  <div
-                                    className={`h-2.5 rounded-full transition-all ${stoppingChannels[source.name] ? 'bg-orange-500' : 'bg-blue-600'}`}
-                                    style={{ width: `${channelProgress[source.name].total > 0 ? (channelProgress[source.name].analyzed / channelProgress[source.name].total) * 100 : 0}%` }}
-                                  />
-                                </div>
-                                {tokenUsage[source.name] && (
-                                  <div className="flex justify-between text-xs mt-1.5 text-muted-foreground">
-                                    <span>🤖 {(tokenUsage[source.name].total / 1000).toFixed(1)}k tokens</span>
-                                    <span>⬆{(tokenUsage[source.name].input / 1000).toFixed(1)}k ⬇{(tokenUsage[source.name].output / 1000).toFixed(1)}k</span>
-                                  </div>
-                                )}
-                                {messageResults[source.name] && messageResults[source.name].length > 0 && (
-                                  <div className="mt-2 text-xs">
-                                    <div className="flex gap-2 text-muted-foreground">
-                                      <span>✓ {messageResults[source.name].filter((r: any) => r.status === 'success').length}</span>
-                                      <span className="text-orange-500">⚠ {messageResults[source.name].filter((r: any) => r.status === 'json_cutoff').length}</span>
-                                      <span className="text-red-500">✗ {messageResults[source.name].filter((r: any) => r.status === 'failed').length}</span>
-                                      <span className="text-muted-foreground/50">○ {messageResults[source.name].filter((r: any) => r.status === 'other').length}</span>
-                                    </div>
-                                  </div>
-                                )}
-                              </div>
-                            )}
-                          </div>
-                          <div className="flex gap-2 flex-shrink-0">
-                            {!(loadingActions.has(`fetch-ws-${source.id}`) || loadingActions.has(`analyze-ws-${source.id}`) || !!wsSourceAnalyzing[source.name]) && (
-                              <>
-                                <Button
-                                  size="sm"
-                                  variant="outline"
-                                  onClick={() => fetchWebsiteSource(source.id)}
-                                  className="h-9"
-                                >
-                                  <RefreshCw size={14} className="mr-2" />
-                                  {t('channels.fetch')}
-                                </Button>
-                                <Button
-                                  size="sm"
-                                  onClick={() => analyzeWebsiteSource(source.id)}
-                                  className="h-9"
-                                >
-                                  <Bot size={14} className="mr-2" />
-                                  {t('channels.analyze')}
-                                </Button>
-                              </>
-                            )}
-                            {(loadingActions.has(`fetch-ws-${source.id}`) || loadingActions.has(`analyze-ws-${source.id}`) || !!wsSourceAnalyzing[source.name]) && (
-                              <Button
-                                size="sm"
-                                variant="destructive"
-                                onClick={() => stopWebsiteSource(source.id, source.name)}
-                                disabled={stoppingChannels[source.id] || stoppingChannels[source.name]}
-                                className="h-9"
-                              >
-                                <Square size={14} className="mr-2" />
-                                {stoppingChannels[source.id] || stoppingChannels[source.name] ? t('channels.stopping') : t('common.stop')}
-                              </Button>
-                            )}
-                          </div>
-                        </div>
-                      </div>
-                    ))
-                  ) : (
-                    <div className="px-6 py-12 text-center">
-                      <RefreshCw size={48} className="text-muted-foreground/20 mx-auto mb-4" />
-                      <p className="text-sm text-muted-foreground">{t('websiteSources.noSources')}</p>
-                      <Button asChild variant="outline" size="sm" className="mt-4 h-9">
-                        <Link to="/websites">{t('dashboard.manage')}</Link>
-                      </Button>
-                    </div>
-                  )}
-                </>
-              )}
-            </CardContent>
-          </Card>
+                  );
+                })}
+              </div>
+            )}
+          </CardContent>
+        </Card>
       </div>
 
       {/* Cleanup Confirmation Dialog */}
@@ -1053,122 +871,69 @@ const Dashboard = () => {
         </DialogContent>
       </Dialog>
 
-      {/* Listener Start Dialog */}
-      <Dialog open={listenerDialogOpen} onOpenChange={setListenerDialogOpen}>
-        <DialogContent>
+      {/* Unified Manage Listening Dialog */}
+      <Dialog
+        open={listenerDialogOpen}
+        onOpenChange={setListenerDialogOpen}
+      >
+        <DialogContent className="max-w-lg w-full sm:max-w-lg">
           <DialogHeader>
-            <DialogTitle>Start Real-time Listener</DialogTitle>
+            <DialogTitle>{t('dashboard.manageListenerChannels')}</DialogTitle>
             <DialogDescription>
-              Select channels to monitor for new messages in real-time
+              {channels.filter(c => listenedChannels.includes(c.username)).length} of {channels.length} {t('dashboard.channels')} {t('dashboard.listening')}
             </DialogDescription>
           </DialogHeader>
-          <div className="py-4 space-y-4">
-            <div>
-              <label className="text-sm font-medium mb-2 block">Select Channels</label>
-              <div className="space-y-2 max-h-60 overflow-y-auto">
-                {channels.filter(c => c.is_active).map((channel) => (
-                  <div key={channel.id} className="flex items-center gap-2">
-                    <input
-                      type="checkbox"
-                      id={`channel-${channel.id}`}
-                      checked={selectedChannels.includes(channel.username)}
-                      onChange={(e) => {
-                        if (e.target.checked) {
-                          setSelectedChannels([...selectedChannels, channel.username]);
-                        } else {
-                          setSelectedChannels(selectedChannels.filter(c => c !== channel.username));
-                        }
-                      }}
-                      className="w-4 h-4"
-                    />
-                    <label htmlFor={`channel-${channel.id}`} className="text-sm cursor-pointer">
-                      {channel.username} {channel.name && `(${channel.name})`}
-                    </label>
-                  </div>
-                ))}
-              </div>
-            </div>
-            <div className="flex items-center gap-2">
-              <input
-                type="checkbox"
-                id="auto-analyze"
-                checked={autoAnalyze}
-                onChange={(e) => setAutoAnalyze(e.target.checked)}
-                className="w-4 h-4"
-              />
-              <label htmlFor="auto-analyze" className="text-sm cursor-pointer">
-                Auto-analyze new messages
-              </label>
-            </div>
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setListenerDialogOpen(false)}>
-              {t('common.cancel')}
-            </Button>
-            <Button onClick={startListener}>
-              Start Listener
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      {/* Manage Channels Dialog */}
-      <Dialog open={manageChannelsDialogOpen} onOpenChange={setManageChannelsDialogOpen}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Manage Listener Channels</DialogTitle>
-            <DialogDescription>
-              Add or remove channels from the running real-time listener
-            </DialogDescription>
-          </DialogHeader>
-          <div className="py-4 space-y-4">
-            <div>
-              <label className="text-sm font-medium mb-2 block">Currently Listening</label>
-              <div className="space-y-2 max-h-40 overflow-y-auto">
-                {listenedChannels.length === 0 ? (
-                  <p className="text-sm text-muted-foreground">No channels being listened to</p>
-                ) : (
-                  listenedChannels.map((username) => (
-                    <div key={username} className="flex items-center justify-between p-2 rounded bg-muted">
-                      <span className="text-sm">{username}</span>
+          <div className="py-4">
+            <div className="space-y-2 max-h-[60vh] sm:max-h-80 overflow-y-auto">
+              {channels.length === 0 ? (
+                <p className="text-sm text-muted-foreground text-center py-4">{t('dashboard.noChannels')}</p>
+              ) : (
+                channels.map((channel) => {
+                  const isListening = listenedChannels.includes(channel.username);
+                  const actionKey = `listener-toggle-${channel.id}`;
+                  return (
+                    <div
+                      key={channel.id}
+                      className={`flex items-center justify-between p-3 rounded ${
+                        channel.is_active ? 'bg-muted' : 'bg-gray-100 opacity-60'
+                      }`}
+                    >
+                      <div className="flex-1 min-w-0 mr-3">
+                        <div className="font-medium text-sm">{channel.username}</div>
+                        {channel.name && (
+                          <div className="text-xs text-muted-foreground truncate">{channel.name}</div>
+                        )}
+                        <div className="flex items-center gap-2 mt-0.5">
+                          {!channel.is_active && (
+                            <span className="text-xs text-gray-400">{t('channels.inactive')}</span>
+                          )}
+                          {isListening && (
+                            <span className="text-xs text-green-600 font-medium">{t('dashboard.listening')}</span>
+                          )}
+                        </div>
+                      </div>
                       <Button
-                        variant="destructive"
+                        variant={isListening ? 'destructive' : 'default'}
                         size="sm"
-                        onClick={() => removeChannels([username])}
-                        className="h-6 px-2 text-xs"
+                        onClick={() => toggleChannelListener(channel)}
+                        disabled={loadingActions.has(actionKey)}
+                        className="h-8 sm:h-7 px-3 sm:px-3 text-xs shrink-0"
                       >
-                        Remove
+                        {loadingActions.has(actionKey)
+                          ? '...'
+                          : isListening
+                            ? t('common.stop')
+                            : t('common.listen')}
                       </Button>
                     </div>
-                  ))
-                )}
-              </div>
-            </div>
-            <div>
-              <label className="text-sm font-medium mb-2 block">Add Channels</label>
-              <div className="space-y-2 max-h-40 overflow-y-auto">
-                {channels.filter(c => c.is_active && !listenedChannels.includes(c.username)).map((channel) => (
-                  <div key={channel.id} className="flex items-center justify-between p-2 rounded bg-muted">
-                    <span className="text-sm">{channel.username} {channel.name && `(${channel.name})`}</span>
-                    <Button
-                      variant="default"
-                      size="sm"
-                      onClick={() => addChannels([channel.username])}
-                      className="h-6 px-2 text-xs"
-                    >
-                      Add
-                    </Button>
-                  </div>
-                ))}
-                {channels.filter(c => c.is_active && !listenedChannels.includes(c.username)).length === 0 && (
-                  <p className="text-sm text-muted-foreground">No available channels to add</p>
-                )}
-              </div>
+                  );
+                })
+              )}
             </div>
           </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setManageChannelsDialogOpen(false)}>
-              Close
+          <DialogFooter className="flex-col sm:flex-row gap-2">
+            <Button variant="outline" onClick={() => setListenerDialogOpen(false)} className="w-full sm:w-auto">
+              {t('common.close')}
             </Button>
           </DialogFooter>
         </DialogContent>

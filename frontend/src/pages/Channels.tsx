@@ -33,7 +33,6 @@ const Channels = () => {
   const [activeFilter, setActiveFilter] = useState('all');
   const [telegramAccounts, setTelegramAccounts] = useState<TelegramAccount[]>([]);
   const [selectedAccountId, setSelectedAccountId] = useState<number | null>(null);
-  const [listenerRunning, setListenerRunning] = useState(false);
   const [listenedChannels, setListenedChannels] = useState<string[]>([]);
   const limit = 10;
   const offset = parseInt(searchParams.get('offset') || '0');
@@ -50,19 +49,42 @@ const Channels = () => {
     loadChannels();
     loadStats();
     loadTelegramAccounts();
-    checkListenerStatus();
   }, [offset, searchQuery, activeFilter]);
+
+  useEffect(() => {
+    if (telegramAccounts.length > 0) {
+      checkListenerStatus();
+    }
+  }, [telegramAccounts]);
 
   const checkListenerStatus = async () => {
     try {
-      const data = await api.getListenerStatus();
-      setListenerRunning(data.running || false);
-      if (data.running) {
-        const channelsData = await api.getListenerChannels();
-        setListenedChannels(channelsData.listening_to || []);
-      } else {
-        setListenedChannels([]);
+      // Get all authenticated accounts first
+      const accounts = telegramAccounts.length > 0 ? telegramAccounts : await api.getTelegramAccounts();
+      const authenticatedAccounts = accounts.filter((a: TelegramAccount) => a.is_authenticated);
+
+      // Check all accounts and merge listened channels
+      const allListenedChannels: string[] = [];
+
+      for (const account of authenticatedAccounts) {
+        try {
+          const statusData = await api.getListenerStatus(account.id);
+          if (statusData.running) {
+            const channelsData = await api.getListenerChannels(account.id);
+            if (channelsData.listening_to) {
+              // Normalize usernames to include @ prefix for comparison with database
+              const normalizedChannels = channelsData.listening_to.map((username: string) =>
+                username.startsWith('@') ? username : `@${username}`
+              );
+              allListenedChannels.push(...normalizedChannels);
+            }
+          }
+        } catch (e) {
+          // Skip accounts that fail
+        }
       }
+
+      setListenedChannels([...new Set(allListenedChannels)]);
     } catch (e: any) {
       // Silently ignore errors
     }
@@ -342,34 +364,82 @@ const Channels = () => {
     setDeleteDialogOpen(true);
   };
 
-  const addChannelToListener = async (channelUsername: string) => {
+  const toggleChannelListener = async (channel: Channel) => {
+    const actionKey = `listener-${channel.id}`;
     try {
-      const data = await api.addListenerChannels([channelUsername]);
-      if (data.success) {
-        showToast('success', 'Channel added to listener');
-        setListenedChannels(data.listening_to || []);
-      } else {
-        showToast('error', data.error || 'Failed to add channel to listener');
-      }
-    } catch (e: any) {
-      showToast('error', `Failed to add channel to listener: ${e.message}`);
-    }
-  };
+      setLoadingActions(prev => new Set(prev).add(actionKey));
 
-  const removeChannelFromListener = async (channelUsername: string) => {
-    try {
-      const data = await api.removeListenerChannels([channelUsername]);
-      if (data.success) {
-        showToast('success', 'Channel removed from listener');
-        setListenedChannels(data.listening_to || []);
-        if (data.listening_to.length === 0) {
-          setListenerRunning(false);
+      // Use database state first, fallback to runtime state
+      const isListening = channel.is_listened || listenedChannels.includes(channel.username);
+
+      if (isListening) {
+        // Stop listening to this channel
+        const data = await api.removeListenerChannels([channel.username], channel.telegram_account_id || undefined);
+        if (data.success) {
+          showToast('success', 'Channel removed from listener');
+          // Reload channels to get updated is_listened state from database
+          await loadChannels();
+          // Refresh all listened channels to ensure UI sync
+          await checkListenerStatus();
+        } else {
+          showToast('error', data.error || 'Failed to remove channel from listener');
         }
       } else {
-        showToast('error', data.error || 'Failed to remove channel from listener');
+        // Determine which account to use
+        let accountId = channel.telegram_account_id;
+        if (!accountId) {
+          // Use selected account or auto-select if only one
+          const authenticatedAccounts = telegramAccounts.filter(a => a.is_authenticated);
+          if (selectedAccountId) {
+            accountId = selectedAccountId;
+          } else if (authenticatedAccounts.length === 1) {
+            accountId = authenticatedAccounts[0].id;
+          } else if (authenticatedAccounts.length === 0) {
+            showToast('error', 'No authenticated Telegram account available');
+            return;
+          } else {
+            showToast('error', 'Please select a Telegram account first');
+            return;
+          }
+        }
+
+        // Check if listener is running for this account
+        const statusData = await api.getListenerStatus(accountId);
+
+        if (!statusData.running) {
+          // Start listener with just this channel
+          const startData = await api.startListener([channel.username], false, accountId);
+          if (startData.success) {
+            showToast('success', `Listener started for ${channel.username}`);
+            // Reload channels to get updated is_listened state from database
+            await loadChannels();
+            // Refresh all listened channels to ensure UI sync
+            await checkListenerStatus();
+          } else {
+            showToast('error', startData.error || 'Failed to start listener');
+          }
+        } else {
+          // Add channel to existing listener
+          const data = await api.addListenerChannels([channel.username], accountId);
+          if (data.success) {
+            showToast('success', 'Channel added to listener');
+            // Reload channels to get updated is_listened state from database
+            await loadChannels();
+            // Refresh all listened channels to ensure UI sync
+            await checkListenerStatus();
+          } else {
+            showToast('error', data.error || 'Failed to add channel to listener');
+          }
+        }
       }
     } catch (e: any) {
-      showToast('error', `Failed to remove channel from listener: ${e.message}`);
+      showToast('error', `Failed to toggle listener: ${e.message}`);
+    } finally {
+      setLoadingActions(prev => {
+        const next = new Set(prev);
+        next.delete(actionKey);
+        return next;
+      });
     }
   };
 
@@ -429,7 +499,7 @@ const Channels = () => {
                         <Badge variant={channel.is_active ? 'default' : 'secondary'}>
                           {channel.is_active ? t('channels.active') : t('channels.inactive')}
                         </Badge>
-                        {listenedChannels.includes(channel.username) && (
+                        {(channel.is_listened === 1 || channel.is_listened === true || listenedChannels.includes(channel.username)) && (
                           <Badge variant="outline" className="bg-green-50 text-green-700 border-green-200">
                             Listening
                           </Badge>
@@ -527,16 +597,20 @@ const Channels = () => {
                       >
                         {loadingActions.has(`toggle-${channel.id}`) ? t('channels.toggling') : (channel.is_active ? t('channels.disable') : t('channels.enable'))}
                       </Button>
-                      {listenerRunning && (
-                        <Button
-                          variant={listenedChannels.includes(channel.username) ? 'destructive' : 'default'}
-                          onClick={() => listenedChannels.includes(channel.username) ? removeChannelFromListener(channel.username) : addChannelToListener(channel.username)}
-                          disabled={loadingActions.has(`listener-${channel.id}`)}
-                          className="flex-1 sm:flex-none"
-                        >
-                          {listenedChannels.includes(channel.username) ? 'Stop Listening' : 'Listen'}
-                        </Button>
-                      )}
+                      {/* Listen Toggle - always shown */}
+                      <Button
+                        variant={listenedChannels.includes(channel.username) ? 'destructive' : 'default'}
+                        onClick={() => toggleChannelListener(channel)}
+                        disabled={loadingActions.has(`listener-${channel.id}`)}
+                        className="flex-1 sm:flex-none"
+                      >
+                        {loadingActions.has(`listener-${channel.id}`)
+                          ? 'Loading...'
+                          : listenedChannels.includes(channel.username)
+                            ? 'Stop Listening'
+                            : 'Listen'
+                        }
+                      </Button>
                       <Button
                         variant="destructive"
                         onClick={() => confirmDelete(channel.id)}

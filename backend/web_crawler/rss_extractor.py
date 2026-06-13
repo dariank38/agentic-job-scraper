@@ -133,8 +133,8 @@ class Extractor:
 
         for r in results:
             for j in r.get("job_postings", []):
-                # Only add non-empty job postings
-                if j.get("title"):
+                # Add job posting even if title is missing - backend will apply fallback
+                if j.get("title") or j.get("summary") or j.get("company") or j.get("role_type"):
                     jobs.append(JobPosting(**{k: v for k, v in j.items() if v}))
 
             dev = r.get("developer_info", {})
