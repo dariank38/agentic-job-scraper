@@ -251,6 +251,49 @@ async def broadcast_progress(event_type: str, data: dict):
         pass
 
 
+async def broadcast_stats_update(db: AsyncSession):
+    """Broadcast updated stats to all connected clients."""
+    try:
+        from sqlalchemy import func
+        from app.models import Channel, Job, Developer, Message
+
+        # Get current stats
+        total_channels_result = await db.execute(select(func.count()).select_from(Channel))
+        total_channels = total_channels_result.scalar()
+
+        job_postings_result = await db.execute(select(func.count()).select_from(Job))
+        job_postings = job_postings_result.scalar()
+
+        developers_result = await db.execute(select(func.count()).select_from(Developer))
+        developers = developers_result.scalar()
+
+        messages_result = await db.execute(select(func.count()).select_from(Message))
+        total_messages = messages_result.scalar()
+
+        analyzed_messages_result = await db.execute(select(func.count()).select_from(Message).filter(Message.analysis_status == 'analyzed'))
+        analyzed_messages = analyzed_messages_result.scalar()
+
+        pending_messages_result = await db.execute(select(func.count()).select_from(Message).filter(Message.analysis_status == 'pending'))
+        pending_messages = pending_messages_result.scalar()
+
+        skipped_messages_result = await db.execute(select(func.count()).select_from(Message).filter(Message.analysis_status == 'failed'))
+        skipped_messages = skipped_messages_result.scalar()
+
+        await broadcast_progress("stats_update", {
+            "total_channels": total_channels,
+            "job_postings": job_postings,
+            "developers": developers,
+            "total_messages": total_messages,
+            "analyzed_messages": analyzed_messages,
+            "pending_messages": pending_messages,
+            "skipped_messages": skipped_messages,
+            "applications": {"jobs": {"total": 0}},
+            "ollama_available": True
+        })
+    except Exception as e:
+        logger.error(f"Error broadcasting stats update: {e}")
+
+
 async def create_operation(
     db: AsyncSession,
     operation_type: str,
@@ -524,6 +567,9 @@ async def fetch_and_store_messages(
         status = "stopped" if stopped_early else "completed"
         await broadcast_progress("fetch_complete", {"channel": channel.username, "new_messages": new_count, "operation_id": operation_id, "stopped": stopped_early})
         await update_operation(db, operation_id, status=status)
+
+        # Broadcast stats update after fetch
+        await broadcast_stats_update(db)
 
         if run_id:
             try:
@@ -1008,6 +1054,9 @@ async def analyze_messages(
             },
         })
         await update_operation(db, operation_id, status=status, analyzed=analyzed_count, jobs_found=jobs_added, developers_found=devs_added)
+
+        # Broadcast stats update after analysis
+        await broadcast_stats_update(db)
 
         return {
             "success": True,
@@ -1788,6 +1837,7 @@ async def add_listener_channels(
         
         # Update is_listened flag in database and assign to account
         async with AsyncSessionLocal() as db:
+            updated_channels = []
             for username in channel_usernames:
                 clean_username = username.lstrip('@')
                 # Try with @ prefix first, then without
@@ -1804,7 +1854,17 @@ async def add_listener_channels(
                 if channel:
                     channel.is_listened = 1
                     channel.telegram_account_id = telegram_account_id
+                    updated_channels.append({
+                        "id": channel.id,
+                        "username": channel.username,
+                        "is_listened": 1,
+                        "telegram_account_id": telegram_account_id
+                    })
             await db.commit()
+
+        # Broadcast channel updates to frontend
+        if updated_channels:
+            await broadcast_progress("channel_update", {"channels": updated_channels})
         
         return {
             "success": True,
@@ -1852,6 +1912,7 @@ async def remove_listener_channels(
         
         # Update is_listened flag in database
         async with AsyncSessionLocal() as db:
+            updated_channels = []
             for username in channel_usernames:
                 clean_username = username.lstrip('@')
                 # Try with @ prefix first, then without
@@ -1868,7 +1929,17 @@ async def remove_listener_channels(
                 if channel:
                     channel.is_listened = 0
                     channel.telegram_account_id = None
+                    updated_channels.append({
+                        "id": channel.id,
+                        "username": channel.username,
+                        "is_listened": 0,
+                        "telegram_account_id": None
+                    })
             await db.commit()
+
+        # Broadcast channel updates to frontend
+        if updated_channels:
+            await broadcast_progress("channel_update", {"channels": updated_channels})
         
         return {
             "success": True,

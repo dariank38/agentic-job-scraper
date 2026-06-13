@@ -25,7 +25,7 @@ export interface NewJobNotification {
 }
 
 export interface ProgressUpdate {
-  type: 'fetch_start' | 'fetch_progress' | 'fetch_complete' | 'analyze_start' | 'analyze_progress' | 'analyze_complete' | 'error' | 'new_job' | 'analyzing_message';
+  type: 'fetch_start' | 'fetch_progress' | 'fetch_complete' | 'analyze_start' | 'analyze_progress' | 'analyze_complete' | 'error' | 'new_job' | 'analyzing_message' | 'stats_update' | 'cron_status' | 'listener_status' | 'channel_update';
   channel?: string;
   channel_id?: number;
   operation_id?: number;
@@ -50,6 +50,13 @@ export interface ProgressUpdate {
   message_id?: number;
   message_text?: string;
   message_preview?: string;
+  // New fields for stats and status updates
+  total_channels?: number;
+  total_developers?: number;
+  total_jobs?: number;
+  running?: boolean;
+  account_id?: number;
+  channels?: Array<{ id: number; username: string; is_listened: number; telegram_account_id: number | null }>;
 }
 
 const showJobNotification = (job: NewJobNotification) => {

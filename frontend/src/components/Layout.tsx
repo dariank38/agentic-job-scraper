@@ -48,6 +48,10 @@ interface WebSocketProgressContextType {
   tokenUsage: Record<string, { input: number; output: number; total: number }>;
   messageResults: Record<string, any[]>;
   currentAnalyzingMessage: Record<string, { message_id?: number; message_text: string; message_preview: string }>;
+  statsUpdate: { total_channels: number; total_messages: number; total_jobs: number; total_developers: number } | null;
+  cronStatus: { running: boolean } | null;
+  listenerStatus: { running: boolean; account_id?: number } | null;
+  channelUpdates: Array<{ id: number; username: string; is_listened: number; telegram_account_id: number | null }> | null;
   requestStop: (channelId: number, channelUsername: string) => void;
 }
 
@@ -102,8 +106,11 @@ const WebSocketProgressProvider = ({ children }: { children: React.ReactNode }) 
   const [tokenUsage, setTokenUsage] = useState<Record<string, { input: number; output: number; total: number }>>({});
   const [messageResults, setMessageResults] = useState<Record<string, any[]>>({});
   const [currentAnalyzingMessage, setCurrentAnalyzingMessage] = useState<Record<string, { message_id?: number; message_text: string; message_preview: string }>>({});
+  const [statsUpdate, setStatsUpdate] = useState<{ total_channels: number; total_messages: number; total_jobs: number; total_developers: number } | null>(null);
+  const [cronStatus, setCronStatus] = useState<{ running: boolean } | null>(null);
+  const [listenerStatus, setListenerStatus] = useState<{ running: boolean; account_id?: number } | null>(null);
+  const [channelUpdates, setChannelUpdates] = useState<Array<{ id: number; username: string; is_listened: number; telegram_account_id: number | null }> | null>(null);
   const wsRef = useRef<WebSocket | null>(null);
-  const pollIntervalRef = useRef<number | null>(null);
   const lastNotificationRef = useRef<Record<string, number>>({});
 
   const requestStop = (channelId: number, channelUsername: string) => {
@@ -130,7 +137,7 @@ const WebSocketProgressProvider = ({ children }: { children: React.ReactNode }) 
     }
   };
 
-  // Poll operations API as fallback when WebSocket is disconnected
+  // Initial poll for operations on mount (for page refresh scenario)
   useEffect(() => {
     const pollOperations = async () => {
       try {
@@ -176,17 +183,8 @@ const WebSocketProgressProvider = ({ children }: { children: React.ReactNode }) 
       }
     };
 
-    // Initial poll
+    // Initial poll only (no interval - WebSocket handles real-time updates)
     pollOperations();
-
-    // Set up polling interval (every 5 seconds)
-    pollIntervalRef.current = window.setInterval(pollOperations, 5000);
-
-    return () => {
-      if (pollIntervalRef.current) {
-        clearInterval(pollIntervalRef.current);
-      }
-    };
   }, []);
 
   // Restore progress from localStorage on mount
@@ -383,6 +381,19 @@ const WebSocketProgressProvider = ({ children }: { children: React.ReactNode }) 
                 delete newMessages[channel];
                 return newMessages;
               });
+            } else if (data.type === 'stats_update') {
+              setStatsUpdate({
+                total_channels: data.total_channels || 0,
+                total_messages: data.total_messages || 0,
+                total_jobs: data.total_jobs || 0,
+                total_developers: data.total_developers || 0
+              });
+            } else if (data.type === 'cron_status') {
+              setCronStatus({ running: data.running || false });
+            } else if (data.type === 'listener_status') {
+              setListenerStatus({ running: data.running || false, account_id: data.account_id });
+            } else if (data.type === 'channel_update') {
+              setChannelUpdates(data.channels || []);
             }
           } catch (e) {
             // Silently ignore parse errors
@@ -413,7 +424,7 @@ const WebSocketProgressProvider = ({ children }: { children: React.ReactNode }) 
   }, []);
 
   return (
-    <WebSocketProgressContext.Provider value={{ progress, isConnected, channelProgress, operations, bulkOperations, stoppingChannels, tokenUsage, messageResults, currentAnalyzingMessage, requestStop }}>
+    <WebSocketProgressContext.Provider value={{ progress, isConnected, channelProgress, operations, bulkOperations, stoppingChannels, tokenUsage, messageResults, currentAnalyzingMessage, statsUpdate, cronStatus, listenerStatus, channelUpdates, requestStop }}>
       {children}
     </WebSocketProgressContext.Provider>
   );

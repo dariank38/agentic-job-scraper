@@ -125,10 +125,16 @@ class TelegramMessageListener:
         if self._handler:
             client.remove_event_handler(self._handler)
             self._handler = None
-        
+
         self._running = False
         self._channel_entities = []
-        logger.info("Stopped listening to channels")
+
+        # Disconnect the Telegram client to properly close connections
+        try:
+            await self.client_manager.disconnect()
+            logger.info("Stopped listening to channels and disconnected client")
+        except Exception as e:
+            logger.error(f"Error disconnecting Telegram client: {e}")
 
     async def add_channels(self, channel_usernames: list[str]) -> None:
         """Add channels to the running listener.

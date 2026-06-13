@@ -670,9 +670,10 @@ def register_action_routes(app):
     async def start_cron():
         """Start the continuous scanner cron job."""
         try:
-            from app.tasks import start_cron_task
+            from app.tasks import start_cron_task, broadcast_progress
             started = await start_cron_task()
             if started:
+                await broadcast_progress("cron_status", {"running": True})
                 return {"success": True, "message": "Cron job started"}
             else:
                 return {"success": False, "message": "Cron job is already running"}
@@ -683,9 +684,10 @@ def register_action_routes(app):
     async def stop_cron():
         """Stop the continuous scanner cron job."""
         try:
-            from app.tasks import stop_cron_task
+            from app.tasks import stop_cron_task, broadcast_progress
             stopped = await stop_cron_task()
             if stopped:
+                await broadcast_progress("cron_status", {"running": False})
                 return {"success": True, "message": "Cron job stopped"}
             else:
                 return {"success": False, "message": "Cron job is not running"}
@@ -808,7 +810,7 @@ def register_action_routes(app):
                 if username and (username not in existing_usernames and username_with_at not in existing_usernames):
                     filtered_dialogs.append(dialog)
 
-            return {"dialogs": filtered_dialogs}
+            return {"success": True, "dialogs": filtered_dialogs}
         except HTTPException:
             raise
         except Exception as e:
@@ -823,11 +825,14 @@ def register_action_routes(app):
     async def start_listener(request: StartListenerRequest):
         """Start real-time Telegram message listener for specified channels."""
         try:
+            from app.tasks import broadcast_progress
             result = await start_telegram_listener(
                 channel_usernames=request.channel_usernames,
                 auto_analyze=request.auto_analyze,
                 telegram_account_id=request.telegram_account_id
             )
+            if result.get("success"):
+                await broadcast_progress("listener_status", {"running": True, "account_id": result.get("account_id")})
             return result
         except Exception as e:
             raise HTTPException(status_code=500, detail=f"Failed to start listener: {str(e)}")
@@ -835,12 +840,15 @@ def register_action_routes(app):
     @app.post("/api/listener/stop")
     async def stop_listener(telegram_account_id: Optional[int] = None):
         """Stop the real-time Telegram message listener.
-        
+
         Args:
             telegram_account_id: Optional account ID to stop. If None, stops all listeners.
         """
         try:
+            from app.tasks import broadcast_progress
             result = await stop_telegram_listener(telegram_account_id)
+            if result.get("success"):
+                await broadcast_progress("listener_status", {"running": False, "account_id": telegram_account_id})
             return result
         except Exception as e:
             raise HTTPException(status_code=500, detail=f"Failed to stop listener: {str(e)}")

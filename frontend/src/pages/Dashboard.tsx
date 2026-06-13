@@ -50,7 +50,7 @@ const Dashboard = () => {
   const [recentDevelopers, setRecentDevelopers] = useState<Developer[]>([]);
   const [telegramAccounts, setTelegramAccounts] = useState<TelegramAccount[]>([]);
 
-  const { progress: wsProgress, channelProgress, operations, bulkOperations, requestStop, currentAnalyzingMessage } = useWebSocketProgress();
+  const { progress: wsProgress, channelProgress, operations, bulkOperations, requestStop, currentAnalyzingMessage, statsUpdate, cronStatus, listenerStatus, channelUpdates } = useWebSocketProgress();
 
   useEffect(() => {
     if (wsProgress && (wsProgress.type === 'analyze_complete' || wsProgress.type === 'error' || wsProgress.type === 'fetch_complete')) {
@@ -59,6 +59,61 @@ const Dashboard = () => {
       loadRecentDevelopers();
     }
   }, [wsProgress]);
+
+  // Handle WebSocket stats updates
+  useEffect(() => {
+    if (statsUpdate) {
+      setStats(prev => {
+        if (!prev) return null;
+        return {
+          ...prev,
+          ...statsUpdate
+        };
+      });
+    }
+  }, [statsUpdate]);
+
+  // Handle WebSocket cron status updates
+  useEffect(() => {
+    if (cronStatus !== null) {
+      setCronRunning(cronStatus.running);
+    }
+  }, [cronStatus]);
+
+  // Handle WebSocket listener status updates
+  useEffect(() => {
+    if (listenerStatus !== null) {
+      setListenerRunning(listenerStatus.running);
+    }
+  }, [listenerStatus]);
+
+  // Handle WebSocket channel updates (is_listened status)
+  useEffect(() => {
+    if (channelUpdates && channelUpdates.length > 0) {
+      // Update local channels state with new is_listened values
+      setChannels(prevChannels =>
+        prevChannels.map(channel => {
+          const update = channelUpdates.find(u => u.id === channel.id);
+          if (update) {
+            return { ...channel, is_listened: update.is_listened, telegram_account_id: update.telegram_account_id ?? undefined };
+          }
+          return channel;
+        })
+      );
+      // Update listened channels list
+      setListenedChannels(prev => {
+        const newSet = new Set(prev);
+        channelUpdates.forEach(u => {
+          if (u.is_listened === 1) {
+            newSet.add(u.username);
+          } else {
+            newSet.delete(u.username);
+          }
+        });
+        return Array.from(newSet);
+      });
+    }
+  }, [channelUpdates]);
 
   // Track which website sources are currently being analyzed via WS (keyed by source name)
   const wsSourceAnalyzing: Record<string, boolean> = {};
@@ -90,12 +145,6 @@ const Dashboard = () => {
     checkListenerStatus();
     loadRecentJobs();
     loadRecentDevelopers();
-    const interval = setInterval(() => {
-      loadData();
-      checkCronStatus();
-      checkListenerStatus();
-    }, 10000);
-    return () => clearInterval(interval);
   }, []);
 
   const loadRecentJobs = async () => {
