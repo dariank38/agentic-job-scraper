@@ -33,6 +33,8 @@ const Channels = () => {
   const [activeFilter, setActiveFilter] = useState('all');
   const [telegramAccounts, setTelegramAccounts] = useState<TelegramAccount[]>([]);
   const [selectedAccountId, setSelectedAccountId] = useState<number | null>(null);
+  const [listenerRunning, setListenerRunning] = useState(false);
+  const [listenedChannels, setListenedChannels] = useState<string[]>([]);
   const limit = 10;
   const offset = parseInt(searchParams.get('offset') || '0');
   const { progress: wsProgress, channelProgress, operations, stoppingChannels, tokenUsage, messageResults, requestStop } = useWebSocketProgress();
@@ -48,7 +50,23 @@ const Channels = () => {
     loadChannels();
     loadStats();
     loadTelegramAccounts();
+    checkListenerStatus();
   }, [offset, searchQuery, activeFilter]);
+
+  const checkListenerStatus = async () => {
+    try {
+      const data = await api.getListenerStatus();
+      setListenerRunning(data.running || false);
+      if (data.running) {
+        const channelsData = await api.getListenerChannels();
+        setListenedChannels(channelsData.listening_to || []);
+      } else {
+        setListenedChannels([]);
+      }
+    } catch (e: any) {
+      // Silently ignore errors
+    }
+  };
 
   const loadTelegramAccounts = async () => {
     try {
@@ -324,14 +342,45 @@ const Channels = () => {
     setDeleteDialogOpen(true);
   };
 
+  const addChannelToListener = async (channelUsername: string) => {
+    try {
+      const data = await api.addListenerChannels([channelUsername]);
+      if (data.success) {
+        showToast('success', 'Channel added to listener');
+        setListenedChannels(data.listening_to || []);
+      } else {
+        showToast('error', data.error || 'Failed to add channel to listener');
+      }
+    } catch (e: any) {
+      showToast('error', `Failed to add channel to listener: ${e.message}`);
+    }
+  };
+
+  const removeChannelFromListener = async (channelUsername: string) => {
+    try {
+      const data = await api.removeListenerChannels([channelUsername]);
+      if (data.success) {
+        showToast('success', 'Channel removed from listener');
+        setListenedChannels(data.listening_to || []);
+        if (data.listening_to.length === 0) {
+          setListenerRunning(false);
+        }
+      } else {
+        showToast('error', data.error || 'Failed to remove channel from listener');
+      }
+    } catch (e: any) {
+      showToast('error', `Failed to remove channel from listener: ${e.message}`);
+    }
+  };
+
   return (
     <>
-      <div className="mb-4 flex justify-between items-center">
+      <div className="mb-4 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
         <h1 className="text-2xl font-bold">{t('channels.title')}</h1>
         <Button onClick={() => {
           setAddDialogOpen(true);
           filterDialogsLocally();
-        }}>
+        }} className="w-full sm:w-auto">
           {t('channels.addChannel')}
         </Button>
       </div>
@@ -341,7 +390,7 @@ const Channels = () => {
           <div className="flex justify-between items-center">
             <CardTitle>{t('channels.title')} ({total})</CardTitle>
           </div>
-          <div className="flex gap-2 mt-3">
+          <div className="flex flex-col sm:flex-row gap-2 mt-3">
             <div className="relative flex-1">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
               <Input
@@ -355,14 +404,14 @@ const Channels = () => {
             <select
               value={activeFilter}
               onChange={(e) => setActiveFilter(e.target.value)}
-              className="px-3 py-2 rounded-md border border-gray-200 text-sm bg-white"
+              className="px-3 py-2 rounded-md border border-gray-200 text-sm bg-white w-full sm:w-auto"
             >
               <option value="all">{t('common.allStatus')}</option>
               <option value="active">{t('channels.active')}</option>
               <option value="inactive">{t('channels.inactive')}</option>
             </select>
             {(searchQuery || activeFilter !== 'all') && (
-              <Button variant="ghost" size="sm" onClick={() => { setSearchQuery(''); setSearchInput(''); setActiveFilter('all'); }}>
+              <Button variant="ghost" size="sm" onClick={() => { setSearchQuery(''); setSearchInput(''); setActiveFilter('all'); }} className="w-full sm:w-auto">
                 {t('common.clear')}
               </Button>
             )}
@@ -373,13 +422,18 @@ const Channels = () => {
             <>
               {channels.map((channel) => (
                 <div key={channel.id} className="p-4 border-b border-gray-200">
-                  <div className="flex justify-between items-center">
-                    <div>
-                      <h3 className="font-semibold flex items-center gap-2">
+                  <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
+                    <div className="flex-1 min-w-0">
+                      <h3 className="font-semibold flex items-center gap-2 flex-wrap">
                         {channel.username}
                         <Badge variant={channel.is_active ? 'default' : 'secondary'}>
                           {channel.is_active ? t('channels.active') : t('channels.inactive')}
                         </Badge>
+                        {listenedChannels.includes(channel.username) && (
+                          <Badge variant="outline" className="bg-green-50 text-green-700 border-green-200">
+                            Listening
+                          </Badge>
+                        )}
                       </h3>
                       {channel.name && <p className="font-bold">{channel.name}</p>}
                       {channel.description && <p>{channel.description}</p>}
@@ -429,7 +483,7 @@ const Channels = () => {
                         </div>
                       )}
                     </div>
-                    <div className="flex gap-2">
+                    <div className="flex flex-wrap gap-2 w-full sm:w-auto">
                       {!(loadingActions.has(`fetch-${channel.id}`) || loadingActions.has(`analyze-${channel.id}`) || !!operations[channel.username]) ? (
                         <>
                           <Button
@@ -437,6 +491,7 @@ const Channels = () => {
                             variant="outline"
                             onClick={() => fetchChannel(channel.id)}
                             disabled={loadingActions.has(`fetch-${channel.id}`)}
+                            className="flex-1 sm:flex-none"
                           >
                             <RefreshCw size={12} className="mr-1" />
                             {loadingActions.has(`fetch-${channel.id}`) ? t('dashboard.fetching') : t('channels.fetch')}
@@ -445,6 +500,7 @@ const Channels = () => {
                             size="sm"
                             onClick={() => analyzeChannel(channel.id)}
                             disabled={loadingActions.has(`analyze-${channel.id}`)}
+                            className="flex-1 sm:flex-none"
                           >
                             <Bot size={12} className="mr-1" />
                             {loadingActions.has(`analyze-${channel.id}`) ? t('dashboard.analyzing') : t('channels.analyze')}
@@ -457,6 +513,7 @@ const Channels = () => {
                           onClick={() => stopAnalyzeChannel(channel.id, channel.username)}
                           title={t('channels.stopAnalysis')}
                           disabled={stoppingChannels[channel.id] || stoppingChannels[channel.username]}
+                          className="flex-1 sm:flex-none"
                         >
                           <Square size={12} className="mr-1" />
                           {stoppingChannels[channel.id] || stoppingChannels[channel.username] ? t('channels.stopping') : t('common.stop')}
@@ -466,13 +523,25 @@ const Channels = () => {
                         variant="outline"
                         onClick={() => toggleChannel(channel.id)}
                         disabled={loadingActions.has(`toggle-${channel.id}`) || !!(loadingActions.has(`fetch-${channel.id}`) || loadingActions.has(`analyze-${channel.id}`) || !!operations[channel.username])}
+                        className="flex-1 sm:flex-none"
                       >
                         {loadingActions.has(`toggle-${channel.id}`) ? t('channels.toggling') : (channel.is_active ? t('channels.disable') : t('channels.enable'))}
                       </Button>
+                      {listenerRunning && (
+                        <Button
+                          variant={listenedChannels.includes(channel.username) ? 'destructive' : 'default'}
+                          onClick={() => listenedChannels.includes(channel.username) ? removeChannelFromListener(channel.username) : addChannelToListener(channel.username)}
+                          disabled={loadingActions.has(`listener-${channel.id}`)}
+                          className="flex-1 sm:flex-none"
+                        >
+                          {listenedChannels.includes(channel.username) ? 'Stop Listening' : 'Listen'}
+                        </Button>
+                      )}
                       <Button
                         variant="destructive"
                         onClick={() => confirmDelete(channel.id)}
                         disabled={loadingActions.has(`delete-${channel.id}`) || !!(loadingActions.has(`fetch-${channel.id}`) || loadingActions.has(`analyze-${channel.id}`) || !!operations[channel.username])}
+                        className="flex-1 sm:flex-none"
                       >
                         {loadingActions.has(`delete-${channel.id}`) ? t('channels.deleting') : t('channels.delete')}
                       </Button>
@@ -481,23 +550,25 @@ const Channels = () => {
                 </div>
               ))}
               {/* Pagination */}
-              <div className="flex items-center justify-between pt-3 border-t">
+              <div className="flex flex-col sm:flex-row items-center justify-between gap-3 pt-3 border-t">
                 <Button
                   variant="outline"
                   size="sm"
                   onClick={handlePrevious}
                   disabled={offset === 0}
+                  className="w-full sm:w-auto"
                 >
                   {t('common.previous')}
                 </Button>
-                <span className="text-sm text-muted-foreground">
-                  {t('common.page')} {Math.floor(offset / limit) + 1} / {Math.ceil(total / limit)} ({offset + 1}-{Math.min(offset + limit, total)} / {total})
+                <span className="text-sm text-muted-foreground text-center">
+                  {t('common.page')} {Math.floor(offset / limit) + 1} / {Math.ceil(total / limit)}
                 </span>
                 <Button
                   variant="outline"
                   size="sm"
                   onClick={handleNext}
                   disabled={offset + limit >= total}
+                  className="w-full sm:w-auto"
                 >
                   {t('common.next')}
                 </Button>

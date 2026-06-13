@@ -12,7 +12,7 @@ from app.connection import get_db, AsyncSessionLocal
 
 logger = logging.getLogger(__name__)
 from app.models import AnalysisRun, Channel, Message, Operation
-from app.tasks import analyze_messages, fetch_and_store_messages, reset_bulk_stop_event, is_bulk_operation_stopped, cleanup_bulk_stop_event, stop_bulk_operation, _to_str, _to_bool
+from app.tasks import analyze_messages, fetch_and_store_messages, reset_bulk_stop_event, is_bulk_operation_stopped, cleanup_bulk_stop_event, stop_bulk_operation, _to_str, _to_bool, start_telegram_listener, stop_telegram_listener, is_listener_running, add_listener_channels, remove_listener_channels, get_listener_channels
 
 
 def register_action_routes(app):
@@ -808,8 +808,70 @@ def register_action_routes(app):
                 if username and (username not in existing_usernames and username_with_at not in existing_usernames):
                     filtered_dialogs.append(dialog)
 
-            return {"success": True, "dialogs": filtered_dialogs}
+            return {"dialogs": filtered_dialogs}
         except HTTPException:
             raise
         except Exception as e:
             raise HTTPException(status_code=500, detail=f"Failed to get dialogs: {str(e)}")
+
+    class StartListenerRequest(BaseModel):
+        channel_usernames: list[str]
+        auto_analyze: bool = False
+        telegram_account_id: Optional[int] = None
+
+    @app.post("/api/listener/start")
+    async def start_listener(request: StartListenerRequest):
+        """Start real-time Telegram message listener for specified channels."""
+        try:
+            result = await start_telegram_listener(
+                channel_usernames=request.channel_usernames,
+                auto_analyze=request.auto_analyze,
+                telegram_account_id=request.telegram_account_id
+            )
+            return result
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=f"Failed to start listener: {str(e)}")
+
+    @app.post("/api/listener/stop")
+    async def stop_listener():
+        """Stop the real-time Telegram message listener."""
+        try:
+            result = await stop_telegram_listener()
+            return result
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=f"Failed to stop listener: {str(e)}")
+
+    @app.get("/api/listener/status")
+    async def listener_status():
+        """Get the current status of the real-time listener."""
+        return {"running": is_listener_running()}
+
+    class AddChannelsRequest(BaseModel):
+        channel_usernames: list[str]
+
+    @app.post("/api/listener/add-channels")
+    async def add_channels(request: AddChannelsRequest):
+        """Add channels to the running real-time listener."""
+        try:
+            result = await add_listener_channels(request.channel_usernames)
+            return result
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=f"Failed to add channels: {str(e)}")
+
+    @app.post("/api/listener/remove-channels")
+    async def remove_channels(request: AddChannelsRequest):
+        """Remove channels from the running real-time listener."""
+        try:
+            result = await remove_listener_channels(request.channel_usernames)
+            return result
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=f"Failed to remove channels: {str(e)}")
+
+    @app.get("/api/listener/channels")
+    async def listener_channels():
+        """Get list of channels currently being listened to."""
+        try:
+            result = await get_listener_channels()
+            return result
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=f"Failed to get listener channels: {str(e)}")

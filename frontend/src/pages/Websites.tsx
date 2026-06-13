@@ -212,9 +212,9 @@ const Websites = () => {
 
   return (
     <div className="space-y-6">
-      <div className="flex justify-between items-center">
+      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
         <h1 className="text-2xl font-bold">{t('websites.title')}</h1>
-        <Button onClick={() => setAddWebsiteDialogOpen(true)}>
+        <Button onClick={() => setAddWebsiteDialogOpen(true)} className="w-full sm:w-auto">
           <Plus size={16} className="mr-2" />
           {t('websites.addWebsite')}
         </Button>
@@ -226,17 +226,19 @@ const Websites = () => {
           <CardTitle className="text-sm">{t('websites.bulkActions')}</CardTitle>
         </CardHeader>
         <CardContent>
-          <div className="flex gap-2">
+          <div className="flex flex-col sm:flex-row gap-2">
             <Button
               variant="outline"
               onClick={fetchAllWebsiteSources}
               disabled={loadingActions.has('fetch-all')}
+              className="w-full sm:w-auto"
             >
               {loadingActions.has('fetch-all') ? <Loader2 size={14} className="mr-2 animate-spin" /> : <RefreshCw size={14} className="mr-2" />}
               {t('websites.fetchAll')}
             </Button>
             <Button
               onClick={analyzeAllWebsiteSources}
+              className="w-full sm:w-auto"
             >
               <Bot size={14} className="mr-2" />
               {t('websites.analyzeAll')}
@@ -296,9 +298,9 @@ const Websites = () => {
             <div className="space-y-2">
               {websiteSources.map((source) => (
                 <div key={source.id} className="p-4 border rounded-lg hover:bg-gray-50 transition-colors">
-                  <div className="flex justify-between items-start gap-4">
+                  <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
                     <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2 mb-2">
+                      <div className="flex items-center gap-2 mb-2 flex-wrap">
                         <h3 className="font-semibold text-gray-900">{source.name}</h3>
                         <Badge variant={source.is_active ? 'default' : 'secondary'} className="text-xs">
                           {source.is_active ? t('websites.active') : t('websites.inactive')}
@@ -308,7 +310,7 @@ const Websites = () => {
                         </Badge>
                       </div>
                       <p className="text-sm text-gray-600 mb-2">{source.url}</p>
-                      <div className="flex items-center gap-4 text-xs text-gray-500">
+                      <div className="flex items-center gap-4 text-xs text-gray-500 flex-wrap">
                         {(source.last_fetch_new_count || 0) > 0 && (
                           <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
                             +{source.last_fetch_new_count} {t('websites.fetched')}
@@ -341,11 +343,12 @@ const Websites = () => {
                         </div>
                       )}
                     </div>
-                    <div className="flex gap-2 flex-shrink-0">
+                    <div className="flex flex-wrap gap-2 w-full sm:w-auto">
                       <Button
                         size="sm"
                         variant="outline"
                         onClick={() => handleEditPrompt(source)}
+                        className="flex-1 sm:flex-none"
                       >
                         <Edit size={12} className="mr-1" />
                         {t('websites.prompt')}
@@ -355,6 +358,7 @@ const Websites = () => {
                         variant="outline"
                         onClick={() => fetchWebsiteSource(source.id)}
                         disabled={loadingActions.has(`fetch-${source.id}`) || loadingActions.has(`analyze-${source.id}`) || !!channelProgress[source.name]}
+                        className="flex-1 sm:flex-none"
                       >
                         {loadingActions.has(`fetch-${source.id}`) ? <Loader2 size={12} className="mr-1 animate-spin" /> : <RefreshCw size={12} className="mr-1" />}
                         {t('websites.fetch')}
@@ -363,6 +367,7 @@ const Websites = () => {
                         size="sm"
                         onClick={() => analyzeWebsiteSource(source.id)}
                         disabled={loadingActions.has(`fetch-${source.id}`) || loadingActions.has(`analyze-${source.id}`) || !!channelProgress[source.name]}
+                        className="flex-1 sm:flex-none"
                       >
                         <Bot size={12} className="mr-1" />
                         {t('websites.analyze')}
@@ -373,6 +378,7 @@ const Websites = () => {
                           variant="destructive"
                           onClick={() => stopWebsiteOperation(source.id, source.name)}
                           disabled={stoppingChannels[source.id] || stoppingChannels[source.name]}
+                          className="flex-1 sm:flex-none"
                         >
                           <Square size={12} className="mr-1" />
                           {stoppingChannels[source.id] || stoppingChannels[source.name] ? t('channels.stopping') : t('common.stop')}
@@ -382,6 +388,7 @@ const Websites = () => {
                         size="sm"
                         variant="destructive"
                         onClick={() => handleDeleteClick(source.id)}
+                        className="flex-1 sm:flex-none"
                       >
                         <Trash2 size={12} />
                       </Button>

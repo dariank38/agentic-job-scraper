@@ -370,6 +370,52 @@ const api = {
     return response.json();
   },
 
+  startListener: async (channelUsernames: string[], autoAnalyze: boolean = false, telegramAccountId?: number): Promise<any> => {
+    const response = await fetch(`${API_BASE}/api/listener/start`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        channel_usernames: channelUsernames,
+        auto_analyze: autoAnalyze,
+        telegram_account_id: telegramAccountId,
+      }),
+    });
+    return response.json();
+  },
+
+  stopListener: async (): Promise<any> => {
+    const response = await fetch(`${API_BASE}/api/listener/stop`, { method: 'POST' });
+    return response.json();
+  },
+
+  getListenerStatus: async (): Promise<any> => {
+    const response = await fetch(`${API_BASE}/api/listener/status`);
+    return response.json();
+  },
+
+  addListenerChannels: async (channelUsernames: string[]): Promise<any> => {
+    const response = await fetch(`${API_BASE}/api/listener/add-channels`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ channel_usernames: channelUsernames }),
+    });
+    return response.json();
+  },
+
+  removeListenerChannels: async (channelUsernames: string[]): Promise<any> => {
+    const response = await fetch(`${API_BASE}/api/listener/remove-channels`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ channel_usernames: channelUsernames }),
+    });
+    return response.json();
+  },
+
+  getListenerChannels: async (): Promise<any> => {
+    const response = await fetch(`${API_BASE}/api/listener/channels`);
+    return response.json();
+  },
+
   getOperations: async (): Promise<any> => {
     const response = await fetch(`${API_BASE}/api/operations`);
     return response.json();

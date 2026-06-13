@@ -426,11 +426,11 @@ const Layout = ({ children }: { children: React.ReactNode }) => {
 
   const navLinks = [
     { path: '/', label: t('nav.dashboard'), icon: LayoutDashboard },
-    { path: '/channels', label: t('nav.channels'), icon: Radio },
     { path: '/messages', label: t('nav.messages'), icon: MessageSquare },
     { path: '/jobs', label: t('nav.jobs'), icon: Briefcase },
     { path: '/developers', label: t('nav.developers'), icon: Code2 },
     { path: '/websites', label: t('nav.websites'), icon: Globe },
+    { path: '/channels', label: t('nav.channels'), icon: Radio },
     { path: '/telegram-accounts', label: t('nav.telegramAccounts'), icon: Radio },
   ];
 

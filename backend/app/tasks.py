@@ -12,6 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.connection import AsyncSessionLocal, get_db, manager
 from app.models import AnalysisRun, Channel, Developer, Job, Message, Operation, TelegramAccount, WebsiteSource
 from telegram_processor import TelegramClientManager, fetch_messages
+from telegram_processor.listener import TelegramMessageListener
 from services.ollama_service import get_analyzer, is_ollama_available, should_analyze_message
 
 logger = logging.getLogger(__name__)
@@ -28,6 +29,11 @@ bulk_stop_events: dict[str, asyncio.Event] = {}
 # Cron job state
 cron_running = False
 cron_task: asyncio.Task | None = None
+
+# Real-time listener state
+telegram_listener: Optional[TelegramMessageListener] = None
+telegram_listener_running = False
+telegram_listener_task: Optional[asyncio.Task] = None
 _cron_lock = asyncio.Lock()
 
 
@@ -1038,8 +1044,10 @@ async def continuous_scanner(
         try:
             async with AsyncSessionLocal() as db:
                 try:
-                    # Process Telegram channels
-                    channels_result = await db.execute(select(Channel).filter(Channel.is_active == True))
+                    # Process Telegram channels (skip those being monitored by real-time listener)
+                    channels_result = await db.execute(
+                        select(Channel).filter(Channel.is_active == True, Channel.is_listened == False)
+                    )
                     channels = channels_result.scalars().all()
 
                     if channels:
@@ -1490,6 +1498,303 @@ async def analyze_website_posts(
             "channel_id": source_id,
             "error": str(e),
         })
+        return {"success": False, "error": str(e)}
+
+
+# ── REAL-TIME LISTENER ─────────────────────────────────────────────────────────
+
+async def start_telegram_listener(
+    channel_usernames: list[str],
+    auto_analyze: bool = False,
+    telegram_account_id: Optional[int] = None
+) -> dict:
+    """Start real-time Telegram message listener for specified channels.
+    
+    Args:
+        channel_usernames: List of channel usernames to monitor
+        auto_analyze: If True, automatically analyze new messages
+        telegram_account_id: Optional Telegram account ID to use for listening
+    
+    Returns:
+        dict with success status and listener info
+    """
+    global telegram_listener, telegram_listener_running, telegram_listener_task
+    
+    if telegram_listener_running:
+        return {"success": False, "error": "Listener is already running"}
+    
+    try:
+        # Get Telegram account to use and set is_listened flag on channels
+        async with AsyncSessionLocal() as db:
+            if telegram_account_id:
+                account_result = await db.execute(
+                    select(TelegramAccount).filter(TelegramAccount.id == telegram_account_id)
+                )
+                account = account_result.scalar_one_or_none()
+                if not account:
+                    return {"success": False, "error": "Telegram account not found"}
+            else:
+                # Get first authenticated account
+                account_result = await db.execute(
+                    select(TelegramAccount).filter(TelegramAccount.is_authenticated == True)
+                )
+                account = account_result.scalar_one_or_none()
+                if not account:
+                    return {"success": False, "error": "No authenticated Telegram account found"}
+            
+            # Set is_listened flag on channels being monitored
+            for username in channel_usernames:
+                clean_username = username.lstrip('@')
+                channel_result = await db.execute(
+                    select(Channel).filter(Channel.username == clean_username)
+                )
+                channel = channel_result.scalar_one_or_none()
+                if channel:
+                    channel.is_listened = True
+            await db.commit()
+        
+        # Create client manager
+        client_manager = TelegramClientManager(
+            api_id=account.api_id,
+            api_hash=account.api_hash,
+            phone_number=account.phone_number,
+            session_name=f"listener_{account.id}"
+        )
+        await client_manager.connect()
+        
+        # Create listener
+        telegram_listener = TelegramMessageListener(client_manager)
+        
+        # Define callback for new messages
+        async def on_new_message(event, message_data):
+            try:
+                async with AsyncSessionLocal() as db:
+                    # Find channel by username
+                    channel_username = message_data.get('channel_username', '').lstrip('@')
+                    channel_result = await db.execute(
+                        select(Channel).filter(Channel.username == channel_username)
+                    )
+                    channel = channel_result.scalar_one_or_none()
+                    
+                    if not channel:
+                        logger.warning(f"Channel not found in database: {channel_username}")
+                        return
+                    
+                    # Check for duplicate message by text content
+                    existing_result = await db.execute(
+                        select(Message).filter(
+                            Message.channel_id == channel.id,
+                            Message.text == message_data['text']
+                        )
+                    )
+                    if existing_result.scalar_one_or_none():
+                        logger.info(f"Duplicate message skipped: {message_data['text'][:50]}...")
+                        return
+                    
+                    # Save message to database
+                    message = Message(
+                        channel_id=channel.id,
+                        telegram_message_id=message_data['id'],
+                        text=message_data['text'],
+                        date=message_data['date'],
+                        sender_id=message_data['sender_id'],
+                        sender_username=message_data['sender_username'],
+                        sender_first_name=message_data['sender_first_name'],
+                        has_image=message_data['has_media'],
+                        analysis_status="pending" if auto_analyze else "pending",
+                    )
+                    db.add(message)
+                    await db.commit()
+                    
+                    logger.info(f"Saved new message from {channel_username}: {message_data['text'][:50]}...")
+                    
+                    # Broadcast new message via WebSocket
+                    await broadcast_progress("new_message", {
+                        "channel": channel_username,
+                        "message_id": message.id,
+                        "text": message_data['text'][:100],
+                    })
+                    
+                    # Auto-analyze if enabled
+                    if auto_analyze:
+                        await analyze_messages(db, channel)
+                    
+            except Exception as e:
+                logger.error(f"Error handling new message: {e}", exc_info=True)
+        
+        # Start listener
+        await telegram_listener.start(
+            channel_usernames=channel_usernames,
+            on_new_message=on_new_message
+        )
+        
+        telegram_listener_running = True
+        
+        # Keep listener running in background
+        async def keep_listener_alive():
+            while telegram_listener_running and telegram_listener.is_running:
+                await asyncio.sleep(1)
+            logger.info("Listener stopped")
+        
+        telegram_listener_task = asyncio.create_task(keep_listener_alive())
+        
+        return {
+            "success": True,
+            "listening_to": channel_usernames,
+            "auto_analyze": auto_analyze,
+        }
+        
+    except Exception as e:
+        logger.error(f"Error starting listener: {e}", exc_info=True)
+        telegram_listener_running = False
+        return {"success": False, "error": str(e)}
+
+
+async def stop_telegram_listener() -> dict:
+    """Stop the real-time Telegram message listener.
+    
+    Returns:
+        dict with success status
+    """
+    global telegram_listener, telegram_listener_running, telegram_listener_task
+    
+    if not telegram_listener_running or not telegram_listener:
+        return {"success": False, "error": "Listener is not running"}
+    
+    try:
+        telegram_listener_running = False
+        
+        if telegram_listener:
+            await telegram_listener.stop()
+        
+        if telegram_listener_task:
+            telegram_listener_task.cancel()
+            try:
+                await telegram_listener_task
+            except asyncio.CancelledError:
+                pass
+        
+        telegram_listener = None
+        telegram_listener_task = None
+        
+        # Clear is_listened flag on all channels
+        async with AsyncSessionLocal() as db:
+            channels_result = await db.execute(select(Channel).filter(Channel.is_listened == True))
+            channels = channels_result.scalars().all()
+            for channel in channels:
+                channel.is_listened = False
+            await db.commit()
+        
+        return {"success": True}
+        
+    except Exception as e:
+        logger.error(f"Error stopping listener: {e}", exc_info=True)
+        return {"success": False, "error": str(e)}
+
+
+def is_listener_running() -> bool:
+    """Check if the real-time listener is currently running."""
+    return telegram_listener_running
+
+
+async def add_listener_channels(channel_usernames: list[str]) -> dict:
+    """Add channels to the running real-time listener.
+    
+    Args:
+        channel_usernames: List of channel usernames to add
+    
+    Returns:
+        dict with success status and listener info
+    """
+    global telegram_listener
+    
+    if not telegram_listener_running or not telegram_listener:
+        return {"success": False, "error": "Listener is not running"}
+    
+    try:
+        # Add channels to listener
+        await telegram_listener.add_channels(channel_usernames)
+        
+        # Update is_listened flag in database
+        async with AsyncSessionLocal() as db:
+            for username in channel_usernames:
+                clean_username = username.lstrip('@')
+                channel_result = await db.execute(
+                    select(Channel).filter(Channel.username == clean_username)
+                )
+                channel = channel_result.scalar_one_or_none()
+                if channel:
+                    channel.is_listened = True
+            await db.commit()
+        
+        return {
+            "success": True,
+            "listening_to": telegram_listener.listened_channels,
+        }
+        
+    except Exception as e:
+        logger.error(f"Error adding channels to listener: {e}", exc_info=True)
+        return {"success": False, "error": str(e)}
+
+
+async def remove_listener_channels(channel_usernames: list[str]) -> dict:
+    """Remove channels from the running real-time listener.
+    
+    Args:
+        channel_usernames: List of channel usernames to remove
+    
+    Returns:
+        dict with success status and listener info
+    """
+    global telegram_listener
+    
+    if not telegram_listener_running or not telegram_listener:
+        return {"success": False, "error": "Listener is not running"}
+    
+    try:
+        # Remove channels from listener
+        await telegram_listener.remove_channels(channel_usernames)
+        
+        # Update is_listened flag in database
+        async with AsyncSessionLocal() as db:
+            for username in channel_usernames:
+                clean_username = username.lstrip('@')
+                channel_result = await db.execute(
+                    select(Channel).filter(Channel.username == clean_username)
+                )
+                channel = channel_result.scalar_one_or_none()
+                if channel:
+                    channel.is_listened = False
+            await db.commit()
+        
+        return {
+            "success": True,
+            "listening_to": telegram_listener.listened_channels if telegram_listener_running else [],
+        }
+        
+    except Exception as e:
+        logger.error(f"Error removing channels from listener: {e}", exc_info=True)
+        return {"success": False, "error": str(e)}
+
+
+async def get_listener_channels() -> dict:
+    """Get list of channels currently being listened to.
+    
+    Returns:
+        dict with success status and list of channels
+    """
+    global telegram_listener
+    
+    if not telegram_listener_running or not telegram_listener:
+        return {"success": True, "listening_to": []}
+    
+    try:
+        return {
+            "success": True,
+            "listening_to": telegram_listener.listened_channels,
+        }
+    except Exception as e:
+        logger.error(f"Error getting listener channels: {e}", exc_info=True)
         return {"success": False, "error": str(e)}
 
 

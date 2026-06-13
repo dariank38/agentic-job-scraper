@@ -45,6 +45,12 @@ const Dashboard = () => {
   const [cleanupDialogOpen, setCleanupDialogOpen] = useState(false);
   const [cleanupDays, setCleanupDays] = useState(30);
   const [bulkOperation, setBulkOperation] = useState<{ id: string; type: 'analyze-all' | 'fetch-analyze-all' } | null>(null);
+  const [listenerRunning, setListenerRunning] = useState(false);
+  const [listenerDialogOpen, setListenerDialogOpen] = useState(false);
+  const [selectedChannels, setSelectedChannels] = useState<string[]>([]);
+  const [autoAnalyze, setAutoAnalyze] = useState(false);
+  const [listenedChannels, setListenedChannels] = useState<string[]>([]);
+  const [manageChannelsDialogOpen, setManageChannelsDialogOpen] = useState(false);
   const limit = 10;
   const offset = parseInt(searchParams.get('offset') || '0');
 
@@ -83,9 +89,11 @@ const Dashboard = () => {
   useEffect(() => {
     loadData();
     checkCronStatus();
+    checkListenerStatus();
     const interval = setInterval(() => {
       loadData();
       checkCronStatus();
+      checkListenerStatus();
     }, 10000);
     return () => clearInterval(interval);
   }, [offset]);
@@ -199,6 +207,87 @@ const Dashboard = () => {
       }
     } catch (error) {
       // Silently ignore cron status check errors
+    }
+  };
+
+  const checkListenerStatus = async () => {
+    try {
+      const data = await api.getListenerStatus();
+      setListenerRunning(data.running || false);
+      if (data.running) {
+        const channelsData = await api.getListenerChannels();
+        setListenedChannels(channelsData.listening_to || []);
+      } else {
+        setListenedChannels([]);
+      }
+    } catch (e: any) {
+      console.error('Failed to check listener status:', e);
+    }
+  };
+
+  const startListener = async () => {
+    try {
+      if (selectedChannels.length === 0) {
+        showToast('error', 'Please select at least one channel');
+        return;
+      }
+      const data = await api.startListener(selectedChannels, autoAnalyze);
+      if (data.success) {
+        showToast('success', 'Listener started successfully');
+        setListenerRunning(true);
+        setListenerDialogOpen(false);
+        setSelectedChannels([]);
+      } else {
+        showToast('error', data.error || 'Failed to start listener');
+      }
+    } catch (e: any) {
+      showToast('error', `Failed to start listener: ${e.message}`);
+    }
+  };
+
+  const stopListener = async () => {
+    try {
+      const data = await api.stopListener();
+      if (data.success) {
+        showToast('success', 'Listener stopped successfully');
+        setListenerRunning(false);
+        setListenedChannels([]);
+      } else {
+        showToast('error', data.error || 'Failed to stop listener');
+      }
+    } catch (e: any) {
+      showToast('error', `Failed to stop listener: ${e.message}`);
+    }
+  };
+
+  const addChannels = async (channelUsernames: string[]) => {
+    try {
+      const data = await api.addListenerChannels(channelUsernames);
+      if (data.success) {
+        showToast('success', 'Channels added successfully');
+        setListenedChannels(data.listening_to || []);
+      } else {
+        showToast('error', data.error || 'Failed to add channels');
+      }
+    } catch (e: any) {
+      showToast('error', `Failed to add channels: ${e.message}`);
+    }
+  };
+
+  const removeChannels = async (channelUsernames: string[]) => {
+    try {
+      const data = await api.removeListenerChannels(channelUsernames);
+      if (data.success) {
+        showToast('success', 'Channels removed successfully');
+        setListenedChannels(data.listening_to || []);
+        if (data.listening_to.length === 0) {
+          setListenerRunning(false);
+        }
+      } else {
+        showToast('error', data.error || 'Failed to remove channels');
+      }
+    } catch (e: any) {
+      showToast('error', `Failed to remove channels: ${e.message}`);
     }
   };
 
@@ -397,9 +486,9 @@ const Dashboard = () => {
   ];
 
   return (
-    <div className="flex gap-6">
+    <div className="flex flex-col lg:flex-row gap-6">
       {/* Sidebar Navigation */}
-      <div className="w-72 shrink-0 space-y-4">
+      <div className="w-full lg:w-72 shrink-0 space-y-4">
         {/* Quick Actions - Glassmorphism */}
         <Card className="backdrop-blur-xl bg-white/70 border border-white/20 shadow-lg">
           <CardHeader className="px-4 py-3">
@@ -497,6 +586,38 @@ const Dashboard = () => {
               </div>
             </div>
             <div className="space-y-2">
+              <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Real-time Listener</p>
+              <div className="flex items-center justify-between p-2 rounded-lg bg-muted/50">
+                <div className="flex items-center gap-2">
+                  <Radio size={12} className={listenerRunning ? 'text-green-500' : 'text-gray-400'} />
+                  <span className="text-xs font-medium">{listenerRunning ? 'Listening' : 'Stopped'}</span>
+                  {listenedChannels.length > 0 && (
+                    <span className="text-xs text-muted-foreground">({listenedChannels.length})</span>
+                  )}
+                </div>
+                <div className="flex gap-1">
+                  {listenerRunning && (
+                    <Button
+                      variant="outline"
+                      onClick={() => setManageChannelsDialogOpen(true)}
+                      size="sm"
+                      className="h-7 px-2"
+                    >
+                      Manage
+                    </Button>
+                  )}
+                  <Button
+                    variant={listenerRunning ? 'destructive' : 'default'}
+                    onClick={() => listenerRunning ? stopListener() : setListenerDialogOpen(true)}
+                    size="sm"
+                    className="h-7 px-2"
+                  >
+                    {listenerRunning ? <Square size={10} /> : <Play size={10} />}
+                  </Button>
+                </div>
+              </div>
+            </div>
+            <div className="space-y-2">
               <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">{t('dashboard.other')}</p>
               <Button
                 variant="destructive"
@@ -535,7 +656,7 @@ const Dashboard = () => {
       {/* Main Content - No Scroll */}
       <div className="flex-1 space-y-4">
         {/* Daily Statistics Charts */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
           <Card className="backdrop-blur-xl bg-white/70 border border-white/20 shadow-lg">
             <CardHeader className="px-4 py-3">
               <CardTitle className="text-xs font-medium flex items-center gap-2">
@@ -586,7 +707,7 @@ const Dashboard = () => {
                 <p className="text-xs text-muted-foreground">{t('dashboard.noActiveAnalysis')}</p>
               </div>
             ) : (
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3 max-h-64 overflow-y-auto">
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 max-h-64 overflow-y-auto">
                 {Object.entries(currentAnalyzingMessage).map(([channel, msg]) => (
                   <div key={channel} className="border border-blue-200 rounded-lg p-3 bg-gradient-to-br from-blue-50 to-blue-100/50">
                     <div className="flex items-center gap-2 mb-2">
@@ -623,24 +744,24 @@ const Dashboard = () => {
         {/* Channels / Website Sources */}
         <Card className="backdrop-blur-xl bg-white/70 border border-white/20 shadow-lg">
           <CardHeader className="px-4 py-3">
-            <div className="flex justify-between items-center">
-              <div className="flex gap-1 bg-muted p-1 rounded-lg">
+            <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
+              <div className="flex gap-1 bg-muted p-1 rounded-lg w-full sm:w-auto">
                 <button
                   onClick={() => setActiveTab('channels')}
-                  className={`flex items-center gap-2 px-3 py-1.5 rounded-md text-xs font-medium transition-all ${activeTab === 'channels' ? 'bg-background text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'}`}
+                  className={`flex items-center gap-2 px-3 py-1.5 rounded-md text-xs font-medium transition-all flex-1 sm:flex-none justify-center ${activeTab === 'channels' ? 'bg-background text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'}`}
                 >
                   <Radio size={12} />
                   {t('dashboard.channels')} ({total})
                 </button>
                 <button
                   onClick={() => setActiveTab('websites')}
-                  className={`flex items-center gap-2 px-3 py-1.5 rounded-md text-xs font-medium transition-all ${activeTab === 'websites' ? 'bg-background text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'}`}
+                  className={`flex items-center gap-2 px-3 py-1.5 rounded-md text-xs font-medium transition-all flex-1 sm:flex-none justify-center ${activeTab === 'websites' ? 'bg-background text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'}`}
                 >
                   <RefreshCw size={12} />
                   {t('websiteSources.title')} ({websiteSources.length})
                 </button>
               </div>
-              <Button asChild variant="ghost" size="sm" className="h-8">
+              <Button asChild variant="ghost" size="sm" className="h-8 w-full sm:w-auto">
                 <Link to={activeTab === 'channels' ? '/channels' : '/websites'} className="text-xs">
                   {t('dashboard.manage')} <ChevronRight size={12} className="inline ml-1" />
                 </Link>
@@ -927,6 +1048,127 @@ const Dashboard = () => {
             </Button>
             <Button variant="destructive" onClick={cleanupOldMessages} disabled={loadingActions.has('cleanup')}>
               {loadingActions.has('cleanup') ? t('common.cleaning') : t('common.cleanupOldMessages')}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Listener Start Dialog */}
+      <Dialog open={listenerDialogOpen} onOpenChange={setListenerDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Start Real-time Listener</DialogTitle>
+            <DialogDescription>
+              Select channels to monitor for new messages in real-time
+            </DialogDescription>
+          </DialogHeader>
+          <div className="py-4 space-y-4">
+            <div>
+              <label className="text-sm font-medium mb-2 block">Select Channels</label>
+              <div className="space-y-2 max-h-60 overflow-y-auto">
+                {channels.filter(c => c.is_active).map((channel) => (
+                  <div key={channel.id} className="flex items-center gap-2">
+                    <input
+                      type="checkbox"
+                      id={`channel-${channel.id}`}
+                      checked={selectedChannels.includes(channel.username)}
+                      onChange={(e) => {
+                        if (e.target.checked) {
+                          setSelectedChannels([...selectedChannels, channel.username]);
+                        } else {
+                          setSelectedChannels(selectedChannels.filter(c => c !== channel.username));
+                        }
+                      }}
+                      className="w-4 h-4"
+                    />
+                    <label htmlFor={`channel-${channel.id}`} className="text-sm cursor-pointer">
+                      {channel.username} {channel.name && `(${channel.name})`}
+                    </label>
+                  </div>
+                ))}
+              </div>
+            </div>
+            <div className="flex items-center gap-2">
+              <input
+                type="checkbox"
+                id="auto-analyze"
+                checked={autoAnalyze}
+                onChange={(e) => setAutoAnalyze(e.target.checked)}
+                className="w-4 h-4"
+              />
+              <label htmlFor="auto-analyze" className="text-sm cursor-pointer">
+                Auto-analyze new messages
+              </label>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setListenerDialogOpen(false)}>
+              {t('common.cancel')}
+            </Button>
+            <Button onClick={startListener}>
+              Start Listener
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Manage Channels Dialog */}
+      <Dialog open={manageChannelsDialogOpen} onOpenChange={setManageChannelsDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Manage Listener Channels</DialogTitle>
+            <DialogDescription>
+              Add or remove channels from the running real-time listener
+            </DialogDescription>
+          </DialogHeader>
+          <div className="py-4 space-y-4">
+            <div>
+              <label className="text-sm font-medium mb-2 block">Currently Listening</label>
+              <div className="space-y-2 max-h-40 overflow-y-auto">
+                {listenedChannels.length === 0 ? (
+                  <p className="text-sm text-muted-foreground">No channels being listened to</p>
+                ) : (
+                  listenedChannels.map((username) => (
+                    <div key={username} className="flex items-center justify-between p-2 rounded bg-muted">
+                      <span className="text-sm">{username}</span>
+                      <Button
+                        variant="destructive"
+                        size="sm"
+                        onClick={() => removeChannels([username])}
+                        className="h-6 px-2 text-xs"
+                      >
+                        Remove
+                      </Button>
+                    </div>
+                  ))
+                )}
+              </div>
+            </div>
+            <div>
+              <label className="text-sm font-medium mb-2 block">Add Channels</label>
+              <div className="space-y-2 max-h-40 overflow-y-auto">
+                {channels.filter(c => c.is_active && !listenedChannels.includes(c.username)).map((channel) => (
+                  <div key={channel.id} className="flex items-center justify-between p-2 rounded bg-muted">
+                    <span className="text-sm">{channel.username} {channel.name && `(${channel.name})`}</span>
+                    <Button
+                      variant="default"
+                      size="sm"
+                      onClick={() => addChannels([channel.username])}
+                      className="h-6 px-2 text-xs"
+                    >
+                      Add
+                    </Button>
+                  </div>
+                ))}
+                {channels.filter(c => c.is_active && !listenedChannels.includes(c.username)).length === 0 && (
+                  <p className="text-sm text-muted-foreground">No available channels to add</p>
+                )}
+              </div>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setManageChannelsDialogOpen(false)}>
+              Close
             </Button>
           </DialogFooter>
         </DialogContent>
