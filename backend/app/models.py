@@ -48,7 +48,7 @@ class Channel(Base):
     description = Column(Text, nullable=True)
     telegram_account_id = Column(Integer, ForeignKey("telegram_accounts.id"), nullable=True)
     is_active = Column(Boolean, default=True)
-    is_listened = Column(Boolean, default=False)  # Whether channel is monitored by real-time listener
+    is_listened = Column(Integer, default=0)  # Whether channel is monitored by real-time listener (0=false, 1=true)
     last_fetch_new_count = Column(Integer, default=0)  # Number of new messages from last fetch
     last_fetch_at = Column(DateTime, nullable=True)  # Timestamp of last fetch
     created_at = Column(DateTime, default=datetime.utcnow)

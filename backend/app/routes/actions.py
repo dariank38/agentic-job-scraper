@@ -833,45 +833,88 @@ def register_action_routes(app):
             raise HTTPException(status_code=500, detail=f"Failed to start listener: {str(e)}")
 
     @app.post("/api/listener/stop")
-    async def stop_listener():
-        """Stop the real-time Telegram message listener."""
+    async def stop_listener(telegram_account_id: Optional[int] = None):
+        """Stop the real-time Telegram message listener.
+        
+        Args:
+            telegram_account_id: Optional account ID to stop. If None, stops all listeners.
+        """
         try:
-            result = await stop_telegram_listener()
+            result = await stop_telegram_listener(telegram_account_id)
             return result
         except Exception as e:
             raise HTTPException(status_code=500, detail=f"Failed to stop listener: {str(e)}")
 
     @app.get("/api/listener/status")
-    async def listener_status():
-        """Get the current status of the real-time listener."""
-        return {"running": is_listener_running()}
+    async def listener_status(telegram_account_id: Optional[int] = None):
+        """Get the current status of the real-time listener(s).
+        
+        Args:
+            telegram_account_id: Optional account ID. If None, returns status of all listeners.
+        """
+        from app.tasks import telegram_listener_running, telegram_listeners
+        
+        if telegram_account_id is not None:
+            # Return status for specific account
+            listener = telegram_listeners.get(telegram_account_id)
+            return {
+                "running": telegram_listener_running.get(telegram_account_id, False),
+                "account_id": telegram_account_id,
+                "listening_to": listener.listened_channels if listener else [],
+            }
+        else:
+            # Return status for all accounts
+            accounts = []
+            for aid, running in telegram_listener_running.items():
+                if running:
+                    listener = telegram_listeners.get(aid)
+                    accounts.append({
+                        "account_id": aid,
+                        "listening_to": listener.listened_channels if listener else [],
+                    })
+            return {
+                "running": len(accounts) > 0,
+                "accounts": accounts,
+                "total_listeners": len(accounts),
+            }
 
     class AddChannelsRequest(BaseModel):
         channel_usernames: list[str]
+        telegram_account_id: Optional[int] = None
 
     @app.post("/api/listener/add-channels")
     async def add_channels(request: AddChannelsRequest):
         """Add channels to the running real-time listener."""
         try:
-            result = await add_listener_channels(request.channel_usernames)
+            result = await add_listener_channels(
+                request.channel_usernames,
+                request.telegram_account_id
+            )
             return result
         except Exception as e:
             raise HTTPException(status_code=500, detail=f"Failed to add channels: {str(e)}")
 
+    class RemoveChannelsRequest(BaseModel):
+        channel_usernames: list[str]
+        telegram_account_id: Optional[int] = None
+
     @app.post("/api/listener/remove-channels")
-    async def remove_channels(request: AddChannelsRequest):
+    async def remove_channels(request: RemoveChannelsRequest):
         """Remove channels from the running real-time listener."""
         try:
-            result = await remove_listener_channels(request.channel_usernames)
+            result = await remove_listener_channels(
+                request.channel_usernames,
+                request.telegram_account_id
+            )
             return result
         except Exception as e:
             raise HTTPException(status_code=500, detail=f"Failed to remove channels: {str(e)}")
 
     @app.get("/api/listener/channels")
-    async def listener_channels():
+    async def listener_channels(telegram_account_id: Optional[int] = None):
         """Get list of channels currently being listened to."""
         try:
-            result = await get_listener_channels()
+            result = await get_listener_channels(telegram_account_id)
             return result
         except Exception as e:
             raise HTTPException(status_code=500, detail=f"Failed to get listener channels: {str(e)}")

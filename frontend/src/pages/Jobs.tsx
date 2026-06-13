@@ -350,10 +350,23 @@ const Jobs = () => {
                         <div className="flex-1 min-w-0">
                           <div className="flex items-center gap-2 mb-0.5">
                             <span className={`font-medium text-base truncate ${isSelected ? 'text-primary' : ''}`}>
-                              {job.title || t('jobs.untitledJob')}
+                              {job.title || (job.message?.text?.substring(0, 60) + (job.message?.text && job.message.text.length > 60 ? '...' : '')) || t('jobs.untitledJob')}
                             </span>
                             {job.is_applied && (
                               <Badge variant="default" className="text-xs h-5 px-1.5">{t('jobs.applied')}</Badge>
+                            )}
+                            {job.role_type && (
+                              <>
+                                {job.role_type.split('|').map((role, idx) => (
+                                  <Badge
+                                    key={idx}
+                                    variant="secondary"
+                                    className="text-xs h-5 px-1.5 bg-blue-50 text-blue-700 border-blue-200"
+                                  >
+                                    {role.trim()}
+                                  </Badge>
+                                ))}
+                              </>
                             )}
                           </div>
                           <p className="text-sm text-gray-500 truncate">
@@ -474,7 +487,7 @@ const Jobs = () => {
                         )}
                       </div>
                       <h2 className="text-lg sm:text-xl font-bold truncate">
-                        {selectedJob.title || t('jobs.untitledJob')}
+                        {selectedJob.title || (selectedJob.message?.text?.substring(0, 80) + (selectedJob.message?.text && selectedJob.message.text.length > 80 ? '...' : '')) || t('jobs.untitledJob')}
                       </h2>
                       <p className="text-xs sm:text-sm text-muted-foreground flex items-center gap-1 mt-0.5 flex-wrap">
                         <Building2 className="w-3 h-3 sm:w-3.5 sm:h-3.5" />
@@ -571,12 +584,21 @@ const Jobs = () => {
 
                   {/* Role Type */}
                   {selectedJob.role_type && (
-                    <div>
+                    <div className="bg-blue-50/50 rounded-lg p-3 border border-blue-100">
                       <div className="flex items-center gap-2 mb-2">
-                        <Briefcase className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-primary" />
-                        <h3 className="text-xs sm:text-sm font-semibold text-gray-900">{t('jobs.roleType')}</h3>
+                        <Briefcase className="w-4 h-4 text-blue-600" />
+                        <h3 className="text-xs sm:text-sm font-semibold text-blue-900">{t('jobs.roleType')}</h3>
                       </div>
-                      <p className="text-sm text-gray-600 leading-relaxed break-words">{selectedJob.role_type}</p>
+                      <div className="flex flex-wrap gap-2">
+                        {selectedJob.role_type.split('|').map((role, idx) => (
+                          <Badge
+                            key={idx}
+                            className="bg-blue-100 text-blue-800 hover:bg-blue-200 border-blue-200 text-sm px-3 py-1"
+                          >
+                            {role.trim()}
+                          </Badge>
+                        ))}
+                      </div>
                     </div>
                   )}
 

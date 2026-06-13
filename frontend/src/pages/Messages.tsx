@@ -380,7 +380,11 @@ const Messages = () => {
               const sourceInfo = getSourceInfo(msg.source_type);
               const SourceIcon = sourceInfo.icon;
               return (
-                <Card key={msg.id}>
+                <Card
+                  key={msg.id}
+                  className="cursor-pointer hover:bg-muted/50 transition-colors"
+                  onClick={() => setExpandedMessageId(expandedMessageId === msg.id ? null : msg.id)}
+                >
                   <CardContent className="py-4">
                     <div className="flex items-start gap-4">
                       {/* Icon */}
@@ -410,6 +414,7 @@ const Messages = () => {
                               size="sm"
                               asChild
                               className="text-xs h-7 px-2"
+                              onClick={(e) => e.stopPropagation()}
                             >
                               <a href={`/jobs?jobId=${msg.job.id}`}>
                                 {t('messages.viewJob')}
@@ -422,6 +427,7 @@ const Messages = () => {
                               size="sm"
                               asChild
                               className="text-xs h-7 px-2"
+                              onClick={(e) => e.stopPropagation()}
                             >
                               <a href={`/developers?developerId=${msg.developer.id}`}>
                                 {t('messages.viewDeveloper')}
@@ -433,7 +439,7 @@ const Messages = () => {
                               <Button
                                 variant="ghost"
                                 size="sm"
-                                onClick={() => reanalyzeSingle(msg.id)}
+                                onClick={(e) => { e.stopPropagation(); reanalyzeSingle(msg.id); }}
                                 disabled={reanalyzingId === msg.id}
                                 className="text-xs h-7 px-2"
                               >
@@ -447,7 +453,7 @@ const Messages = () => {
                               <Button
                                 variant="ghost"
                                 size="sm"
-                                onClick={() => { setMessageToDelete(msg.id); setDeleteDialogOpen(true); }}
+                                onClick={(e) => { e.stopPropagation(); setMessageToDelete(msg.id); setDeleteDialogOpen(true); }}
                                 className="text-xs h-7 px-2 text-destructive hover:text-destructive"
                               >
                                 {t('common.delete')}
@@ -457,7 +463,7 @@ const Messages = () => {
                           <Button
                             variant="ghost"
                             size="sm"
-                            onClick={() => setExpandedMessageId(expandedMessageId === msg.id ? null : msg.id)}
+                            onClick={(e) => { e.stopPropagation(); setExpandedMessageId(expandedMessageId === msg.id ? null : msg.id); }}
                             className="text-xs h-7 px-2 ml-auto sm:ml-0"
                           >
                             {expandedMessageId === msg.id ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}

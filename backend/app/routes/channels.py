@@ -72,6 +72,38 @@ def register_channel_routes(app):
             await db.rollback()
             raise HTTPException(status_code=500, detail=f"Failed to delete channel: {str(e)}")
 
+    @app.put("/api/channels/{channel_id}")
+    async def update_channel(
+        channel_id: int,
+        name: Optional[str] = Form(None),
+        description: Optional[str] = Form(None),
+        telegram_account_id: Optional[int] = Form(None),
+        db: AsyncSession = Depends(get_db),
+    ):
+        """Update a channel."""
+        try:
+            result = await db.execute(select(Channel).filter(Channel.id == channel_id))
+            channel = result.scalar_one_or_none()
+            if not channel:
+                raise HTTPException(status_code=404, detail="Channel not found")
+
+            if name is not None:
+                channel.name = name
+            if description is not None:
+                channel.description = description
+            if telegram_account_id is not None:
+                channel.telegram_account_id = telegram_account_id
+
+            await db.commit()
+
+            return {"success": True, "channel": {"id": channel.id, "username": channel.username}}
+        except HTTPException:
+            await db.rollback()
+            raise
+        except Exception as e:
+            await db.rollback()
+            raise HTTPException(status_code=500, detail=f"Failed to update channel: {str(e)}")
+
     @app.post("/api/channels/{channel_id}/toggle")
     async def toggle_channel(channel_id: int, db: AsyncSession = Depends(get_db)):
         """Toggle channel active status."""
@@ -176,6 +208,8 @@ def register_channel_routes(app):
                 "name": channel.name,
                 "description": channel.description,
                 "is_active": channel.is_active,
+                "is_listened": channel.is_listened,
+                "telegram_account_id": channel.telegram_account_id,
                 "message_count": message_count,
                 "pending_count": pending_count,
                 "job_count": job_count,

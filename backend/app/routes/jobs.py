@@ -23,12 +23,8 @@ def register_job_routes(app):
         db: AsyncSession = Depends(get_db),
     ):
         """Get jobs as JSON with search and filters."""
-        from app.models import Channel, WebsiteSource
-
-        # Build base query - jobs from active channels OR active website sources
-        query = select(Job).outerjoin(Channel).outerjoin(WebsiteSource).filter(
-            (Channel.is_active == True) | (WebsiteSource.is_active == True)
-        )
+        # Build base query - show all jobs regardless of channel/website source status
+        query = select(Job)
 
         # Filter by source type if specified
         if source_type:

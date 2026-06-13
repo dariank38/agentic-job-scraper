@@ -24,12 +24,8 @@ def register_developer_routes(app):
         db: AsyncSession = Depends(get_db),
     ):
         """Get developers as JSON with search and filters."""
-        from app.models import Channel
-
-        from sqlalchemy import cast, String
-        query = select(Developer).outerjoin(Developer.channel).filter(
-            (Channel.is_active == True) | (Developer.channel_id.is_(None))
-        )
+        # Build base query - show all developers regardless of channel/website source status
+        query = select(Developer)
 
         if looking_for_work is not None:
             query = query.filter(Developer.looking_for_work == looking_for_work)
@@ -72,8 +68,9 @@ def register_developer_routes(app):
         developers_query = query.options(
             selectinload(Developer.message).selectinload(Message.job),
             selectinload(Developer.message).selectinload(Message.developer),
-            selectinload(Developer.channel)
-        ).outerjoin(Developer.message).order_by(sql_func.coalesce(Message.date, Developer.analyzed_at).desc()).offset(offset).limit(limit)
+            selectinload(Developer.channel),
+            selectinload(Developer.website_source)
+        ).order_by(Developer.analyzed_at.desc()).offset(offset).limit(limit)
         developers_result = await db.execute(developers_query)
         developers = developers_result.scalars().all()
 
