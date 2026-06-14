@@ -101,6 +101,7 @@ class TelegramMessageListener:
                     try:
                         chat = await client.get_entity(event.chat)
                         message_data['channel_username'] = getattr(chat, 'username', None)
+                        message_data['channel_name'] = getattr(chat, 'title', None) or getattr(chat, 'username', None)
                     except Exception:
                         pass
 
@@ -194,6 +195,7 @@ class TelegramMessageListener:
                     try:
                         chat = await client.get_entity(event.chat)
                         message_data['channel_username'] = getattr(chat, 'username', None)
+                        message_data['channel_name'] = getattr(chat, 'title', None) or getattr(chat, 'username', None)
                     except Exception:
                         pass
 
@@ -265,6 +267,7 @@ class TelegramMessageListener:
                         try:
                             chat = await client.get_entity(event.chat)
                             message_data['channel_username'] = getattr(chat, 'username', None)
+                            message_data['channel_name'] = getattr(chat, 'title', None) or getattr(chat, 'username', None)
                         except Exception:
                             pass
 

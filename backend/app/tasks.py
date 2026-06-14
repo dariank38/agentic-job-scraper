@@ -1654,10 +1654,21 @@ async def start_telegram_listener(
                         select(Channel).filter(Channel.username == channel_username)
                     )
                     channel = channel_result.scalar_one_or_none()
-                    
+
+                    # If channel not found, try to create it from message data
                     if not channel:
-                        logger.warning(f"Channel not found in database: {channel_username}")
-                        return
+                        logger.info(f"Channel not found in database, creating: {channel_username}")
+                        channel = Channel(
+                            username=channel_username,
+                            name=message_data.get('channel_name', channel_username),
+                            telegram_account_id=telegram_account_id,
+                            is_active=1,
+                            is_listened=1
+                        )
+                        db.add(channel)
+                        await db.commit()
+                        await db.refresh(channel)
+                        logger.info(f"Created channel in database: {channel_username}")
                     
                     # Check for duplicate message by text content
                     existing_result = await db.execute(
