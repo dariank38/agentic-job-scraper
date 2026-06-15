@@ -155,7 +155,8 @@
     "failedToStopListener": "停止监听器失败",
     "failedToAddChannel": "添加频道失败",
     "failedToToggleListener": "切换监听器失败",
-    "noChannels": "无频道"
+    "noChannels": "无频道",
+    "noChannelsToListen": "没有标记为监听的频道。请选择要监控的频道。"
   },
   "channels": {
     "title": "频道",

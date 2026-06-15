@@ -1654,12 +1654,27 @@ async def start_telegram_listener(
 
                     channel = None
 
-                    # Try to find by username first
+                    # Try to find by username first (try both with and without @)
                     if channel_username:
+                        # Try with @ prefix
                         channel_result = await db.execute(
                             select(Channel).filter(Channel.username == channel_username)
                         )
                         channel = channel_result.scalar_one_or_none()
+                        
+                        # If not found, try without @ prefix
+                        if not channel and channel_username.startswith('@'):
+                            channel_result = await db.execute(
+                                select(Channel).filter(Channel.username == channel_username.lstrip('@'))
+                            )
+                            channel = channel_result.scalar_one_or_none()
+                        
+                        # If still not found, try with @ prefix (if original didn't have it)
+                        if not channel and not channel_username.startswith('@'):
+                            channel_result = await db.execute(
+                                select(Channel).filter(Channel.username == f"@{channel_username}")
+                            )
+                            channel = channel_result.scalar_one_or_none()
 
                     # If not found by username, try by telegram_id
                     if not channel and channel_id:
@@ -1673,8 +1688,12 @@ async def start_telegram_listener(
                         # Use telegram_id as identifier if username is not available
                         identifier = channel_username or f"telegram_id:{channel_id}"
                         logger.info(f"Channel not found in database, creating: {identifier}")
+                        # Normalize username: add @ prefix if username exists and doesn't have it
+                        normalized_username = channel_username
+                        if channel_username and not channel_username.startswith('@'):
+                            normalized_username = f"@{channel_username}"
                         channel = Channel(
-                            username=channel_username if channel_username else None,
+                            username=normalized_username if normalized_username else None,
                             telegram_id=channel_id,
                             name=message_data.get('channel_name', identifier),
                             telegram_account_id=telegram_account_id,

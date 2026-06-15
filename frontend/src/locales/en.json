@@ -156,7 +156,8 @@
     "failedToStopListener": "Failed to stop listener",
     "failedToAddChannel": "Failed to add channel",
     "failedToToggleListener": "Failed to toggle listener",
-    "noChannels": "No channels"
+    "noChannels": "No channels",
+    "noChannelsToListen": "No channels marked for listening. Please select channels to monitor."
   },
   "channels": {
     "title": "Channels",

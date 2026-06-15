@@ -28,9 +28,20 @@ def register_channel_routes(app):
             if not username.startswith("@"):
                 username = f"@{username}"
 
-            # Check if exists
+            # Check if exists (try both with and without @)
             result = await db.execute(select(Channel).filter(Channel.username == username))
             existing = result.scalar_one_or_none()
+            
+            # If not found with @, try without @
+            if not existing and username.startswith('@'):
+                result = await db.execute(select(Channel).filter(Channel.username == username.lstrip('@')))
+                existing = result.scalar_one_or_none()
+            
+            # If still not found, try with @ (if original didn't have it)
+            if not existing and not username.startswith('@'):
+                result = await db.execute(select(Channel).filter(Channel.username == f"@{username}"))
+                existing = result.scalar_one_or_none()
+            
             if existing:
                 raise HTTPException(status_code=400, detail="Channel already exists")
 
