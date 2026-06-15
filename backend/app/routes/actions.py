@@ -18,35 +18,55 @@ from app.tasks import analyze_messages, fetch_and_store_messages, reset_bulk_sto
 def register_action_routes(app):
     """Register action-related routes."""
 
+    async def _fetch_channel_bg(channel_id: int, account_id: Optional[int] = None):
+        """Background task: fetch messages from a single channel with its own DB session."""
+        logger.info(f"[BG TASK] Starting fetch for channel {channel_id}")
+        channel_name = None
+        async with AsyncSessionLocal() as db:
+            try:
+                result = await db.execute(select(Channel).filter(Channel.id == channel_id))
+                channel = result.scalar_one_or_none()
+                if channel:
+                    channel_name = channel.username or channel.name or f"ID:{channel_id}"
+                    logger.info(f"[BG TASK] Fetching from @{channel_name} (ID: {channel_id})")
+                    
+                    from telegram_processor.config import DEFAULT_DAYS_BACK
+                    days_back = DEFAULT_DAYS_BACK
+                    
+                    fetch_result = await fetch_and_store_messages(
+                        db,
+                        channel,
+                        days_back=days_back,
+                        account_id=account_id
+                    )
+                    new_messages = fetch_result.get("new_stored", 0)
+                    logger.info(f"[BG TASK] Completed fetch for @{channel_name}: {new_messages} new messages")
+                else:
+                    logger.warning(f"[BG TASK] Channel {channel_id} not found")
+            except Exception as e:
+                logger.error(f"[BG TASK] Exception during fetch for channel {channel_id}: {e}", exc_info=True)
+
     @app.post("/api/fetch/{channel_id}")
-    async def fetch_channel(channel_id: int, account_id: Optional[int] = None, db: AsyncSession = Depends(get_db)):
-        """Fetch messages from a Telegram channel."""
+    async def fetch_channel(channel_id: int, account_id: Optional[int] = None, background_tasks: BackgroundTasks = None, db: AsyncSession = Depends(get_db)):
+        """Fetch messages from a Telegram channel (runs in background)."""
         try:
             result = await db.execute(select(Channel).filter(Channel.id == channel_id))
             channel = result.scalar_one_or_none()
             if not channel:
                 raise HTTPException(status_code=404, detail="Channel not found")
 
-            # Use default 10 days back
-            from telegram_processor.config import DEFAULT_DAYS_BACK
-            days_back = DEFAULT_DAYS_BACK
-
-            result = await fetch_and_store_messages(
-                db,
-                channel,
-                days_back=days_back,
-                account_id=account_id
-            )
+            # Start background task
+            background_tasks.add_task(_fetch_channel_bg, channel_id, account_id)
 
             return {
-                "success": result.get("success", True),
-                "new_messages": result.get("new_stored", 0),
-                "days_back_used": days_back
+                "success": True,
+                "message": f"Fetch started for @{channel.username}",
+                "channel": channel.username
             }
         except HTTPException:
             raise
         except Exception as e:
-            raise HTTPException(status_code=500, detail=f"Failed to fetch: {str(e)}")
+            raise HTTPException(status_code=500, detail=f"Failed to start fetch: {str(e)}")
 
     async def _analyze_channel_bg(channel_id: int):
         """Background task: analyze a single channel with its own DB session."""
@@ -88,13 +108,13 @@ def register_action_routes(app):
                 raise HTTPException(status_code=404, detail="Channel not found")
 
             # Check if there are pending messages to analyze
-            messages_result = await db.execute(
-                select(Message).filter(
+            pending_result = await db.execute(
+                select(func.count(Message.id)).filter(
                     Message.channel_id == channel_id,
                     Message.analysis_status == "pending",
                 )
             )
-            pending_count = len(messages_result.scalars().all())
+            pending_count = pending_result.scalar() or 0
 
             if pending_count == 0:
                 return {"success": True, "message": "No pending messages to analyze", "analyzed": 0}
@@ -124,9 +144,79 @@ def register_action_routes(app):
         except Exception as e:
             raise HTTPException(status_code=500, detail=f"Failed to analyze: {str(e)}")
 
+    async def _run_fetch_all(channel_ids: list, operation_id: str):
+        """Background task: fetch messages from each channel sequentially, each with its own DB session."""
+        from app.tasks import broadcast_progress
+        
+        logger.info(f"[BULK FETCH] Starting operation {operation_id} for {len(channel_ids)} channels")
+        await reset_bulk_stop_event(operation_id)
+        success_count = 0
+        error_count = 0
+        total_new_messages = 0
+        
+        from telegram_processor.config import DEFAULT_DAYS_BACK
+        days_back = DEFAULT_DAYS_BACK
+        
+        # Broadcast bulk operation start
+        await broadcast_progress("bulk_fetch_start", {
+            "operation_id": operation_id,
+            "total_channels": len(channel_ids)
+        })
+        
+        try:
+            for idx, channel_id in enumerate(channel_ids):
+                if is_bulk_operation_stopped(operation_id):
+                    logger.info(f"[BULK FETCH] Operation {operation_id} stopped by user at channel {idx+1}/{len(channel_ids)}")
+                    await broadcast_progress("bulk_fetch_stopped", {
+                        "operation_id": operation_id,
+                        "progress": idx,
+                        "total": len(channel_ids)
+                    })
+                    break
+                async with AsyncSessionLocal() as db:
+                    try:
+                        result = await db.execute(select(Channel).filter(Channel.id == channel_id))
+                        channel = result.scalar_one_or_none()
+                        if channel:
+                            logger.info(f"[BULK FETCH] {operation_id} | Channel {idx+1}/{len(channel_ids)}: @{channel.username}")
+                            fetch_result = await fetch_and_store_messages(
+                                db,
+                                channel,
+                                days_back=days_back
+                            )
+                            new_messages = fetch_result.get("new_stored", 0)
+                            total_new_messages += new_messages
+                            success_count += 1
+                            logger.info(f"[BULK FETCH] ✓ Channel {channel_id} complete: {new_messages} new messages")
+                            
+                            # Broadcast progress for bulk operation
+                            await broadcast_progress("bulk_fetch_progress", {
+                                "operation_id": operation_id,
+                                "progress": idx + 1,
+                                "total": len(channel_ids),
+                                "channel": channel.username,
+                                "new_messages": new_messages
+                            })
+                        else:
+                            logger.warning(f"[BULK FETCH] Channel {channel_id} not found")
+                    except Exception as e:
+                        error_count += 1
+                        logger.error(f"[BULK FETCH] Exception in channel {channel_id}: {e}", exc_info=True)
+            
+            # Broadcast completion
+            await broadcast_progress("bulk_fetch_complete", {
+                "operation_id": operation_id,
+                "success_count": success_count,
+                "error_count": error_count,
+                "total_new_messages": total_new_messages
+            })
+            logger.info(f"[BULK FETCH] Operation {operation_id} complete: {success_count} success, {error_count} errors, {total_new_messages} new messages")
+        finally:
+            cleanup_bulk_stop_event(operation_id)
+
     @app.post("/api/fetch-all")
-    async def fetch_all(db: AsyncSession = Depends(get_db)):
-        """Fetch messages from all active channels."""
+    async def fetch_all(background_tasks: BackgroundTasks, db: AsyncSession = Depends(get_db)):
+        """Fetch messages from all active channels in the background and return immediately."""
         try:
             # Cleanup stale operations before starting bulk fetch
             from app.tasks import cleanup_stale_operations
@@ -134,38 +224,32 @@ def register_action_routes(app):
 
             result = await db.execute(select(Channel).filter(Channel.is_active == True))
             channels = result.scalars().all()
+            
+            if not channels:
+                return {"success": False, "message": "No active channels found"}
 
-            from telegram_processor.config import DEFAULT_DAYS_BACK
-            days_back = DEFAULT_DAYS_BACK
+            # Generate bulk operation ID for stop support
+            import uuid
+            operation_id = f"fetch-all-{uuid.uuid4().hex[:8]}"
+            await reset_bulk_stop_event(operation_id)
 
-            results = []
-            for channel in channels:
-                try:
-                    fetch_result = await fetch_and_store_messages(
-                        db,
-                        channel,
-                        days_back=days_back
-                    )
-                    results.append({
-                        "channel_id": channel.id,
-                        "username": channel.username,
-                        "new_messages": fetch_result.get("new_stored", 0)
-                    })
-                except Exception as e:
-                    results.append({
-                        "channel_id": channel.id,
-                        "username": channel.username,
-                        "error": str(e)
-                    })
+            # Start background task
+            channel_ids = [c.id for c in channels]
+            background_tasks.add_task(_run_fetch_all, channel_ids, operation_id)
 
-            return {"success": True, "results": results}
+            return {
+                "success": True,
+                "message": f"Fetch started for {len(channels)} channel(s)",
+                "operation_id": operation_id,
+                "channels": len(channels)
+            }
         except Exception as e:
-            raise HTTPException(status_code=500, detail=f"Failed to fetch all: {str(e)}")
+            raise HTTPException(status_code=500, detail=f"Failed to start fetch all: {str(e)}")
 
     async def _run_analyze_all(channel_ids: list, operation_id: str):
         """Background task: analyze each channel sequentially, each with its own DB session."""
         logger.info(f"[BULK ANALYZE] Starting operation {operation_id} for {len(channel_ids)} channels")
-        reset_bulk_stop_event(operation_id)
+        await reset_bulk_stop_event(operation_id)
         success_count = 0
         error_count = 0
         try:
@@ -328,18 +412,12 @@ def register_action_routes(app):
             raise HTTPException(status_code=500, detail=f"Failed to reanalyze: {str(e)}")
 
     @app.post("/api/reanalyze-skipped")
-    async def reanalyze_skipped_messages(db: AsyncSession = Depends(get_db)):
+    async def reanalyze_skipped_messages(background_tasks: BackgroundTasks, db: AsyncSession = Depends(get_db)):
         """Re-analyze all messages that were skipped."""
         try:
             from app.models import Message
-            from app.tasks import analyze_messages, reset_bulk_stop_event, stop_bulk_operation, is_bulk_operation_stopped, cleanup_bulk_stop_event
-            from app.connection import AsyncSessionLocal
             from sqlalchemy import func
             import uuid
-
-            # Generate bulk operation ID for stop support
-            operation_id = f"reanalyze-skipped-{uuid.uuid4().hex[:8]}"
-            reset_bulk_stop_event(operation_id)
 
             # Count skipped messages per channel (more memory efficient than loading all)
             result = await db.execute(
@@ -350,36 +428,52 @@ def register_action_routes(app):
             channel_counts = result.all()
 
             if not channel_counts:
-                cleanup_bulk_stop_event(operation_id)
                 return {"success": True, "message": "No skipped messages to re-analyze"}
 
             channel_ids = [row[0] for row in channel_counts]
             total_skipped = sum(row[1] for row in channel_counts)
 
-            results = []
-            failed_channels = []
-            stopped_channels = []
+            # Generate bulk operation ID for stop support
+            operation_id = f"reanalyze-skipped-{uuid.uuid4().hex[:8]}"
 
-            for channel_id in channel_ids:
-                # Check if operation was stopped
+            # Run in background
+            background_tasks.add_task(_run_reanalyze_skipped, channel_ids, operation_id)
+
+            return {
+                "success": True,
+                "message": f"Re-analysis started for {total_skipped} skipped message(s) across {len(channel_ids)} channel(s)",
+                "operation_id": operation_id,
+                "total_skipped": total_skipped,
+                "channels": len(channel_ids),
+            }
+
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=f"Failed to re-analyze skipped messages: {str(e)}")
+
+    async def _run_reanalyze_skipped(channel_ids: list, operation_id: str):
+        """Background task: re-analyze skipped messages for each channel."""
+        logger.info(f"[REANALYZE SKIPPED] Starting operation {operation_id} for {len(channel_ids)} channels")
+        await reset_bulk_stop_event(operation_id)
+        success_count = 0
+        error_count = 0
+        try:
+            for idx, channel_id in enumerate(channel_ids):
                 if is_bulk_operation_stopped(operation_id):
-                    stopped_channels.append({"channel_id": channel_id, "reason": "Operation stopped by user"})
+                    logger.info(f"[REANALYZE SKIPPED] Operation {operation_id} stopped by user at channel {idx+1}/{len(channel_ids)}")
                     break
 
-                # Use fresh session for each channel to avoid async context conflicts
                 async with AsyncSessionLocal() as channel_db:
                     try:
-                        # Get channel info
                         channel_result = await channel_db.execute(
                             select(Channel).filter(Channel.id == channel_id)
                         )
                         channel = channel_result.scalar_one_or_none()
 
                         if not channel:
-                            failed_channels.append({"channel_id": channel_id, "error": "Channel not found"})
+                            logger.warning(f"[REANALYZE SKIPPED] Channel {channel_id} not found")
                             continue
 
-                        # Reset only this channel's messages to pending within transaction
+                        # Reset skipped messages to pending
                         await channel_db.execute(
                             Message.__table__.update()
                             .where(
@@ -392,41 +486,20 @@ def register_action_routes(app):
 
                         # Analyze the channel with bulk operation ID
                         result = await analyze_messages(channel_db, channel, bulk_operation_id=operation_id)
-                        results.append({
-                            "channel_id": channel_id,
-                            "channel_username": channel.username,
-                            "result": result
-                        })
+                        if result.get("success"):
+                            success_count += 1
+                            logger.info(f"[REANALYZE SKIPPED] ✓ Channel @{channel.username} complete")
+                        else:
+                            error_count += 1
+                            logger.warning(f"[REANALYZE SKIPPED] ✗ Channel @{channel.username} failed: {result.get('error')}")
 
                     except Exception as channel_error:
-                        # Log failure but continue with other channels
-                        failed_channels.append({
-                            "channel_id": channel_id,
-                            "error": str(channel_error)
-                        })
-                        # Don't re-raise - continue with next channel
+                        error_count += 1
+                        logger.error(f"[REANALYZE SKIPPED] Exception in channel {channel_id}: {channel_error}", exc_info=True)
 
+            logger.info(f"[REANALYZE SKIPPED] Operation {operation_id} complete: {success_count} success, {error_count} errors")
+        finally:
             cleanup_bulk_stop_event(operation_id)
-
-            response = {
-                "success": True,
-                "operation_id": operation_id,
-                "total_skipped": total_skipped,
-                "channels_processed": len(results),
-                "channels_failed": len(failed_channels),
-                "channels_stopped": len(stopped_channels),
-                "results": results
-            }
-
-            if failed_channels:
-                response["failed_channels"] = failed_channels
-            if stopped_channels:
-                response["stopped_channels"] = stopped_channels
-
-            return response
-
-        except Exception as e:
-            raise HTTPException(status_code=500, detail=f"Failed to re-analyze skipped messages: {str(e)}")
 
     @app.post("/api/reanalyze-message/{message_id}")
     async def reanalyze_single_message(message_id: int, db: AsyncSession = Depends(get_db)):
@@ -616,7 +689,7 @@ def register_action_routes(app):
 
             # First check in-memory (fast path)
             if channel_id in analysis_stop_events:
-                stop_analysis(channel_id)
+                await stop_analysis(channel_id)
                 logger.info(f"Stop signal sent via memory for channel_id={channel_id}")
 
                 # Also update any running operation in database
@@ -652,7 +725,7 @@ def register_action_routes(app):
 
                 # Try to stop via memory if available
                 if channel_id in analysis_stop_events:
-                    stop_analysis(channel_id)
+                    await stop_analysis(channel_id)
                     logger.info(f"Also sent memory signal for channel_id={channel_id}")
 
                 return {"success": True, "message": "Stop signal sent (cross-process)"}
@@ -705,7 +778,7 @@ def register_action_routes(app):
         try:
             logger.info(f"[BULK STOP] Received stop request for operation: {request.operation_id}")
             from app.tasks import stop_bulk_operation as tasks_stop_bulk_operation
-            tasks_stop_bulk_operation(request.operation_id)
+            await tasks_stop_bulk_operation(request.operation_id)
             logger.info(f"[BULK STOP] Stop signal set for operation: {request.operation_id}")
             return {"success": True, "message": f"Stop signal sent for operation {request.operation_id}"}
         except Exception as e:
@@ -765,6 +838,7 @@ def register_action_routes(app):
             import asyncio
             from telegram_processor import TelegramClientManager, get_dialogs
             from app.models import TelegramAccount
+            from app.tasks import get_fetch_lock
 
             # Get Telegram account from database
             if account_id:
@@ -796,11 +870,15 @@ def register_action_routes(app):
                 session_name=account.session_name,
             )
 
-            await telegram_manager.connect()
-            try:
-                dialogs = await get_dialogs(telegram_manager.client)
-            finally:
-                await telegram_manager.disconnect()
+            # Use per-account lock to prevent SQLite session conflicts
+            fetch_lock = await get_fetch_lock(account.id)
+            
+            async with fetch_lock:
+                await telegram_manager.connect()
+                try:
+                    dialogs = await get_dialogs(telegram_manager.client)
+                finally:
+                    await telegram_manager.disconnect()
 
             # Filter out existing channels
             filtered_dialogs = []

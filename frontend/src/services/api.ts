@@ -372,6 +372,11 @@ const api = {
     return response.json();
   },
 
+  getDailyStatsTable: async (days: number = 7): Promise<any> => {
+    const response = await fetch(`${API_BASE}/api/daily-stats-table?days=${days}`);
+    return response.json();
+  },
+
   startListener: async (channelUsernames: string[], autoAnalyze: boolean = false, telegramAccountId?: number): Promise<any> => {
     const response = await fetch(`${API_BASE}/api/listener/start`, {
       method: 'POST',

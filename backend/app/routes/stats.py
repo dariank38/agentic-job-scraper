@@ -185,6 +185,66 @@ def register_stats_routes(app):
         data = {str(row.date): row.count for row in result.all()}
         return {"data": data, "days": days}
 
+    @app.get("/api/daily-stats-table")
+    async def api_daily_stats_table(
+        days: int = Query(7, description="Number of days to include"),
+        db: AsyncSession = Depends(get_db),
+    ):
+        """Get combined daily stats for table display (job postings, developers contacted, jobs applied)."""
+        cutoff_date = datetime.utcnow() - timedelta(days=days)
+
+        # Get daily job postings
+        jobs_result = await db.execute(
+            select(
+                func.date(Job.created_at).label('date'),
+                func.count(Job.id).label('count')
+            )
+            .filter(Job.created_at >= cutoff_date)
+            .group_by(func.date(Job.created_at))
+            .order_by(func.date(Job.created_at).desc())
+        )
+        jobs_data = {str(row.date): row.count for row in jobs_result.all()}
+
+        # Get daily developers contacted
+        developers_result = await db.execute(
+            select(
+                func.date(Developer.contacted_at).label('date'),
+                func.count(Developer.id).label('count')
+            )
+            .filter(Developer.is_contacted == True, Developer.contacted_at >= cutoff_date)
+            .group_by(func.date(Developer.contacted_at))
+            .order_by(func.date(Developer.contacted_at).desc())
+        )
+        developers_data = {str(row.date): row.count for row in developers_result.all()}
+
+        # Get daily jobs applied
+        applied_result = await db.execute(
+            select(
+                func.date(Job.applied_at).label('date'),
+                func.count(Job.id).label('count')
+            )
+            .filter(Job.is_applied == True, Job.applied_at >= cutoff_date)
+            .group_by(func.date(Job.applied_at))
+            .order_by(func.date(Job.applied_at).desc())
+        )
+        applied_data = {str(row.date): row.count for row in applied_result.all()}
+
+        # Combine all dates
+        all_dates = set(jobs_data.keys()) | set(developers_data.keys()) | set(applied_data.keys())
+        sorted_dates = sorted(all_dates, reverse=True)
+
+        table_data = [
+            {
+                "date": date,
+                "job_postings": jobs_data.get(date, 0),
+                "developers_contacted": developers_data.get(date, 0),
+                "jobs_applied": applied_data.get(date, 0),
+            }
+            for date in sorted_dates
+        ]
+
+        return {"data": table_data, "days": days}
+
     @app.get("/api/daily-jobs-applied")
     async def api_daily_jobs_applied(
         days: int = Query(30, description="Number of days to include"),

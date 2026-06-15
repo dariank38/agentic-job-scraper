@@ -25,10 +25,10 @@ export interface NewJobNotification {
 }
 
 export interface ProgressUpdate {
-  type: 'fetch_start' | 'fetch_progress' | 'fetch_complete' | 'analyze_start' | 'analyze_progress' | 'analyze_complete' | 'error' | 'new_job' | 'analyzing_message' | 'stats_update' | 'cron_status' | 'listener_status' | 'channel_update';
+  type: 'fetch_start' | 'fetch_progress' | 'fetch_complete' | 'analyze_start' | 'analyze_progress' | 'analyze_complete' | 'error' | 'new_job' | 'analyzing_message' | 'stats_update' | 'cron_status' | 'listener_status' | 'channel_update' | 'bulk_fetch_start' | 'bulk_fetch_progress' | 'bulk_fetch_complete' | 'bulk_fetch_stopped';
   channel?: string;
   channel_id?: number;
-  operation_id?: number;
+  operation_id?: number | string;
   status?: string;
   count?: number;
   total?: number;
@@ -54,6 +54,10 @@ export interface ProgressUpdate {
   total_channels?: number;
   total_developers?: number;
   total_jobs?: number;
+  total_new_messages?: number;
+  success_count?: number;
+  error_count?: number;
+  progress?: number;
   running?: boolean;
   account_id?: number;
   channels?: Array<{ id: number; username: string; is_listened: number; telegram_account_id: number | null }>;

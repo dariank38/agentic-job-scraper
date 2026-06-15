@@ -2,6 +2,7 @@
 
 import asyncio
 import logging
+import os
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone, timedelta
 from typing import Optional
@@ -17,14 +18,24 @@ from services.ollama_service import get_analyzer, is_ollama_available, should_an
 
 logger = logging.getLogger(__name__)
 
+# Circuit breaker configuration
+MAX_CONSECUTIVE_FAILURES = int(os.getenv("MAX_CONSECUTIVE_FAILURES", "20"))
+
 # Global stop events for cancelling analysis (per-channel)
 analysis_stop_events: dict[int, asyncio.Event] = {}
+analysis_stop_events_lock = asyncio.Lock()
+
+# Per-account fetch locks to prevent SQLite session conflicts
+fetch_locks: dict[int, asyncio.Lock] = {}
+fetch_locks_lock = asyncio.Lock()
 
 # Website source stop events (for website fetch/analyze operations)
 website_stop_events: dict[int, asyncio.Event] = {}
+website_stop_events_lock = asyncio.Lock()
 
 # Bulk operation stop events (for analyze-all, fetch-analyze-all)
 bulk_stop_events: dict[str, asyncio.Event] = {}
+bulk_stop_events_lock = asyncio.Lock()
 
 # Cron job state
 cron_running = False
@@ -38,16 +49,29 @@ telegram_listener_tasks: dict[int, asyncio.Task] = {}
 _cron_lock = asyncio.Lock()
 
 
-def reset_stop_event(channel_id: int):
+async def reset_stop_event(channel_id: int):
     """Reset stop event for a channel before starting analysis."""
-    cleanup_old_stop_events()
-    analysis_stop_events[channel_id] = asyncio.Event()
+    async with analysis_stop_events_lock:
+        # Inline cleanup of stale stop events (already holding the lock, can't call cleanup_old_stop_events)
+        stale = [cid for cid, e in list(analysis_stop_events.items()) if e.is_set()]
+        for cid in stale:
+            analysis_stop_events.pop(cid, None)
+        analysis_stop_events[channel_id] = asyncio.Event()
 
 
-def stop_analysis(channel_id: int):
+async def get_fetch_lock(account_id: int) -> asyncio.Lock:
+    """Get or create a fetch lock for a specific Telegram account."""
+    async with fetch_locks_lock:
+        if account_id not in fetch_locks:
+            fetch_locks[account_id] = asyncio.Lock()
+        return fetch_locks[account_id]
+
+
+async def stop_analysis(channel_id: int):
     """Signal analysis to stop for a specific channel."""
-    if channel_id in analysis_stop_events:
-        analysis_stop_events[channel_id].set()
+    async with analysis_stop_events_lock:
+        if channel_id in analysis_stop_events:
+            analysis_stop_events[channel_id].set()
 
 
 def is_analysis_stopped(channel_id: int) -> bool:
@@ -58,20 +82,23 @@ def is_analysis_stopped(channel_id: int) -> bool:
     return event.is_set()
 
 
-def cleanup_stop_event(channel_id: int):
+async def cleanup_stop_event(channel_id: int):
     """Clean up stop event after analysis completes."""
-    analysis_stop_events.pop(channel_id, None)
+    async with analysis_stop_events_lock:
+        analysis_stop_events.pop(channel_id, None)
 
 
-def reset_website_stop_event(source_id: int):
+async def reset_website_stop_event(source_id: int):
     """Reset stop event for a website source before starting operation."""
-    website_stop_events[source_id] = asyncio.Event()
+    async with website_stop_events_lock:
+        website_stop_events[source_id] = asyncio.Event()
 
 
-def stop_website_operation(source_id: int):
+async def stop_website_operation(source_id: int):
     """Signal website operation to stop for a specific source."""
-    if source_id in website_stop_events:
-        website_stop_events[source_id].set()
+    async with website_stop_events_lock:
+        if source_id in website_stop_events:
+            website_stop_events[source_id].set()
 
 
 def is_website_operation_stopped(source_id: int) -> bool:
@@ -82,24 +109,27 @@ def is_website_operation_stopped(source_id: int) -> bool:
     return event.is_set()
 
 
-def cleanup_website_stop_event(source_id: int):
+async def cleanup_website_stop_event(source_id: int):
     """Clean up website stop event after operation completes."""
-    website_stop_events.pop(source_id, None)
+    async with website_stop_events_lock:
+        website_stop_events.pop(source_id, None)
 
 
-def reset_bulk_stop_event(operation_id: str):
+async def reset_bulk_stop_event(operation_id: str):
     """Reset stop event for a bulk operation."""
     import logging
     logger = logging.getLogger(__name__)
-    bulk_stop_events[operation_id] = asyncio.Event()
+    async with bulk_stop_events_lock:
+        bulk_stop_events[operation_id] = asyncio.Event()
 
 
-def stop_bulk_operation(operation_id: str):
+async def stop_bulk_operation(operation_id: str):
     """Signal bulk operation to stop."""
     import logging
     logger = logging.getLogger(__name__)
-    if operation_id in bulk_stop_events:
-        bulk_stop_events[operation_id].set()
+    async with bulk_stop_events_lock:
+        if operation_id in bulk_stop_events:
+            bulk_stop_events[operation_id].set()
 
 
 def is_bulk_operation_stopped(operation_id: str) -> bool:
@@ -115,14 +145,16 @@ def cleanup_bulk_stop_event(operation_id: str):
     bulk_stop_events.pop(operation_id, None)
 
 
-def cleanup_old_stop_events(max_age_seconds: int = 3600):
+async def cleanup_old_stop_events(max_age_seconds: int = 3600):
     """Remove already-set (finished) stop events to prevent memory leak."""
-    stale = [cid for cid, e in list(analysis_stop_events.items()) if e.is_set()]
-    for cid in stale:
-        analysis_stop_events.pop(cid, None)
-    stale_bulk = [oid for oid, e in list(bulk_stop_events.items()) if e.is_set()]
-    for oid in stale_bulk:
-        bulk_stop_events.pop(oid, None)
+    async with analysis_stop_events_lock:
+        stale = [cid for cid, e in list(analysis_stop_events.items()) if e.is_set()]
+        for cid in stale:
+            analysis_stop_events.pop(cid, None)
+    async with bulk_stop_events_lock:
+        stale_bulk = [oid for oid, e in list(bulk_stop_events.items()) if e.is_set()]
+        for oid in stale_bulk:
+            bulk_stop_events.pop(oid, None)
 
 
 async def cleanup_stale_operations():
@@ -179,14 +211,18 @@ async def cleanup_old_messages():
     """
     from datetime import datetime, timedelta
     from app.models import Message, Job, Developer
+    from sqlalchemy.orm import selectinload
 
     async with AsyncSessionLocal() as db:
         try:
             cutoff_date = datetime.utcnow() - timedelta(days=2)
 
-            # Find messages older than 2 days
+            # Find messages older than 2 days with eagerly loaded relationships
             result = await db.execute(
-                select(Message).filter(Message.date < cutoff_date)
+                select(Message).options(
+                    selectinload(Message.job),
+                    selectinload(Message.developer)
+                ).filter(Message.date < cutoff_date)
             )
             old_messages = result.scalars().all()
 
@@ -451,6 +487,10 @@ async def fetch_and_store_messages(
     bulk_operation_id: Optional[str] = None,
 ) -> dict:
     """Fetch messages from Telegram and store in database."""
+    # Capture channel info early for error handling
+    channel_id = channel.id
+    channel_username = channel.username or channel.name or f"ID:{channel.id}"
+    
     if account_id:
         result = await db.execute(select(TelegramAccount).filter(TelegramAccount.id == account_id))
         account = result.scalar_one_or_none()
@@ -482,110 +522,118 @@ async def fetch_and_store_messages(
         session_name=account.session_name,
     )
 
+    # Get per-account fetch lock to prevent SQLite session conflicts
+    fetch_lock = await get_fetch_lock(account.id)
+
     operation_id = await create_operation(db, "fetch", channel, bulk_operation_id=bulk_operation_id)
 
     try:
-        await broadcast_progress("fetch_start", {"channel": channel.username, "days_back": days_back, "operation_id": operation_id})
-        await telegram_manager.connect()
+        async with fetch_lock:
+            await broadcast_progress("fetch_start", {"channel": channel.username, "days_back": days_back, "operation_id": operation_id})
+            await telegram_manager.connect()
 
-        await broadcast_progress("fetch_progress", {"channel": channel.username, "status": "fetching", "operation_id": operation_id})
-        messages = await fetch_messages(
-            telegram_manager.client,
-            channel.username,
-            days_back=days_back,
-        )
-        await broadcast_progress("fetch_progress", {"channel": channel.username, "status": "fetched", "count": len(messages), "operation_id": operation_id})
+            await broadcast_progress("fetch_progress", {"channel": channel.username, "status": "fetching", "operation_id": operation_id})
+            messages = await fetch_messages(
+                telegram_manager.client,
+                channel.username,
+                days_back=days_back,
+            )
+            await broadcast_progress("fetch_progress", {"channel": channel.username, "status": "fetched", "count": len(messages), "operation_id": operation_id})
 
-        # Update operation with total messages count
-        await update_operation(db, operation_id, total_messages=len(messages))
+            # Update operation with total messages count
+            await update_operation(db, operation_id, total_messages=len(messages))
 
-        new_count = 0
-        stopped_early = False
-        for i, msg_data in enumerate(messages):
-            # Check if bulk operation was stopped (every 10 messages)
-            if bulk_operation_id and (i % 10 == 0) and is_bulk_operation_stopped(bulk_operation_id):
-                await broadcast_progress("fetch_progress", {
-                    "channel": channel.username,
-                    "status": "stopped",
-                    "processed": i,
-                    "total": len(messages),
-                    "operation_id": operation_id,
-                })
-                stopped_early = True
-                break
-
-            try:
-                result = await db.execute(
-                    select(Message).filter(
-                        Message.text == msg_data.get("text"),
-                    )
-                )
-                existing = result.scalar_one_or_none()
-                if existing:
-                    continue
-
-                sender = msg_data.get("sender") or {}
-                has_text = bool(msg_data.get("text"))
-
-                async with db.begin_nested():
-                    message = Message(
-                        telegram_id=msg_data["id"],
-                        channel_id=channel.id,
-                        date=msg_data.get("date"),
-                        text=msg_data.get("text"),
-                        sender_id=msg_data.get("sender_id"),
-                        sender_username=sender.get("username"),
-                        sender_first_name=sender.get("first_name"),
-                        has_image=msg_data.get("has_image", False),
-                        analysis_status="pending" if has_text else "skipped",
-                    )
-                    db.add(message)
-                    await db.flush()
-                new_count += 1
-
-                if (i + 1) % 10 == 0:
+            new_count = 0
+            stopped_early = False
+            for i, msg_data in enumerate(messages):
+                # Check if bulk operation was stopped (every 10 messages)
+                if bulk_operation_id and (i % 10 == 0) and is_bulk_operation_stopped(bulk_operation_id):
                     await broadcast_progress("fetch_progress", {
                         "channel": channel.username,
-                        "processed": i + 1,
+                        "status": "stopped",
+                        "processed": i,
                         "total": len(messages),
-                        "total_messages": len(messages),
-                        "analyzed": i + 1,  # For frontend progress bar
-                        "new": new_count,
                         "operation_id": operation_id,
                     })
-                    await update_operation(db, operation_id, current=i + 1, total=len(messages), analyzed=i + 1)
+                    stopped_early = True
+                    break
 
-            except Exception as e:
-                continue
+                try:
+                    result = await db.execute(
+                        select(Message).filter(
+                            Message.text == msg_data.get("text"),
+                        )
+                    )
+                    existing = result.scalar_one_or_none()
+                    if existing:
+                        continue
 
-        await db.commit()
+                    sender = msg_data.get("sender") or {}
+                    has_text = bool(msg_data.get("text"))
 
-        channel.last_fetch_new_count = new_count
-        channel.last_fetch_at = datetime.utcnow()
-        await db.commit()
+                    async with db.begin_nested():
+                        message = Message(
+                            telegram_id=msg_data["id"],
+                            channel_id=channel.id,
+                            date=msg_data.get("date"),
+                            text=msg_data.get("text"),
+                            sender_id=msg_data.get("sender_id"),
+                            sender_username=sender.get("username"),
+                            sender_first_name=sender.get("first_name"),
+                            has_image=msg_data.get("has_image", False),
+                            analysis_status="pending" if has_text else "skipped",
+                        )
+                        db.add(message)
+                        await db.flush()
+                    new_count += 1
 
-        status = "stopped" if stopped_early else "completed"
-        await broadcast_progress("fetch_complete", {"channel": channel.username, "new_messages": new_count, "operation_id": operation_id, "stopped": stopped_early})
-        await update_operation(db, operation_id, status=status)
+                    if (i + 1) % 10 == 0:
+                        await broadcast_progress("fetch_progress", {
+                            "channel": channel.username,
+                            "processed": i + 1,
+                            "total": len(messages),
+                            "total_messages": len(messages),
+                            "analyzed": i + 1,  # For frontend progress bar
+                            "new": new_count,
+                            "operation_id": operation_id,
+                        })
+                        await update_operation(db, operation_id, current=i + 1, total=len(messages), analyzed=i + 1)
 
-        # Broadcast stats update after fetch
-        await broadcast_stats_update(db)
+                except Exception as e:
+                    continue
 
-        if run_id:
-            try:
-                result = await db.execute(select(AnalysisRun).filter(AnalysisRun.id == run_id))
-                run = result.scalar_one_or_none()
-                if run:
-                    run.messages_fetched += len(messages)
-                    await db.commit()
-            except Exception as e:
-                await db.rollback()
+            await db.commit()
+            await update_operation(db, operation_id, status="completed")
+            await broadcast_progress("fetch_complete", {
+                "channel": channel.username,
+                "new_messages": new_count,
+                "operation_id": operation_id,
+            })
+            logger.info(f"[FETCH] Completed for {channel_username}: {new_count} new messages")
 
-        return {
-            "success": True,
-            "fetched": len(messages),
-            "new_stored": new_count,
-        }
+            # Update channel stats
+            channel.last_fetch_new_count = new_count
+            channel.last_fetch_at = datetime.utcnow()
+            await db.commit()
+
+            # Broadcast stats update after fetch
+            await broadcast_stats_update(db)
+
+            if run_id:
+                try:
+                    result = await db.execute(select(AnalysisRun).filter(AnalysisRun.id == run_id))
+                    run = result.scalar_one_or_none()
+                    if run:
+                        run.messages_fetched += len(messages)
+                        await db.commit()
+                except Exception as e:
+                    await db.rollback()
+
+            return {
+                "success": True,
+                "fetched": len(messages),
+                "new_stored": new_count,
+            }
 
     except Exception as e:
         await db.rollback()
@@ -635,20 +683,42 @@ async def _analyze_single(analyzer, message, channel_username: str):
         "message_preview": msg_preview
     })
 
-    try:
-        result = await asyncio.wait_for(
-            analyzer.analyze_message(message.text),
-            timeout=300,  # Timeout for analysis
-        )
-        elapsed = time.time() - start_time
-        return message, result, None
-    except asyncio.TimeoutError:
-        elapsed = time.time() - start_time
-        return message, None, Exception(f"Analysis timeout after 120s")
-    except Exception as e:
-        elapsed = time.time() - start_time
-        logger.error(f"[ANALYZE MSG ERROR] Channel: {channel_username} | Msg: {msg_preview}... | Time: {elapsed:.1f}s | Error: {e}")
-        return message, None, e
+    # Retry logic for transient errors
+    max_retries = 3
+    base_delay = 1.0  # seconds
+
+    for attempt in range(max_retries):
+        try:
+            result = await asyncio.wait_for(
+                analyzer.analyze_message(message.text),
+                timeout=300,  # Timeout for analysis
+            )
+            elapsed = time.time() - start_time
+            return message, result, None
+        except asyncio.TimeoutError:
+            elapsed = time.time() - start_time
+            if attempt < max_retries - 1:
+                delay = base_delay * (2 ** attempt)
+                logger.warning(f"[ANALYZE RETRY] Timeout on attempt {attempt + 1}/{max_retries}, retrying in {delay}s")
+                await asyncio.sleep(delay)
+            else:
+                return message, None, Exception(f"Analysis timeout after 300s")
+        except Exception as e:
+            elapsed = time.time() - start_time
+            error_str = str(e).lower()
+            # Retry on transient errors (network, connection, temporary Ollama issues)
+            is_transient = any(keyword in error_str for keyword in [
+                'connection', 'timeout', 'network', 'temporary', 'unavailable',
+                '503', '502', '504', 'econnrefused', 'econnreset'
+            ])
+            
+            if is_transient and attempt < max_retries - 1:
+                delay = base_delay * (2 ** attempt)
+                logger.warning(f"[ANALYZE RETRY] Transient error on attempt {attempt + 1}/{max_retries}: {e}, retrying in {delay}s")
+                await asyncio.sleep(delay)
+            else:
+                logger.error(f"[ANALYZE MSG ERROR] Channel: {channel_username} | Msg: {msg_preview}... | Time: {elapsed:.1f}s | Error: {e}")
+                return message, None, e
 
 
 async def analyze_messages(
@@ -667,7 +737,7 @@ async def analyze_messages(
         return {"success": False, "error": "Ollama not available"}
 
     try:
-        reset_stop_event(channel_id)
+        await reset_stop_event(channel_id)
 
         from sqlalchemy.orm import selectinload
         messages_result = await db.execute(
@@ -700,7 +770,7 @@ async def analyze_messages(
         analyzed_count = 0
         stopped_count = 0
         total_messages = len(messages)
-        batch_size = 1
+        batch_size = 5
         total_batches = (total_messages + batch_size - 1) // batch_size
 
         total_input_tokens = 0
@@ -709,7 +779,7 @@ async def analyze_messages(
 
         # Circuit breaker: stop after too many consecutive batch failures
         consecutive_failures = 0
-        max_consecutive_failures = 5
+        max_consecutive_failures = MAX_CONSECUTIVE_FAILURES
 
         for batch_num, batch_start in enumerate(range(0, total_messages, batch_size), 1):
             # Check both individual channel stop and bulk operation stop
@@ -1081,7 +1151,7 @@ async def analyze_messages(
         return {"success": False, "error": str(e)}
 
     finally:
-        cleanup_stop_event(channel_id)
+        await cleanup_stop_event(channel_id)
 
 
 # ── CRON ──────────────────────────────────────────────────────────────────────
@@ -1122,11 +1192,6 @@ async def continuous_scanner(
                                 fetch_result = await fetch_and_store_messages(db, channel, days_back=1)
                                 if fetch_result["success"]:
                                     last_fetch_time[channel_id] = now
-                                    if fetch_result["new_stored"] > 0:
-                                        try:
-                                            await analyze_messages(db, channel)
-                                        except Exception as e:
-                                            pass
                             except Exception as e:
                                 pass
 
@@ -1274,7 +1339,7 @@ async def analyze_website_posts(
         await update_operation(db, operation_id, channel_username=source_name, total_messages=total_messages)
 
         # Reset stop event
-        reset_website_stop_event(source_id)
+        await reset_website_stop_event(source_id)
 
         # Broadcast start
         await broadcast_progress("analyze_start", {
@@ -1285,7 +1350,7 @@ async def analyze_website_posts(
 
         if len(messages) == 0:
             await update_operation(db, operation_id, status="completed")
-            cleanup_website_stop_event(source_id)
+            await cleanup_website_stop_event(source_id)
             return {"success": True, "analyzed": 0, "jobs_found": 0, "developers_found": 0, "skipped": 0}
 
         # Use RSS extractor for website sources
@@ -1304,7 +1369,7 @@ async def analyze_website_posts(
 
         # Circuit breaker: stop after too many consecutive batch failures
         consecutive_failures = 0
-        max_consecutive_failures = 5
+        max_consecutive_failures = MAX_CONSECUTIVE_FAILURES
 
         prompt_type = "custom" if custom_prompt else (site_type or "generic")
 
@@ -1558,6 +1623,9 @@ async def analyze_website_posts(
         })
         return {"success": False, "error": str(e)}
 
+    finally:
+        await cleanup_website_stop_event(source_id)
+
 
 # ── REAL-TIME LISTENER ─────────────────────────────────────────────────────────
 
@@ -1631,12 +1699,27 @@ async def start_telegram_listener(
                     channel.telegram_account_id = telegram_account_id  # Track which account monitors this channel
             await db.commit()
         
-        # Create client manager - use the same authenticated session as fetch
+        # Create client manager - use separate session copy for listener to prevent SQLite conflicts
+        import shutil
+        from telegram_processor.config import TELEGRAM_SESSION_PATH
+        
+        listener_session_name = f"{account.session_name}_listener"
+        original_session = TELEGRAM_SESSION_PATH.parent / f"{account.session_name}.session"
+        listener_session = TELEGRAM_SESSION_PATH.parent / f"{listener_session_name}.session"
+        
+        # Copy session file if it doesn't exist or is outdated
+        fetch_lock = await get_fetch_lock(telegram_account_id)
+        async with fetch_lock:
+            if original_session.exists() and (not listener_session.exists() or 
+                original_session.stat().st_mtime > listener_session.stat().st_mtime):
+                shutil.copy2(str(original_session), str(listener_session))
+                logger.info(f"Copied session file for listener: {listener_session_name}")
+        
         client_manager = TelegramClientManager(
             api_id=account.api_id,
             api_hash=account.api_hash,
             phone_number=account.phone_number,
-            session_name=account.session_name
+            session_name=listener_session_name,
         )
         await client_manager.connect()
         
@@ -1705,10 +1788,9 @@ async def start_telegram_listener(
                         await db.refresh(channel)
                         logger.info(f"Created channel in database: {identifier}")
                     
-                    # Check for duplicate message by text content
+                    # Check for duplicate message by text content across all channels
                     existing_result = await db.execute(
                         select(Message).filter(
-                            Message.channel_id == channel.id,
                             Message.text == message_data['text']
                         )
                     )
@@ -1731,7 +1813,7 @@ async def start_telegram_listener(
                         sender_username=message_data['sender_username'],
                         sender_first_name=message_data['sender_first_name'],
                         has_image=message_data['has_media'],
-                        analysis_status="pending" if auto_analyze else "pending",
+                        analysis_status="pending",
                     )
                     db.add(message)
                     await db.commit()
@@ -1746,9 +1828,23 @@ async def start_telegram_listener(
                         "account_id": telegram_account_id,
                     })
                     
-                    # Auto-analyze if enabled
+                    # Auto-analyze if enabled - only analyze the new message
                     if auto_analyze:
-                        await analyze_messages(db, channel)
+                        from services.ollama_service import get_analyzer, is_ollama_available
+                        if await is_ollama_available():
+                            analyzer = get_analyzer()
+                            message, result, error = await _analyze_single(analyzer, message, channel_username)
+                            if error:
+                                logger.error(f"Auto-analyze failed for new message: {error}")
+                            else:
+                                if result and result.get("category") != "other":
+                                    logger.info(f"Auto-analyzed new message from {channel_username}: {result.get('category')}")
+                                    message.analysis_status = "analyzed"
+                                else:
+                                    message.analysis_status = "skipped"
+                                await db.commit()
+                        else:
+                            logger.warning(f"Auto-analyze skipped: Ollama not available")
                     
             except Exception as e:
                 logger.error(f"Error handling new message: {e}", exc_info=True)

@@ -574,7 +574,7 @@ def register_website_source_routes(app):
 
             # Check in-memory (fast path)
             if source_id in website_stop_events:
-                stop_website_operation(source_id)
+                await stop_website_operation(source_id)
                 logger.info(f"Stop signal sent via memory for source_id={source_id}")
 
                 # Also update any running operation in database by channel_username
@@ -610,7 +610,7 @@ def register_website_source_routes(app):
 
                 # Try to stop via memory if available
                 if source_id in website_stop_events:
-                    stop_website_operation(source_id)
+                    await stop_website_operation(source_id)
                     logger.info(f"Also sent memory signal for source_id={source_id}")
 
                 return {"success": True, "message": "Stop signal sent (cross-process)"}
