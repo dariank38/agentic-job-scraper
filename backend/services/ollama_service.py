@@ -4,6 +4,7 @@ import json
 import asyncio
 import logging
 import re
+import time
 from typing import Any
 
 from ollama import AsyncClient
@@ -23,7 +24,6 @@ async def is_ollama_available() -> bool:
 
 
 # ── SYSTEM PROMPT ─────────────────────────────────────────────────────────────
-# Condensed for speed — same logic, fewer tokens
 SYSTEM_PROMPT = """Classify Telegram messages for tech job board. JSON only, no markdown.
 
 CATEGORIES:
@@ -53,17 +53,19 @@ other:
 
 
 # ── PRE-FILTER ────────────────────────────────────────────────────────────────
-# Only block obvious spam — let Ollama handle all other classification
-
 _SPAM_PATTERN = re.compile(
     r"airdrop|casino|gambling|betting|forex|trading.signal|dropshipping|\bmlm\b|"
     r"赌博|博彩|外汇|微商",
     re.IGNORECASE,
 )
 
+# 50 char threshold is too aggressive — could filter short job messages
+# Focus on spam pattern matching and relax length filter
+_MIN_LENGTH = 20
+
 def should_analyze_message(text: str) -> bool:
-    """Return False for obvious spam and very short messages. Job posts are typically longer."""
-    if not text or len(text.strip()) < 50:
+    """Return False for spam or very short messages."""
+    if not text or len(text.strip()) < _MIN_LENGTH:
         return False
     if _SPAM_PATTERN.search(text):
         return False
@@ -74,32 +76,80 @@ def should_analyze_message(text: str) -> bool:
 
 RECOMMENDED_MODEL = "qwen2.5:14b"
 
+# Single source of truth for config: config → constant → default fallback
+_DEFAULT_MODEL = OLLAMA_MODEL or RECOMMENDED_MODEL
+
 
 class AsyncOllamaAnalyzer:
-    def __init__(self, base_url: str = None, model_name: str = None, max_concurrent: int = 1):
+    def __init__(
+        self,
+        base_url: str = None,
+        model_name: str = None,
+        max_concurrent: int = 1,
+    ):
         self.client = AsyncClient(host=base_url or OLLAMA_BASE_URL)
-        self.model_name = model_name or OLLAMA_MODEL or RECOMMENDED_MODEL
+        self.model_name = model_name or _DEFAULT_MODEL
         self.semaphore = asyncio.Semaphore(max_concurrent)
+        # Track pending jobs directly (avoid using private _value attribute)
+        self._pending: int = 0
+
+    def _get_model_options(self, message_length: int) -> dict:
+        """Calculate num_ctx and num_predict dynamically based on message length + system prompt."""
+        # System prompt adds to context window
+        system_prompt_length = len(SYSTEM_PROMPT)
+        total_input_length = message_length + system_prompt_length
+
+        if total_input_length < 512:
+            num_ctx, num_predict = 1024, 512
+        elif total_input_length < 1024:
+            num_ctx, num_predict = 2048, 1024
+        elif total_input_length < 2048:
+            num_ctx, num_predict = 4096, 2048
+        else:
+            num_ctx, num_predict = 8192, 4096
+
+        logger.info(
+            "[OLLAMA] Message: %d chars | System prompt: %d chars | Total: %d chars | num_ctx: %d | num_predict: %d",
+            message_length, system_prompt_length, total_input_length, num_ctx, num_predict,
+        )
+
+        return {
+            "temperature": 0.0,
+            "num_predict": num_predict,
+            "num_ctx": num_ctx,
+            "keep_alive": -1,
+        }
 
     async def analyze_message(self, message_text: str) -> dict[str, Any]:
-        import time
         if not should_analyze_message(message_text):
             return {
                 "category": "other",
                 "usage": {"input_tokens": 0, "output_tokens": 0, "total_tokens": 0},
             }
 
-        # Trim to 2000 chars, collapse whitespace
+        # Normalize whitespace and limit to 2000 chars
         clean_text = " ".join(message_text.split())[:2000]
         msg_preview = clean_text[:50]
 
-        # Track semaphore wait time
-        wait_start = time.time()
-        logger.info(f"[OLLAMA] Waiting for semaphore | Message length: {len(message_text)} chars | Semaphore: {self.semaphore._value if hasattr(self.semaphore, '_value') else 'N/A'}")
-        
+        # Compute options before acquiring semaphore (pure computation)
+        options = self._get_model_options(len(clean_text))
+
+        self._pending += 1
+        wait_start = time.monotonic()
+        logger.info(
+            "[OLLAMA] Waiting for semaphore | pending: %d | msg: %.50s...",
+            self._pending, clean_text,
+        )
+
         async with self.semaphore:
-            wait_elapsed = time.time() - wait_start
-            logger.info(f"[OLLAMA] Acquired semaphore | Msg: {msg_preview}... | Wait time: {wait_elapsed:.1f}s")
+            self._pending -= 1
+            wait_elapsed = time.monotonic() - wait_start
+            process_start = time.monotonic()
+            logger.info(
+                "[OLLAMA] Semaphore acquired | wait: %.1fs | msg: %.50s...",
+                wait_elapsed, clean_text,
+            )
+
             try:
                 response = await asyncio.wait_for(
                     self.client.generate(
@@ -107,15 +157,9 @@ class AsyncOllamaAnalyzer:
                         system=SYSTEM_PROMPT,
                         prompt=clean_text,
                         format="json",
-                        options={
-                            "temperature": 0.0,
-                            "num_predict": 2048,   # 800 max observed + 25% margin
-                            "num_ctx": 2048,
-                            "num_gpu": 99,         # 14B fits fully in 6GB VRAM
-                            "keep_alive": -1,      # keep model loaded
-                        },
+                        options=options,
                     ),
-                    timeout=300.0,  # 14b @ ~10 tok/s: 2048 tokens ≈ 204s + margin
+                    timeout=300.0,
                 )
 
                 response_text = response["response"]
@@ -132,29 +176,49 @@ class AsyncOllamaAnalyzer:
                     "total_duration": response.get("total_duration", 0),
                 }
 
-                # Warn if output was truncated
                 if usage["output_tokens"] >= 1024:
                     logger.warning(
-                        f"[Ollama] Output may be truncated: {usage['output_tokens']} tokens"
+                        "[OLLAMA] Output may be truncated: %d tokens",
+                        usage["output_tokens"],
                     )
 
                 result = self._parse_json(response_text)
                 result["usage"] = usage
-                total_elapsed = time.time() - wait_start
-                logger.info(f"[OLLAMA] Success | Msg: {msg_preview}... | Category: {result.get('category', 'unknown')} | Total time: {total_elapsed:.1f}s | Input tokens: {usage['input_tokens']} | Output tokens: {usage['output_tokens']} | Total tokens: {usage['total_tokens']}")
+
+                process_elapsed = time.monotonic() - process_start
+                logger.info(
+                    "[OLLAMA] Success | msg: %.50s... | category: %s | wait: %.1fs | process: %.1fs | tokens in/out: %d/%d",
+                    clean_text,
+                    result.get("category", "unknown"),
+                    wait_elapsed,
+                    process_elapsed,
+                    usage["input_tokens"],
+                    usage["output_tokens"],
+                )
                 return result
 
             except asyncio.TimeoutError:
-                elapsed = time.time() - wait_start
-                logger.error(f"[OLLAMA] TIMEOUT | Msg: {msg_preview}... | Total time: {elapsed:.1f}s")
-                raise ValueError("Ollama request timed out after 240s")
+                elapsed = time.monotonic() - process_start
+                logger.error(
+                    "[OLLAMA] TIMEOUT | msg: %.50s... | process time: %.1fs",
+                    msg_preview, elapsed,
+                )
+                raise ValueError("Ollama request timed out after 300s")
+
             except json.JSONDecodeError as e:
-                elapsed = time.time() - wait_start
-                logger.error(f"[OLLAMA] JSON ERROR | Msg: {msg_preview}... | Time: {elapsed:.1f}s | Error: {e}")
+                elapsed = time.monotonic() - process_start
+                logger.error(
+                    "[OLLAMA] JSON ERROR | msg: %.50s... | time: %.1fs | error: %s",
+                    msg_preview, elapsed, e,
+                )
                 raise ValueError(f"JSON parse failed: {e}")
+
             except Exception as e:
-                elapsed = time.time() - wait_start
-                logger.error(f"[OLLAMA] ERROR | Msg: {msg_preview}... | Time: {elapsed:.1f}s | Error: {e}")
+                elapsed = time.monotonic() - process_start
+                logger.error(
+                    "[OLLAMA] ERROR | msg: %.50s... | time: %.1fs | error: %s",
+                    msg_preview, elapsed, e,
+                )
                 raise
 
     @staticmethod
@@ -165,7 +229,6 @@ class AsyncOllamaAnalyzer:
         except json.JSONDecodeError:
             pass
 
-        # Strip ```json ... ``` or ``` ... ```
         for pattern in (r"```json\s*(.*?)```", r"```\s*(.*?)```"):
             match = re.search(pattern, text, re.DOTALL)
             if match:
@@ -174,13 +237,9 @@ class AsyncOllamaAnalyzer:
         raise json.JSONDecodeError("No valid JSON found", text, 0)
 
 
-# ── SINGLETON ─────────────────────────────────────────────────────────────────
-
-_analyzer_instance: AsyncOllamaAnalyzer = None
+analyzer = AsyncOllamaAnalyzer()
 
 
 def get_analyzer() -> AsyncOllamaAnalyzer:
-    global _analyzer_instance
-    if _analyzer_instance is None:
-        _analyzer_instance = AsyncOllamaAnalyzer()
-    return _analyzer_instance
+    """Kept for backward compatibility."""
+    return analyzer

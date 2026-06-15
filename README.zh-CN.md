@@ -25,6 +25,7 @@ Agentic Job Scraper 是一个自动化系统，从 Telegram 频道和 RSS 订阅
 
 ### 核心功能
 - **📡 Telegram 集成** — 监控多个 Telegram 频道的职位发布，支持多账号
+- **📡 实时监听器** — 从仪表板启动/停止实时消息监听器，即时捕获职位发布
 - **🌐 RSS 订阅源支持** — 从 RSS 订阅源获取和分析职位信息（V2EX、电鸭社区等）
 - **🤖 AI 驱动分析** — 使用 Ollama (qwen2.5:14b 或 qwen2.5:7b) 提取结构化职位/开发者数据
 - **📊 实时进度** — 基于 WebSocket 的进度跟踪，每条消息状态更新
@@ -624,6 +625,10 @@ npm run dev
 - `POST /api/fetch/{channel_id}` — 从频道获取消息
 - `POST /api/analyze/{channel_id}` — 分析频道中的消息
 - `POST /api/stop-analyze?channel_id={id}` — 停止频道的正在进行的分析
+- `POST /api/listener/start` — 启动实时 Telegram 消息监听器
+- `POST /api/listener/stop` — 停止实时 Telegram 消息监听器
+- `POST /api/listener/add-channels` — 向运行中的监听器添加频道
+- `POST /api/listener/remove-channels` — 从运行中的监听器移除频道
 - `POST /api/cron/start` — 启动持续扫描器
 - `POST /api/cron/stop` — 停止持续扫描器
 - `POST /api/cleanup/old-messages?days={n}` — 删除 N 天前的消息
@@ -718,11 +723,15 @@ OLLAMA_MODEL=qwen2.5:14b
 ```
 
 **高级选项**（在 `ollama_service.py` 中）:
-- `num_predict` — 最大生成 token 数（默认：2048）
-- `num_ctx` — 上下文窗口大小（默认：2048）
+- `num_predict` — 最大生成 token 数（根据消息长度 + 系统提示词动态调整）
+- `num_ctx` — 上下文窗口大小（根据消息长度 + 系统提示词动态调整）
 - `num_gpu` — GPU 层数卸载（默认：99，完全 GPU 卸载）
 - `keep_alive` — 将模型保留在内存中（默认：-1，无限期）
 - `timeout` — 请求超时（默认：180s）
+
+**动态上下文调整:**
+- 根据消息长度加上系统提示词长度自动计算 `num_ctx` 和 `num_predict`
+- 四个层级：<512 字符 (1024/512)，<1024 字符 (2048/1024)，<2048 字符 (4096/2048)，≥2048 字符 (8192/4096)
 
 **RSS 提取器选项**（在 `rss_extractor.py` 中）:
 - `MAX_CHARS` — 内容分块大小（默认：3000，约 1000-1500 token）
@@ -806,6 +815,7 @@ for f in *.sql; do psql -U your_username -d job_scraper -f "$f"; done
 - 验证频道用户名是否正确（不带 @ 符号）
 - 检查后端日志中的具体错误消息
 - 确保所选 Telegram 账号有权访问该频道
+- **没有公开用户名的频道：** 监听器现在支持没有公开用户名的频道，通过使用其内部 Telegram ID。当收到消息时，这些频道将自动在数据库中创建。
 
 ### 前端 API 连接问题
 - 检查后端是否在预期端口上运行（默认：8000）

@@ -25,6 +25,7 @@ Agentic Job Scraper is an automated system that fetches software development job
 
 ### Core Functionality
 - **📡 Telegram Integration** — Monitor multiple Telegram channels for job postings with multi-account support
+- **📡 Real-time Listener** — Start/stop real-time message listener from dashboard for instant job posting capture
 - **🌐 RSS Feed Support** — Fetch and analyze job postings from RSS feeds (V2EX, 电鸭社区, etc.)
 - **🤖 AI-Powered Analysis** — Uses Ollama (qwen2.5:14b or qwen2.5:7b) to extract structured job/developer data
 - **📊 Real-time Progress** — WebSocket-based progress tracking with per-message status updates
@@ -624,6 +625,10 @@ npm run dev
 - `POST /api/fetch/{channel_id}` — Fetch messages from a channel
 - `POST /api/analyze/{channel_id}` — Analyze messages in a channel
 - `POST /api/stop-analyze?channel_id={id}` — Stop ongoing analysis for a channel
+- `POST /api/listener/start` — Start real-time Telegram message listener
+- `POST /api/listener/stop` — Stop real-time Telegram message listener
+- `POST /api/listener/add-channels` — Add channels to running listener
+- `POST /api/listener/remove-channels` — Remove channels from running listener
 - `POST /api/cron/start` — Start continuous scanner
 - `POST /api/cron/stop` — Stop continuous scanner
 - `POST /api/cleanup/old-messages?days={n}` — Delete messages older than N days
@@ -718,11 +723,15 @@ OLLAMA_MODEL=qwen2.5:14b
 ```
 
 **Advanced Options** (in `ollama_service.py`):
-- `num_predict` — Maximum tokens to generate (default: 2048)
-- `num_ctx` — Context window size (default: 2048)
+- `num_predict` — Maximum tokens to generate (dynamically adjusted based on message length + system prompt)
+- `num_ctx` — Context window size (dynamically adjusted based on message length + system prompt)
 - `num_gpu` — GPU layers to offload (default: 99, full GPU offload)
 - `keep_alive` — Keep model in memory (default: -1, indefinitely)
 - `timeout` — Request timeout (default: 180s)
+
+**Dynamic Context Sizing:**
+- Automatically calculates `num_ctx` and `num_predict` based on message length plus system prompt length
+- Four tiers: <512 chars (1024/512), <1024 chars (2048/1024), <2048 chars (4096/2048), ≥2048 chars (8192/4096)
 
 **RSS Extractor Options** (in `rss_extractor.py`):
 - `MAX_CHARS` — Chunk size for content (default: 3000, ~1000-1500 tokens)
@@ -806,6 +815,7 @@ Available migrations:
 - Verify channel username is correct (without @ symbol)
 - Check backend logs for specific error messages
 - Ensure selected Telegram account has access to the channel
+- **Channels without public username:** The listener now supports channels without public usernames by using their internal Telegram ID. These channels will be auto-created in the database when messages are received.
 
 ### Frontend API Connection Issues
 - Check backend is running on expected port (default: 8000)

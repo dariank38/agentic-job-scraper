@@ -43,7 +43,8 @@ class Channel(Base):
     __tablename__ = "channels"
 
     id = Column(Integer, primary_key=True)
-    username = Column(String, unique=True, nullable=False, index=True)
+    username = Column(String, unique=True, nullable=True, index=True)  # Nullable for channels without public username
+    telegram_id = Column(BigInteger, unique=True, nullable=True, index=True)  # Telegram channel ID (internal)
     name = Column(String, nullable=True)
     description = Column(Text, nullable=True)
     telegram_account_id = Column(Integer, ForeignKey("telegram_accounts.id"), nullable=True)
