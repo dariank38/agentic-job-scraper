@@ -267,6 +267,52 @@ const Dashboard = () => {
     }
   };
 
+  const startListener = async () => {
+    try {
+      // Get channels with is_listened = 1
+      const listenedChannelsList = channels.filter(c => c.is_listened === 1 || c.is_listened === true);
+      if (listenedChannelsList.length === 0) {
+        showToast('error', t('dashboard.noChannelsToListen'));
+        setListenerDialogOpen(true);
+        return;
+      }
+
+      // Group channels by telegram_account_id
+      const channelsByAccount: Record<number, string[]> = {};
+      listenedChannelsList.forEach(channel => {
+        if (channel.telegram_account_id) {
+          if (!channelsByAccount[channel.telegram_account_id]) {
+            channelsByAccount[channel.telegram_account_id] = [];
+          }
+          channelsByAccount[channel.telegram_account_id].push(channel.username);
+        }
+      });
+
+      // Start listener for each account
+      let successCount = 0;
+      for (const [accountId, usernames] of Object.entries(channelsByAccount)) {
+        try {
+          const data = await api.startListener(usernames, false, parseInt(accountId));
+          if (data.success) {
+            successCount++;
+          }
+        } catch (e) {
+          // Continue with other accounts
+        }
+      }
+
+      if (successCount > 0) {
+        showToast('success', t('dashboard.listenerStarted'));
+        setListenerRunning(true);
+        await checkListenerStatus();
+      } else {
+        showToast('error', t('dashboard.failedToStartListener'));
+      }
+    } catch (e: any) {
+      showToast('error', `${t('dashboard.failedToStartListener')}: ${e.message}`);
+    }
+  };
+
   // Simple toggle listener for a single channel - uses channel's assigned account automatically
   const toggleChannelListener = async (channel: Channel) => {
     const actionKey = `listener-toggle-${channel.id}`;
@@ -573,7 +619,7 @@ const Dashboard = () => {
                   >
                     {t('dashboard.manage')}
                   </Button>
-                  {listenerRunning && (
+                  {listenerRunning ? (
                     <Button
                       variant="destructive"
                       onClick={() => stopListener()}
@@ -581,6 +627,15 @@ const Dashboard = () => {
                       className="h-7 px-2"
                     >
                       <Square size={10} />
+                    </Button>
+                  ) : (
+                    <Button
+                      variant="default"
+                      onClick={() => startListener()}
+                      size="sm"
+                      className="h-7 px-2"
+                    >
+                      <Play size={10} />
                     </Button>
                   )}
                 </div>
@@ -925,32 +980,30 @@ const Dashboard = () => {
         open={listenerDialogOpen}
         onOpenChange={setListenerDialogOpen}
       >
-        <DialogContent className="max-w-lg w-full sm:max-w-lg">
+        <DialogContent>
           <DialogHeader>
             <DialogTitle>{t('dashboard.manageListenerChannels')}</DialogTitle>
             <DialogDescription>
               {channels.filter(c => listenedChannels.includes(c.username)).length} of {channels.length} {t('dashboard.channels')} {t('dashboard.listening')}
             </DialogDescription>
           </DialogHeader>
-          <div className="py-4">
-            <div className="space-y-2 max-h-[60vh] sm:max-h-80 overflow-y-auto">
-              {channels.length === 0 ? (
-                <p className="text-sm text-muted-foreground text-center py-4">{t('dashboard.noChannels')}</p>
-              ) : (
-                channels.map((channel) => {
-                  const isListening = listenedChannels.includes(channel.username);
-                  const actionKey = `listener-toggle-${channel.id}`;
-                  return (
-                    <div
-                      key={channel.id}
-                      className={`flex items-center justify-between p-3 rounded ${
-                        channel.is_active ? 'bg-muted' : 'bg-gray-100 opacity-60'
-                      }`}
-                    >
-                      <div className="flex-1 min-w-0 mr-3">
-                        <div className="font-medium text-sm">{channel.username}</div>
+          <div className="max-h-[60vh] overflow-y-auto border border-gray-200 p-2">
+            {channels.length === 0 ? (
+              <p className="text-sm text-muted-foreground text-center py-4">{t('dashboard.noChannels')}</p>
+            ) : (
+              channels.map((channel) => {
+                const isListening = listenedChannels.includes(channel.username);
+                const actionKey = `listener-toggle-${channel.id}`;
+                return (
+                  <div
+                    key={channel.id}
+                    className="p-2 border-b border-gray-100"
+                  >
+                    <div className="flex justify-between items-center">
+                      <div>
+                        <p className="font-medium text-sm">{channel.username}</p>
                         {channel.name && (
-                          <div className="text-xs text-muted-foreground truncate">{channel.name}</div>
+                          <p className="text-xs text-muted-foreground">{channel.name}</p>
                         )}
                         <div className="flex items-center gap-2 mt-0.5">
                           {!channel.is_active && (
@@ -966,7 +1019,6 @@ const Dashboard = () => {
                         size="sm"
                         onClick={() => toggleChannelListener(channel)}
                         disabled={loadingActions.has(actionKey)}
-                        className="h-8 sm:h-7 px-3 sm:px-3 text-xs shrink-0"
                       >
                         {loadingActions.has(actionKey)
                           ? '...'
@@ -975,10 +1027,10 @@ const Dashboard = () => {
                             : t('common.listen')}
                       </Button>
                     </div>
-                  );
-                })
-              )}
-            </div>
+                  </div>
+                );
+              })
+            )}
           </div>
           <DialogFooter className="flex-col sm:flex-row gap-2">
             <Button variant="outline" onClick={() => setListenerDialogOpen(false)} className="w-full sm:w-auto">

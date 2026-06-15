@@ -1648,19 +1648,35 @@ async def start_telegram_listener(
         async def on_new_message(event, message_data):
             try:
                 async with AsyncSessionLocal() as db:
-                    # Find channel by username
-                    channel_username = message_data.get('channel_username', '').lstrip('@')
-                    channel_result = await db.execute(
-                        select(Channel).filter(Channel.username == channel_username)
-                    )
-                    channel = channel_result.scalar_one_or_none()
+                    # Find channel by username or telegram_id
+                    channel_username = (message_data.get('channel_username') or '').lstrip('@')
+                    channel_id = message_data.get('channel_id')
+
+                    channel = None
+
+                    # Try to find by username first
+                    if channel_username:
+                        channel_result = await db.execute(
+                            select(Channel).filter(Channel.username == channel_username)
+                        )
+                        channel = channel_result.scalar_one_or_none()
+
+                    # If not found by username, try by telegram_id
+                    if not channel and channel_id:
+                        channel_result = await db.execute(
+                            select(Channel).filter(Channel.telegram_id == channel_id)
+                        )
+                        channel = channel_result.scalar_one_or_none()
 
                     # If channel not found, try to create it from message data
                     if not channel:
-                        logger.info(f"Channel not found in database, creating: {channel_username}")
+                        # Use telegram_id as identifier if username is not available
+                        identifier = channel_username or f"telegram_id:{channel_id}"
+                        logger.info(f"Channel not found in database, creating: {identifier}")
                         channel = Channel(
-                            username=channel_username,
-                            name=message_data.get('channel_name', channel_username),
+                            username=channel_username if channel_username else None,
+                            telegram_id=channel_id,
+                            name=message_data.get('channel_name', identifier),
                             telegram_account_id=telegram_account_id,
                             is_active=1,
                             is_listened=1
@@ -1668,7 +1684,7 @@ async def start_telegram_listener(
                         db.add(channel)
                         await db.commit()
                         await db.refresh(channel)
-                        logger.info(f"Created channel in database: {channel_username}")
+                        logger.info(f"Created channel in database: {identifier}")
                     
                     # Check for duplicate message by text content
                     existing_result = await db.execute(
@@ -1682,11 +1698,16 @@ async def start_telegram_listener(
                         return
                     
                     # Save message to database
+                    # Convert timezone-aware datetime to timezone-naive for database
+                    message_date = message_data['date']
+                    if message_date and message_date.tzinfo is not None:
+                        message_date = message_date.replace(tzinfo=None)
+
                     message = Message(
                         channel_id=channel.id,
-                        telegram_message_id=message_data['id'],
+                        telegram_id=message_data['id'],
                         text=message_data['text'],
-                        date=message_data['date'],
+                        date=message_date,
                         sender_id=message_data['sender_id'],
                         sender_username=message_data['sender_username'],
                         sender_first_name=message_data['sender_first_name'],
@@ -1775,18 +1796,7 @@ async def stop_telegram_listener(telegram_account_id: Optional[int] = None) -> d
                 except asyncio.CancelledError:
                     pass
                 del telegram_listener_tasks[telegram_account_id]
-            
-            # Clear is_listened flag on channels for this account
-            async with AsyncSessionLocal() as db:
-                channels_result = await db.execute(
-                    select(Channel).filter(Channel.telegram_account_id == telegram_account_id)
-                )
-                channels = channels_result.scalars().all()
-                for channel in channels:
-                    channel.is_listened = 0
-                    channel.telegram_account_id = None
-                await db.commit()
-            
+
             return {"success": True, "account_id": telegram_account_id}
             
         except Exception as e:
@@ -1939,12 +1949,11 @@ async def remove_listener_channels(
                     channel = channel_result.scalar_one_or_none()
                 if channel:
                     channel.is_listened = 0
-                    channel.telegram_account_id = None
                     updated_channels.append({
                         "id": channel.id,
                         "username": channel.username,
                         "is_listened": 0,
-                        "telegram_account_id": None
+                        "telegram_account_id": channel.telegram_account_id
                     })
             await db.commit()
 
@@ -2004,6 +2013,28 @@ async def restore_listeners_from_db():
     """Restore listeners for all channels with is_listened=true on startup."""
     try:
         async with AsyncSessionLocal() as db:
+            # First, check and update authentication status for all accounts
+            accounts_result = await db.execute(select(TelegramAccount))
+            accounts = accounts_result.scalars().all()
+            for account in accounts:
+                if not account.is_authenticated:
+                    # Try to connect to check if session is valid
+                    try:
+                        manager = TelegramClientManager(
+                            api_id=account.api_id,
+                            api_hash=account.api_hash,
+                            phone_number=account.phone_number,
+                            session_name=account.session_name
+                        )
+                        await manager.connect()
+                        # If connection succeeds, session is valid
+                        account.is_authenticated = True
+                        logger.info(f"Account {account.phone_number} session is valid, updated is_authenticated to True")
+                        await manager.disconnect()
+                    except Exception as e:
+                        logger.debug(f"Account {account.phone_number} session not valid: {e}")
+            await db.commit()
+
             # Get all channels with is_listened=true (INTEGER column)
             channels_result = await db.execute(
                 select(Channel).filter(Channel.is_listened == 1)
@@ -2034,16 +2065,7 @@ async def restore_listeners_from_db():
                     )
                     account = account_result.scalar_one_or_none()
                     if not account or not account.is_authenticated:
-                        logger.warning(f"Account {account_id} not found or not authenticated, skipping listener restore")
-                        # Clear is_listened flag for these channels
-                        for username in usernames:
-                            channel_result = await db.execute(
-                                select(Channel).filter(Channel.username == username.lstrip('@'))
-                            )
-                            channel = channel_result.scalar_one_or_none()
-                            if channel:
-                                channel.is_listened = 0
-                        await db.commit()
+                        logger.warning(f"Account {account_id} not found or not authenticated, skipping listener restore but keeping is_listened flag")
                         continue
 
                     # Start listener for this account
@@ -2051,16 +2073,7 @@ async def restore_listeners_from_db():
                     if result.get("success"):
                         logger.info(f"Restored listener for account {account.phone_number} with {len(usernames)} channels")
                     else:
-                        logger.error(f"Failed to restore listener for account {account_id}: {result.get('error')}")
-                        # Clear is_listened flag on failure
-                        for username in usernames:
-                            channel_result = await db.execute(
-                                select(Channel).filter(Channel.username == username.lstrip('@'))
-                            )
-                            channel = channel_result.scalar_one_or_none()
-                            if channel:
-                                channel.is_listened = 0
-                        await db.commit()
+                        logger.error(f"Failed to restore listener for account {account_id}: {result.get('error')} - keeping is_listened flag")
 
                 except Exception as e:
                     logger.error(f"Error restoring listener for account {account_id}: {e}", exc_info=True)
