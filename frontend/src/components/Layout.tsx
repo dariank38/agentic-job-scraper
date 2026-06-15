@@ -394,6 +394,25 @@ const WebSocketProgressProvider = ({ children }: { children: React.ReactNode }) 
               setListenerStatus({ running: data.running || false, account_id: data.account_id });
             } else if (data.type === 'channel_update') {
               setChannelUpdates(data.channels || []);
+            } else if (data.type === 'bulk_fetch_start') {
+              // Handle bulk fetch start
+              setBulkOperations(prev => [
+                ...prev,
+                { id: String(data.operation_id), operation_type: 'fetch-all', status: 'running', channels: [] }
+              ]);
+            } else if (data.type === 'bulk_fetch_progress') {
+              // Handle bulk fetch progress
+              setBulkOperations(prev => prev.map(op => 
+                op.id === String(data.operation_id) 
+                  ? { ...op, status: 'running' }
+                  : op
+              ));
+            } else if (data.type === 'bulk_fetch_complete' || data.type === 'bulk_fetch_stopped') {
+              // Handle bulk fetch completion or stop
+              setBulkOperations(prev => prev.filter(op => op.id !== String(data.operation_id)));
+              if (data.type === 'bulk_fetch_complete') {
+                showNotification('Bulk Fetch Complete', `Fetched ${data.total_new_messages} new messages`);
+              }
             }
           } catch (e) {
             // Silently ignore parse errors

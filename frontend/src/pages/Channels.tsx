@@ -223,11 +223,8 @@ const Channels = () => {
       await withLoading(`add-${username}`, () => api.addChannel(data));
       showToast('success', t('channels.addedSuccessfully'));
       setAddedUsernames(prev => new Set(prev).add(username));
-      setTimeout(() => {
-        loadChannels();
-        // Filter dialogs locally to remove the added channel from the list
-        filterDialogsLocally();
-      }, 100);
+      loadChannels();
+      filterDialogsLocally();
     } catch (e: any) {
       let errorMessage = `${t('common.failedToAdd')} ${t('channels.title')}`;
       if (e.response) {
@@ -255,11 +252,8 @@ const Channels = () => {
       showToast('success', t('channels.addedSuccessfully'));
       setFormData({ username: '', name: '', description: '' });
       setAddedUsernames(prev => new Set(prev).add(formData.username));
-      setTimeout(() => {
-        loadChannels();
-        // Filter dialogs locally to remove the added channel from the list
-        filterDialogsLocally();
-      }, 100);
+      loadChannels();
+      filterDialogsLocally();
     } catch (e: any) {
       let errorMessage = `${t('common.failedToAdd')} ${t('channels.title')}`;
       if (e.response) {
@@ -276,8 +270,8 @@ const Channels = () => {
     try {
       const data = await withLoading(`fetch-${channelId}`, () => api.fetchChannel(channelId, selectedAccountId || undefined));
       if (data.success) {
-        showToast('success', t('dashboard.fetchedMessages', { count: data.new_messages, days: data.days_back_used }));
-        setTimeout(() => loadChannels(), 1500);
+        showToast('success', data.message || t('dashboard.fetchStarted'));
+        // Data will be updated via WebSocket
       } else {
         showToast('error', `${t('common.error')}: ` + (data.error || t('common.unknown')));
       }
@@ -295,14 +289,8 @@ const Channels = () => {
 
       const data = await withLoading(`analyze-${channelId}`, () => api.analyzeChannel(channelId));
       if (data.success) {
-        if (data.message) {
-          showToast('success', data.message);
-        } else if (data.stopped) {
-          showToast('info', t('dashboard.analyzeStopped', { analyzed: data.analyzed, jobs: data.jobs_found, remaining: data.remaining }));
-        } else {
-          showToast('success', t('dashboard.analyzeComplete', { analyzed: data.analyzed, jobs: data.jobs_found, devs: data.developers_found }));
-        }
-        setTimeout(() => loadChannels(), 1500);
+        showToast('success', data.message || t('dashboard.analysisStartedSingle'));
+        // Data will be updated via WebSocket
       } else {
         showToast('error', `${t('common.error')}: ` + (data.error || t('common.unknown')));
       }
@@ -554,41 +542,44 @@ const Channels = () => {
                       )}
                     </div>
                     <div className="flex flex-wrap gap-2 w-full sm:w-auto">
-                      {!(loadingActions.has(`fetch-${channel.id}`) || loadingActions.has(`analyze-${channel.id}`) || !!operations[channel.username]) ? (
-                        <>
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            onClick={() => fetchChannel(channel.id)}
-                            disabled={loadingActions.has(`fetch-${channel.id}`)}
-                            className="flex-1 sm:flex-none"
-                          >
+                      <Button
+                        size="sm"
+                        variant={operations[channel.username]?.type === 'fetch' ? 'destructive' : 'outline'}
+                        onClick={() => operations[channel.username]?.type === 'fetch' ? stopAnalyzeChannel(channel.id, channel.username) : fetchChannel(channel.id)}
+                        disabled={loadingActions.has(`fetch-${channel.id}`) || operations[channel.username]?.type === 'fetch' && stoppingChannels[channel.id]}
+                        className="flex-1 sm:flex-none"
+                      >
+                        {operations[channel.username]?.type === 'fetch' ? (
+                          <>
+                            <Square size={12} className="mr-1" />
+                            {stoppingChannels[channel.id] ? t('channels.stopping') : t('dashboard.fetching')}
+                          </>
+                        ) : (
+                          <>
                             <RefreshCw size={12} className="mr-1" />
                             {loadingActions.has(`fetch-${channel.id}`) ? t('dashboard.fetching') : t('channels.fetch')}
-                          </Button>
-                          <Button
-                            size="sm"
-                            onClick={() => analyzeChannel(channel.id)}
-                            disabled={loadingActions.has(`analyze-${channel.id}`)}
-                            className="flex-1 sm:flex-none"
-                          >
+                          </>
+                        )}
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant={operations[channel.username]?.type === 'analyze' ? 'destructive' : 'default'}
+                        onClick={() => operations[channel.username]?.type === 'analyze' ? stopAnalyzeChannel(channel.id, channel.username) : analyzeChannel(channel.id)}
+                        disabled={loadingActions.has(`analyze-${channel.id}`) || operations[channel.username]?.type === 'analyze' && stoppingChannels[channel.id]}
+                        className="flex-1 sm:flex-none"
+                      >
+                        {operations[channel.username]?.type === 'analyze' ? (
+                          <>
+                            <Square size={12} className="mr-1" />
+                            {stoppingChannels[channel.id] ? t('channels.stopping') : t('dashboard.analyzing')}
+                          </>
+                        ) : (
+                          <>
                             <Bot size={12} className="mr-1" />
                             {loadingActions.has(`analyze-${channel.id}`) ? t('dashboard.analyzing') : t('channels.analyze')}
-                          </Button>
-                        </>
-                      ) : (
-                        <Button
-                          size="sm"
-                          variant="destructive"
-                          onClick={() => stopAnalyzeChannel(channel.id, channel.username)}
-                          title={t('channels.stopAnalysis')}
-                          disabled={stoppingChannels[channel.id] || stoppingChannels[channel.username]}
-                          className="flex-1 sm:flex-none"
-                        >
-                          <Square size={12} className="mr-1" />
-                          {stoppingChannels[channel.id] || stoppingChannels[channel.username] ? t('channels.stopping') : t('common.stop')}
-                        </Button>
-                      )}
+                          </>
+                        )}
+                      </Button>
                       <Button
                         variant="outline"
                         onClick={() => toggleChannel(channel.id)}

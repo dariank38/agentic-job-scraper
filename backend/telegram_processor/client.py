@@ -67,7 +67,21 @@ class TelegramClientManager:
             self.api_hash,
         )
 
-        await self._client.connect()
+        # Retry logic for SQLite database lock errors
+        max_retries = 3
+        base_delay = 1.0
+        for attempt in range(max_retries):
+            try:
+                await self._client.connect()
+                break
+            except Exception as e:
+                error_str = str(e).lower()
+                if 'database is locked' in error_str or 'database is locked' in str(e):
+                    if attempt < max_retries - 1:
+                        delay = base_delay * (2 ** attempt)
+                        await asyncio.sleep(delay)
+                        continue
+                raise
 
         if auto_start:
             # BUG FIX: Check if session is already authorized before attempting to start

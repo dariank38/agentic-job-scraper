@@ -5,6 +5,7 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { DailyJobsChart } from '@/components/DailyJobsChart';
 import { DailyDevelopersChart } from '@/components/DailyDevelopersChart';
 import { DailyJobsAppliedChart } from '@/components/DailyJobsAppliedChart';
@@ -42,13 +43,18 @@ const Dashboard = () => {
   const [cronRunning, setCronRunning] = useState(false);
   const [cleanupDialogOpen, setCleanupDialogOpen] = useState(false);
   const [cleanupDays, setCleanupDays] = useState(30);
-  const [bulkOperation, setBulkOperation] = useState<{ id: string; type: 'analyze-all' | 'fetch-analyze-all' } | null>(null);
+  const [bulkOperation, setBulkOperation] = useState<{ id: string; type: 'analyze-all' | 'fetch-all' | 'fetch-analyze-all' } | null>(null);
   const [listenerRunning, setListenerRunning] = useState(false);
   const [listenerDialogOpen, setListenerDialogOpen] = useState(false);
   const [listenedChannels, setListenedChannels] = useState<string[]>([]);
   const [recentJobs, setRecentJobs] = useState<Job[]>([]);
   const [recentDevelopers, setRecentDevelopers] = useState<Developer[]>([]);
   const [telegramAccounts, setTelegramAccounts] = useState<TelegramAccount[]>([]);
+  const [dailyStatsTable, setDailyStatsTable] = useState<any[]>([]);
+  const [autoAnalyze, setAutoAnalyze] = useState(() => {
+    const saved = localStorage.getItem('autoAnalyze');
+    return saved ? JSON.parse(saved) : false;
+  });
 
   const { progress: wsProgress, channelProgress, operations, bulkOperations, requestStop, currentAnalyzingMessage, statsUpdate, cronStatus, listenerStatus, channelUpdates } = useWebSocketProgress();
 
@@ -57,6 +63,7 @@ const Dashboard = () => {
       loadData();
       loadRecentJobs();
       loadRecentDevelopers();
+      loadDailyStatsTable();
     }
   }, [wsProgress]);
 
@@ -115,6 +122,11 @@ const Dashboard = () => {
     }
   }, [channelUpdates]);
 
+  // Persist autoAnalyze preference to localStorage
+  useEffect(() => {
+    localStorage.setItem('autoAnalyze', JSON.stringify(autoAnalyze));
+  }, [autoAnalyze]);
+
   // Track which website sources are currently being analyzed via WS (keyed by source name)
   const wsSourceAnalyzing: Record<string, boolean> = {};
   websiteSources.forEach(s => {
@@ -131,11 +143,7 @@ const Dashboard = () => {
   // Clear local bulkOperation when bulkOperations from context is empty
   useEffect(() => {
     if (bulkOperation && bulkOperations.length === 0 && Object.keys(operations).length === 0) {
-      // Wait a moment to ensure operations are truly done, then clear bulk state
-      const timer = setTimeout(() => {
-        setBulkOperation(null);
-      }, 2000);
-      return () => clearTimeout(timer);
+      setBulkOperation(null);
     }
   }, [operations, bulkOperations, bulkOperation]);
 
@@ -165,6 +173,15 @@ const Dashboard = () => {
     }
   };
 
+  const loadDailyStatsTable = async () => {
+    try {
+      const data = await api.getDailyStatsTable(7);
+      setDailyStatsTable(data.data || []);
+    } catch (e: any) {
+      // Silently ignore errors
+    }
+  };
+
   const loadData = async () => {
     try {
       const [statsData, channelsData, sourcesData, accountsData] = await Promise.all([
@@ -177,6 +194,7 @@ const Dashboard = () => {
       setChannels(channelsData.channels);
       setWebsiteSources(sourcesData.sources || []);
       setTelegramAccounts(accountsData);
+      loadDailyStatsTable();
     } catch (error) {
       // Silently ignore errors
     }
@@ -292,7 +310,7 @@ const Dashboard = () => {
       let successCount = 0;
       for (const [accountId, usernames] of Object.entries(channelsByAccount)) {
         try {
-          const data = await api.startListener(usernames, false, parseInt(accountId));
+          const data = await api.startListener(usernames, autoAnalyze, parseInt(accountId));
           if (data.success) {
             successCount++;
           }
@@ -380,8 +398,10 @@ const Dashboard = () => {
     try {
       const data = await withLoading('fetch-all', () => api.fetchAll());
       if (data.success) {
-        const total = data.results.reduce((s: number, r: any) => s + (r.new_messages || 0), 0);
-        showToast('success', t('dashboard.fetchedAllMessages', { count: total }));
+        if (data.operation_id) {
+          setBulkOperation({ id: data.operation_id, type: 'fetch-all' });
+        }
+        showToast('success', t('dashboard.fetchStarted', { count: data.channels }));
       } else {
         showToast('error', `${t('common.error')}: ` + (data.error || t('common.unknown')));
       }
@@ -453,7 +473,7 @@ const Dashboard = () => {
       const data = await withLoading('analyze-all-ws', () => api.analyzeAllWebsiteSources());
       if (data.success) {
         showToast('success', data.message || t('dashboard.analysisStarted', { count: data.sources ?? 0 }));
-        setTimeout(() => loadData(), 2000);
+        // Data will be updated via WebSocket
       } else {
         showToast('error', `${t('common.error')}: ` + (data.error || t('common.unknown')));
       }
@@ -544,7 +564,7 @@ const Dashboard = () => {
                   className="w-full h-7 text-xs"
                 >
                   <Square size={10} className="mr-1" />
-                  {effectiveBulkOperation.type === 'analyze-all' ? t('dashboard.stopAnalyzeAll') : t('dashboard.stopFetchAnalyzeAll')}
+                  {effectiveBulkOperation.type === 'analyze-all' ? t('dashboard.stopAnalyzeAll') : effectiveBulkOperation.type === 'fetch-all' ? t('dashboard.stopFetchAll') : t('dashboard.stopFetchAnalyzeAll')}
                 </Button>
               )}
             </div>
@@ -640,6 +660,18 @@ const Dashboard = () => {
                   )}
                 </div>
               </div>
+              <div className="flex items-center gap-2 px-2">
+                <input
+                  type="checkbox"
+                  id="autoAnalyze"
+                  checked={autoAnalyze}
+                  onChange={(e) => setAutoAnalyze(e.target.checked)}
+                  className="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                />
+                <label htmlFor="autoAnalyze" className="text-xs text-muted-foreground cursor-pointer">
+                  Auto-analyze new messages
+                </label>
+              </div>
             </div>
             <div className="space-y-2">
               <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">{t('dashboard.other')}</p>
@@ -715,6 +747,46 @@ const Dashboard = () => {
             </CardContent>
           </Card>
         </div>
+
+        {/* Daily Stats Table */}
+        <Card className="backdrop-blur-xl bg-white/70 border border-white/20 shadow-lg">
+          <CardHeader className="px-4 py-3">
+            <CardTitle className="text-sm font-medium flex items-center gap-2">
+              <Calendar size={14} className="text-blue-500" />
+              {t('dashboard.dailyStatsTable')}
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="px-4 pb-4 pt-0">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>{t('dashboard.date')}</TableHead>
+                  <TableHead className="text-right">{t('dashboard.jobPostings')}</TableHead>
+                  <TableHead className="text-right">{t('dashboard.developersContacted')}</TableHead>
+                  <TableHead className="text-right">{t('dashboard.jobsApplied')}</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {dailyStatsTable.length === 0 ? (
+                  <TableRow>
+                    <TableCell colSpan={4} className="text-center text-muted-foreground">
+                      {t('common.noData')}
+                    </TableCell>
+                  </TableRow>
+                ) : (
+                  dailyStatsTable.map((row) => (
+                    <TableRow key={row.date}>
+                      <TableCell className="font-medium">{row.date}</TableCell>
+                      <TableCell className="text-right">{row.job_postings}</TableCell>
+                      <TableCell className="text-right">{row.developers_contacted}</TableCell>
+                      <TableCell className="text-right">{row.jobs_applied}</TableCell>
+                    </TableRow>
+                  ))
+                )}
+              </TableBody>
+            </Table>
+          </CardContent>
+        </Card>
 
         {/* Current Analyzing Message */}
         {Object.keys(currentAnalyzingMessage).length > 0 && (
@@ -880,7 +952,7 @@ const Dashboard = () => {
                         {dev.looking_for_work ? t('developers.lookingForWork') : t('developers.notLooking')}
                       </p>
                       {dev.experience && (
-                        <p className="text-sm text-gray-500 truncate">
+                        <p className="text-sm text-gray-500">
                           <Briefcase className="w-3 h-3 inline mr-1" />
                           {dev.experience}
                         </p>
