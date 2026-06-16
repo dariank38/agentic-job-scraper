@@ -11,7 +11,7 @@
 
 **AI-powered job scraping system for Telegram channels and RSS feeds**
 
-[Features](#-features) • [Installation](#-installation) • [Usage](#-usage) • [API](#-api-endpoints) • [Architecture](#-architecture)
+[Features](#-features) • [Screenshots](#-screenshots) • [Architecture](#-architecture) • [Installation](#-installation) • [Usage](#-usage) • [API](#-api-endpoints)
 
 </div>
 
@@ -36,7 +36,7 @@ Agentic Job Scraper is an automated system that fetches software development job
 - **🔍 Smart Search** — Server-side search across jobs (title, company, skills, role) and developers (name, skills, experience)
 - **📈 Analytics Dashboard** — Daily charts for job postings, developers contacted, and jobs applied
 - **🧹 Message Cleanup** — Auto-cleanup messages older than 2 days (preserves applied jobs and contacted developers)
-- **🏷️ Status Tracking** — Mark jobs as applied and developers as contacted with notes
+- **🏷 Status Tracking** — Mark jobs as applied and developers as contacted with notes
 - **👻 Soft-Delete** — Hide jobs/developers instead of deleting to prevent duplicate re-fetching
 - **📋 Copy to Clipboard** — Copy original message content on Messages, Jobs, and Developers pages
 
@@ -44,7 +44,7 @@ Agentic Job Scraper is an automated system that fetches software development job
 - **🎨 Modern UI** — Clean, responsive interface built with React, TypeScript, and shadcn/ui
 - **🌍 Internationalization** — Full UI translation support (English, Chinese)
 - **📱 Responsive Design** — Works seamlessly on desktop and mobile
-- **⚡ Fast Performance** — Batch processing with configurable concurrency
+- **⚡ Fast Performance** — Sequential processing with real-time progress updates
 
 ### Advanced Features
 - **🔐 Multi-Account Auth** — Manage multiple Telegram accounts with interactive authentication
@@ -54,7 +54,7 @@ Agentic Job Scraper is an automated system that fetches software development job
 - **🇨🇳 V2EX-Specific** — Specialized prompt for Chinese tech job posts with translation
 - **💾 Token Monitoring** — Real-time token usage tracking for Ollama API calls
 - **🔄 Cron Auto-Analysis** — Continuous scanner automatically analyzes after fetching (both Telegram and RSS)
-- **⏱️ Robust RSS Fetching** — 30-second timeout and 7-day lookback window for RSS feeds
+- **⏱ Robust RSS Fetching** — 30-second timeout and 7-day lookback window for RSS feeds
 
 ## 🚀 Planned Features
 
@@ -121,7 +121,7 @@ sequenceDiagram
     User->>Frontend: Click Analyze
     Frontend->>Backend: POST /api/analyze or /api/website-sources/{id}/analyze
     Backend->>DB: Get pending messages (ordered by date desc)
-    loop For each message batch (3 messages)
+    loop For each message (sequential)
         Backend->>Ollama: Send message for analysis
         Ollama-->>Backend: Return job/developer data
         Backend->>Frontend: WebSocket progress update
@@ -140,7 +140,7 @@ sequenceDiagram
 
 **Key Flow Details:**
 - **Fetch Phase** — Messages are stored with `analysis_status="pending"`
-- **Analysis Phase** — Messages processed in batches of 3 with concurrent Ollama requests
+- **Analysis Phase** — Messages processed sequentially one at a time
 - **Progress Tracking** — WebSocket sends real-time updates per message
 - **Notifications** — Browser alerts for job/developer discoveries and completion
 - **Data Persistence** — Jobs and developers stored separately from original messages
@@ -158,7 +158,7 @@ graph TB
         E[Search & Filter<br/>Client-side UI]
     end
 
-    subgraph Backend["⚙️ Backend Layer"]
+    subgraph Backend["⚙ Backend Layer"]
         direction TB
         F[FastAPI Server<br/>REST API Endpoints]
         G[WebSocket Server<br/>Progress Broadcasting]
@@ -292,7 +292,7 @@ graph TB
 - **🌍 Remote Work Enthusiasts** — Developers seeking remote opportunities in regions with limited local job markets
 - **🤖 AI/ML Enthusiasts** — Developers interested in practical applications of local LLMs (Ollama) for content analysis
 
-## ⚠️ Project Status
+## ⚠ Project Status
 
 > **Note:** This project is designed for personal use. While fully functional, it may not have all enterprise-grade best practices:
 
@@ -314,7 +314,7 @@ graph TB
 
 Feel free to extend it with additional features and best practices for your use case.
 
-## 🏗️ Architecture
+## 🏗 Architecture
 
 ### Backend Stack
 - **FastAPI** — Async web framework for high-performance API endpoints
@@ -341,7 +341,7 @@ Feel free to extend it with additional features and best practices for your use 
 - **Ollama** — Local LLM with qwen2.5:14b or qwen2.5:7b model
 - **Telegram API credentials** — Optional, can be added via UI
 
-## 🛠️ Installation
+## 🛠 Installation
 
 ### Backend Setup
 
@@ -678,7 +678,7 @@ agentic-job-scraper/
 └── README.md
 ```
 
-## ⚙️ Configuration
+## ⚙ Configuration
 
 ### Telegram Account Management
 
@@ -716,8 +716,7 @@ Get your API credentials from [my.telegram.org/apps](https://my.telegram.org/app
 **Configuration Options:**
 - Remote Ollama instance support
 - GPU acceleration for faster processing
-- Concurrent processing (default: 3 concurrent requests)
-- Batch processing (default: 3 messages per batch)
+- Sequential processing (one message at a time, no semaphore contention)
 - Real-time token usage tracking (input/output/total tokens)
 - Spam pre-filter to skip non-tech messages before Ollama
 - V2EX-specific prompt for Chinese job posts with translation
