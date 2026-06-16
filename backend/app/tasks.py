@@ -782,291 +782,274 @@ async def analyze_messages(
         analyzed_count = 0
         stopped_count = 0
         total_messages = len(messages)
-        batch_size = 5
-        total_batches = (total_messages + batch_size - 1) // batch_size
 
         total_input_tokens = 0
         total_output_tokens = 0
         message_results: list[dict] = []
 
-        # Circuit breaker: stop after too many consecutive batch failures
+        # Circuit breaker: stop after too many consecutive failures
         consecutive_failures = 0
         max_consecutive_failures = MAX_CONSECUTIVE_FAILURES
 
-        for batch_num, batch_start in enumerate(range(0, total_messages, batch_size), 1):
+        for msg_index, msg in enumerate(messages):
             # Check both individual channel stop and bulk operation stop
             if is_analysis_stopped(channel_id):
-                stopped_count = total_messages - batch_start
+                stopped_count = total_messages - msg_index
                 break
             if bulk_operation_id and is_bulk_operation_stopped(bulk_operation_id):
-                stopped_count = total_messages - batch_start
+                stopped_count = total_messages - msg_index
                 break
 
             # Circuit breaker: stop if too many consecutive failures
             if consecutive_failures >= max_consecutive_failures:
-                stopped_count = total_messages - batch_start
+                stopped_count = total_messages - msg_index
                 break
 
-
-            batch = messages[batch_start:batch_start + batch_size]
-
             # Pre-filter: skip spam and empty messages
-            filtered_messages = []
-            for msg in batch:
-                if msg.text and should_analyze_message(msg.text):
-                    filtered_messages.append(msg)
-                else:
-                    # Delete message instead of saving it
-                    await db.delete(msg)
-                    skipped_count += 1
-
-            if not filtered_messages:
-                await broadcast_progress("analyze_progress", {"channel": channel_username, "current": batch_num, "total": total_batches, "operation_id": operation_id})
-                await update_operation(db, operation_id, current=batch_num)
+            if not msg.text or not should_analyze_message(msg.text):
+                await db.delete(msg)
+                skipped_count += 1
                 continue
 
-            tasks = [_analyze_single(analyzer, msg, channel_username) for msg in filtered_messages]
-            completed = await asyncio.gather(*tasks)
+            # Analyze one message at a time (sequential — no semaphore contention)
+            message, result, error = await _analyze_single(analyzer, msg, channel_username)
 
-            for message, result, error in completed:
-                msg_status = "success"
+            msg_status = "success"
 
-                if error:
-                    # Mark message as failed on timeout/errors
-                    message.analysis_status = "failed"
-                    msg_status = "failed"
-                    message_results.append({
-                        "message_id": message.id,
-                        "status": msg_status,
-                        "error": str(error),
-                    })
-                    continue
-
-                if not result or result.get("category") == "other":
-                    # Delete message instead of saving it
-                    await db.delete(message)
-                    skipped_count += 1
-                    msg_status = "other"
-                    message_results.append({
-                        "message_id": message.id,
-                        "status": msg_status,
-                    })
-                    continue
-
-                # Track token usage
-                usage = result.get("usage", {})
-                total_input_tokens += usage.get("input_tokens", 0)
-                total_output_tokens += usage.get("output_tokens", 0)
-
-                category = _to_str(result.get("category"))
-                confidence = _to_str(result.get("confidence"))
-                translated_text = _to_str(result.get("translated_text"))
-
-                if not confidence or not category:
-                    msg_status = "json_cutoff"
-                else:
-                    msg_status = "success"
-
-                # Prepare notification data
-                notification_data = {
+            if error:
+                # Mark message as failed on timeout/errors
+                message.analysis_status = "failed"
+                msg_status = "failed"
+                message_results.append({
                     "message_id": message.id,
                     "status": msg_status,
-                    "category": category,
-                    "confidence": confidence,
-                }
+                    "error": str(error),
+                })
+                continue
 
-                # ── JOB POSTING ───────────────────────────────────────────────
-                if category == "job_posting":
-                    job_data = result.get("job_posting") or {}
+            if not result or result.get("category") == "other":
+                # Delete message instead of saving it
+                await db.delete(message)
+                skipped_count += 1
+                msg_status = "other"
+                message_results.append({
+                    "message_id": message.id,
+                    "status": msg_status,
+                })
+                continue
 
-                    is_remote = _to_bool(job_data.get("is_remote"))
-                    if is_remote is False:
-                        # On-site only — delete message instead of saving it
+            # Track token usage
+            usage = result.get("usage", {})
+            total_input_tokens += usage.get("input_tokens", 0)
+            total_output_tokens += usage.get("output_tokens", 0)
+
+            category = _to_str(result.get("category"))
+            confidence = _to_str(result.get("confidence"))
+            translated_text = _to_str(result.get("translated_text"))
+
+            if not confidence or not category:
+                msg_status = "json_cutoff"
+            else:
+                msg_status = "success"
+
+            # Prepare notification data
+            notification_data = {
+                "message_id": message.id,
+                "status": msg_status,
+                "category": category,
+                "confidence": confidence,
+            }
+
+            # ── JOB POSTING ───────────────────────────────────────────────
+            if category == "job_posting":
+                job_data = result.get("job_posting") or {}
+
+                is_remote = _to_bool(job_data.get("is_remote"))
+                if is_remote is False:
+                    # On-site only — delete message instead of saving it
+                    await db.delete(message)
+                    skipped_count += 1
+                    continue
+
+                # title extraction with multiple fallbacks
+                summary_text = _to_str(job_data.get("summary"))
+                title = _to_str(job_data.get("title"))  # primary: LLM extracted title
+                if not title and summary_text:
+                    # fallback 1: first sentence of summary
+                    title = summary_text.split(".")[0].strip()[:200]
+                if not title and message.text:
+                    # fallback 2: first line of original message (strip HTML)
+                    clean_text = message.text.replace('<br/>', '\n').replace('<br>', '\n').replace('<p>', '\n').replace('</p>', '\n')
+                    first_line = clean_text.split('\n')[0].strip()
+                    # Remove common prefixes like [Job], [Hiring], etc.
+                    title = first_line[:100] if first_line else None
+                if not title:
+                    # final fallback
+                    title = f"[No Title] sender:{message.sender_username or message.sender_id or 'unknown'}"
+                company = _to_str(job_data.get("company"))
+
+                # Add job details to notification
+                notification_data["title"] = title
+                notification_data["company"] = company
+
+                location = _to_str(job_data.get("location"))
+                contact, contact_type = _resolve_contact(job_data.get("contacts"), message)
+
+                if title and company:
+                    # Check for duplicate by title+company, or by company_link if available
+                    company_link = _to_str(job_data.get("company_link"))
+                    if company_link:
+                        existing_job_result = await db.execute(
+                            select(Job).filter(Job.company_link == company_link)
+                        )
+                    else:
+                        existing_job_result = await db.execute(
+                            select(Job).filter(
+                                Job.title == title,
+                                Job.company == company,
+                            )
+                        )
+                    if existing_job_result.first():
+                        # Delete message for duplicate job instead of saving it
                         await db.delete(message)
                         skipped_count += 1
                         continue
 
-                    # title extraction with multiple fallbacks
-                    summary_text = _to_str(job_data.get("summary"))
-                    title = _to_str(job_data.get("title"))  # primary: LLM extracted title
-                    if not title and summary_text:
-                        # fallback 1: first sentence of summary
-                        title = summary_text.split(".")[0].strip()[:200]
-                    if not title and message.text:
-                        # fallback 2: first line of original message (strip HTML)
-                        clean_text = message.text.replace('<br/>', '\n').replace('<br>', '\n').replace('<p>', '\n').replace('</p>', '\n')
-                        first_line = clean_text.split('\n')[0].strip()
-                        # Remove common prefixes like [Job], [Hiring], etc.
-                        title = first_line[:100] if first_line else None
-                    if not title:
-                        # final fallback
-                        title = f"[No Title] sender:{message.sender_username or message.sender_id or 'unknown'}"
-                    company = _to_str(job_data.get("company"))
+                # Fix: role_type might be a list from Ollama, convert to string
+                role_str = _to_str(job_data.get("role_type"))
 
-                    # Add job details to notification
-                    notification_data["title"] = title
-                    notification_data["company"] = company
+                try:
+                    job = Job(
+                        message_id=message.id,
+                        channel_id=channel_id,
+                        channel_name=channel_name,
+                        source_type="telegram",
+                        confidence=confidence,
+                        translated_text=translated_text,
+                        title=title,
+                        company=company,
+                        company_link=_to_str(job_data.get("company_link")),
+                        location=location,
+                        is_remote=is_remote,
+                        role_type=role_str,
+                        skills=job_data.get("skills"),
+                        contact=contact,
+                        contact_type=contact_type,
+                        summary=_to_str(job_data.get("summary")),
+                    )
+                    db.add(job)
+                    await db.flush()
+                    await db.refresh(job)
+                    jobs_added += 1
+                    message.analysis_status = "analyzed"
 
-                    location = _to_str(job_data.get("location"))
-                    contact, contact_type = _resolve_contact(job_data.get("contacts"), message)
+                    # Broadcast new job notification
+                    await broadcast_progress("new_job", {
+                        "job_id": job.id,
+                        "title": job.title,
+                        "company": job.company,
+                        "channel": channel_name,
+                        "is_remote": job.is_remote,
+                        "location": job.location,
+                        "role_type": job.role_type,
+                    })
+                except Exception as e:
+                    skipped_count += 1
+                    message.analysis_status = "pending"
+                    message_results[-1]["status"] = "db_error"
+                    message_results[-1]["error"] = str(e)
 
-                    if title and company:
-                        # Check for duplicate by title+company, or by company_link if available
-                        company_link = _to_str(job_data.get("company_link"))
-                        if company_link:
-                            existing_job_result = await db.execute(
-                                select(Job).filter(Job.company_link == company_link)
-                            )
-                        else:
-                            existing_job_result = await db.execute(
-                                select(Job).filter(
-                                    Job.title == title,
-                                    Job.company == company,
-                                )
-                            )
-                        if existing_job_result.first():
-                            # Delete message for duplicate job instead of saving it
+            # ── PERSONAL INFO ─────────────────────────────────────────────
+            elif category == "personal_info":
+                pi_data = result.get("personal_info") or {}
+
+                name = _to_str(pi_data.get("name"))
+                contact, contact_type = _resolve_contact(pi_data.get("contacts"), message)
+
+                portfolio = _to_str(pi_data.get("portfolio"))
+                github = _to_str(pi_data.get("github"))
+                linkedin = _to_str(pi_data.get("linkedin"))
+
+                if not name:
+                    name = message.sender_username or f"sender:{message.sender_id or 'unknown'}"
+
+                # Add developer name to notification
+                notification_data["name"] = name
+
+                if name:
+                    conditions = [Developer.name == name]
+                    if contact:
+                        conditions.append(Developer.contact == contact)
+                    if github:
+                        conditions.append(Developer.github == github)
+                    if linkedin:
+                        conditions.append(Developer.linkedin == linkedin)
+
+                    if len(conditions) >= 2:
+                        existing_dev_result = await db.execute(
+                            select(Developer).filter(*conditions)
+                        )
+                        if existing_dev_result.first():
+                            # Delete message for duplicate developer instead of saving it
                             await db.delete(message)
                             skipped_count += 1
                             continue
 
-                    # Fix: role_type might be a list from Ollama, convert to string
-                    role_str = _to_str(job_data.get("role_type"))
-
-                    try:
-                        job = Job(
-                            message_id=message.id,
-                            channel_id=channel_id,
-                            channel_name=channel_name,
-                            source_type="telegram",
-                            confidence=confidence,
-                            translated_text=translated_text,
-                            title=title,
-                            company=company,
-                            company_link=_to_str(job_data.get("company_link")),
-                            location=location,
-                            is_remote=is_remote,
-                            role_type=role_str,
-                            skills=job_data.get("skills"),
-                            contact=contact,
-                            contact_type=contact_type,
-                            summary=_to_str(job_data.get("summary")),
-                        )
-                        db.add(job)
-                        await db.flush()
-                        await db.refresh(job)
-                        jobs_added += 1
-                        message.analysis_status = "analyzed"
-
-                        # Broadcast new job notification
-                        await broadcast_progress("new_job", {
-                            "job_id": job.id,
-                            "title": job.title,
-                            "company": job.company,
-                            "channel": channel_name,
-                            "is_remote": job.is_remote,
-                            "location": job.location,
-                            "role_type": job.role_type,
-                        })
-                    except Exception as e:
-                        skipped_count += 1
-                        message.analysis_status = "pending"
-                        message_results[-1]["status"] = "db_error"
-                        message_results[-1]["error"] = str(e)
-
-                # ── PERSONAL INFO ─────────────────────────────────────────────
-                elif category == "personal_info":
-                    pi_data = result.get("personal_info") or {}
-
-                    name = _to_str(pi_data.get("name"))
-                    contact, contact_type = _resolve_contact(pi_data.get("contacts"), message)
-
-                    portfolio = _to_str(pi_data.get("portfolio"))
-                    github = _to_str(pi_data.get("github"))
-                    linkedin = _to_str(pi_data.get("linkedin"))
-
-                    if not name:
-                        name = message.sender_username or f"sender:{message.sender_id or 'unknown'}"
-
-                    # Add developer name to notification
-                    notification_data["name"] = name
-
-                    if name:
-                        conditions = [Developer.name == name]
-                        if contact:
-                            conditions.append(Developer.contact == contact)
-                        if github:
-                            conditions.append(Developer.github == github)
-                        if linkedin:
-                            conditions.append(Developer.linkedin == linkedin)
-
-                        if len(conditions) >= 2:
-                            existing_dev_result = await db.execute(
-                                select(Developer).filter(*conditions)
-                            )
-                            if existing_dev_result.first():
-                                # Delete message for duplicate developer instead of saving it
-                                await db.delete(message)
-                                skipped_count += 1
-                                continue
-
-                    # Fix: experience might be a list from Ollama, convert to string with newlines
-                    exp_val = pi_data.get("experience")
-                    if isinstance(exp_val, list):
-                        exp_str = "\n".join(str(item) for item in exp_val)
-                    else:
-                        exp_str = str(exp_val) if exp_val else None
-
-                    try:
-                        developer = Developer(
-                            message_id=message.id,
-                            channel_id=channel_id,
-                            confidence=confidence,
-                            translated_text=translated_text,
-                            name=name,
-                            skills=pi_data.get("skills"),
-                            experience=exp_str,
-                            portfolio=portfolio,
-                            github=github,
-                            linkedin=linkedin,
-                            contact=contact,
-                            contact_type=contact_type,
-                            looking_for_work=pi_data.get("looking_for_work"),
-                            summary=_to_str(pi_data.get("summary")),
-                        )
-                        db.add(developer)
-                        devs_added += 1
-                        message.analysis_status = "analyzed"
-                    except Exception as e:
-                        skipped_count += 1
-                        message.analysis_status = "pending"
-                        message_results[-1]["status"] = "db_error"
-                        message_results[-1]["error"] = str(e)
-
+                # Fix: experience might be a list from Ollama, convert to string with newlines
+                exp_val = pi_data.get("experience")
+                if isinstance(exp_val, list):
+                    exp_str = "\n".join(str(item) for item in exp_val)
                 else:
-                    # Delete message with unknown category instead of saving it
-                    await db.delete(message)
+                    exp_str = str(exp_val) if exp_val else None
+
+                try:
+                    developer = Developer(
+                        message_id=message.id,
+                        channel_id=channel_id,
+                        confidence=confidence,
+                        translated_text=translated_text,
+                        name=name,
+                        skills=pi_data.get("skills"),
+                        experience=exp_str,
+                        portfolio=portfolio,
+                        github=github,
+                        linkedin=linkedin,
+                        contact=contact,
+                        contact_type=contact_type,
+                        looking_for_work=pi_data.get("looking_for_work"),
+                        summary=_to_str(pi_data.get("summary")),
+                    )
+                    db.add(developer)
+                    devs_added += 1
+                    message.analysis_status = "analyzed"
+                except Exception as e:
                     skipped_count += 1
+                    message.analysis_status = "pending"
+                    message_results[-1]["status"] = "db_error"
+                    message_results[-1]["error"] = str(e)
 
-                # Append notification data to results
-                message_results.append(notification_data)
+            else:
+                # Delete message with unknown category instead of saving it
+                await db.delete(message)
+                skipped_count += 1
 
-                analyzed_count += 1
+            # Append notification data to results
+            message_results.append(notification_data)
 
-            batch_message_results = message_results[-len(filtered_messages):] if filtered_messages else []
-            
-            # Determine if this batch succeeded (at least one message processed without error)
-            batch_has_errors = any(r.get("status") in ["failed", "db_error"] for r in batch_message_results)
-            if batch_has_errors:
+            analyzed_count += 1
+
+            # Determine if this message succeeded or failed
+            last_result = message_results[-1] if message_results else {}
+            if last_result.get("status") in ["failed", "db_error"]:
                 consecutive_failures += 1
             else:
                 consecutive_failures = 0  # Reset on success
-            
+
             await broadcast_progress("analyze_progress", {
                 "channel": channel_username,
                 "channel_id": channel_id,
-                "current": batch_num,
-                "total": total_batches,
+                "current": msg_index + 1,
+                "total": total_messages,
                 "analyzed": analyzed_count,
                 "total_messages": total_messages,
                 "jobs": jobs_added,
@@ -1077,21 +1060,21 @@ async def analyze_messages(
                     "output": total_output_tokens,
                     "total": total_input_tokens + total_output_tokens,
                 },
-                "message_results": batch_message_results,
+                "message_results": [last_result] if last_result else [],
             })
-            
+
             # Update operation progress
             try:
-                await update_operation(db, operation_id, current=batch_num, analyzed=analyzed_count, jobs_found=jobs_added, developers_found=devs_added)
+                await update_operation(db, operation_id, current=msg_index + 1, analyzed=analyzed_count, jobs_found=jobs_added, developers_found=devs_added)
             except Exception as e:
                 pass
-            
-            # Commit after each batch to save progress (with error recovery)
+
+            # Commit after each message to save progress (with error recovery)
             try:
                 await db.commit()
             except Exception as e:
                 await db.rollback()
-                # Continue anyway - next batch will try again
+                # Continue anyway - next message will try again
 
         try:
             await db.commit()
