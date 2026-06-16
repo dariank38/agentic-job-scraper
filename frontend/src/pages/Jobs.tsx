@@ -28,7 +28,9 @@ import {
   MessagesSquare,
   Building2,
   MapPin,
-  ExternalLink
+  ExternalLink,
+  Copy,
+  Check
 } from 'lucide-react';
 import api from '@/services/api';
 import type { Job } from '@/services/api';
@@ -48,6 +50,7 @@ const Jobs = () => {
   const [loadingActions, setLoadingActions] = useState<Set<string>>(new Set());
   const [total, setTotal] = useState(0);
   const [jobNotes, setJobNotes] = useState('');
+  const [copiedMsg, setCopiedMsg] = useState(false);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [jobToDelete, setJobToDelete] = useState<number | null>(null);
   const appliedFilter = searchParams.get('is_applied');
@@ -629,6 +632,19 @@ const Jobs = () => {
                     <div className="flex items-center gap-2 mb-2 sm:mb-3">
                       <MessagesSquare className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-gray-600" />
                       <h3 className="text-xs sm:text-sm font-semibold text-gray-900">{t('jobs.originalMessage')}</h3>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="h-6 px-1.5 ml-auto"
+                        onClick={() => {
+                          const text = selectedJob?.message?.text?.replace(/<[^>]*>/g, '') || '';
+                          navigator.clipboard.writeText(text);
+                          setCopiedMsg(true);
+                          setTimeout(() => setCopiedMsg(false), 2000);
+                        }}
+                      >
+                        {copiedMsg ? <Check className="w-3.5 h-3.5 text-green-500" /> : <Copy className="w-3.5 h-3.5 text-gray-500" />}
+                      </Button>
                     </div>
                     <div className="text-sm text-gray-700 leading-relaxed whitespace-pre-wrap break-words prose prose-sm max-w-none"
                          dangerouslySetInnerHTML={{ __html: selectedJob.message?.text || t('jobs.noTextContent') }} />

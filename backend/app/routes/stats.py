@@ -28,25 +28,25 @@ def register_stats_routes(app):
         )
         active_channels = active_channels_result.scalar()
 
-        # Get job counts
+        # Get job counts (exclude hidden)
         job_postings_result = await db.execute(
-            select(func.count()).select_from(Job)
+            select(func.count()).select_from(Job).filter(Job.is_hidden == False)
         )
         job_postings = job_postings_result.scalar()
         
         applied_jobs_result = await db.execute(
-            select(func.count()).select_from(Job).filter(Job.is_applied == True)
+            select(func.count()).select_from(Job).filter(Job.is_applied == True, Job.is_hidden == False)
         )
         applied_jobs = applied_jobs_result.scalar()
 
-        # Get developer counts
+        # Get developer counts (exclude hidden)
         developers_result = await db.execute(
-            select(func.count()).select_from(Developer)
+            select(func.count()).select_from(Developer).filter(Developer.is_hidden == False)
         )
         developers = developers_result.scalar()
         
         contacted_developers_result = await db.execute(
-            select(func.count()).select_from(Developer).filter(Developer.is_contacted == True)
+            select(func.count()).select_from(Developer).filter(Developer.is_contacted == True, Developer.is_hidden == False)
         )
         contacted_developers = contacted_developers_result.scalar()
 
@@ -150,7 +150,7 @@ def register_stats_routes(app):
             )
             .join(Job, Job.message_id == Message.id)
             .join(Channel, Channel.id == Job.channel_id)
-            .filter(Message.date >= cutoff_date)
+            .filter(Message.date >= cutoff_date, Job.is_hidden == False)
             .group_by(func.date(Message.date), Channel.username)
             .order_by(func.date(Message.date).desc())
         )
@@ -177,7 +177,7 @@ def register_stats_routes(app):
                 func.date(Developer.contacted_at).label('date'),
                 func.count(Developer.id).label('count')
             )
-            .filter(Developer.is_contacted == True, Developer.contacted_at >= cutoff_date)
+            .filter(Developer.is_contacted == True, Developer.contacted_at >= cutoff_date, Developer.is_hidden == False)
             .group_by(func.date(Developer.contacted_at))
             .order_by(func.date(Developer.contacted_at).desc())
         )
@@ -199,7 +199,7 @@ def register_stats_routes(app):
                 func.date(Job.created_at).label('date'),
                 func.count(Job.id).label('count')
             )
-            .filter(Job.created_at >= cutoff_date)
+            .filter(Job.created_at >= cutoff_date, Job.is_hidden == False)
             .group_by(func.date(Job.created_at))
             .order_by(func.date(Job.created_at).desc())
         )
@@ -211,7 +211,7 @@ def register_stats_routes(app):
                 func.date(Developer.contacted_at).label('date'),
                 func.count(Developer.id).label('count')
             )
-            .filter(Developer.is_contacted == True, Developer.contacted_at >= cutoff_date)
+            .filter(Developer.is_contacted == True, Developer.contacted_at >= cutoff_date, Developer.is_hidden == False)
             .group_by(func.date(Developer.contacted_at))
             .order_by(func.date(Developer.contacted_at).desc())
         )
@@ -223,7 +223,7 @@ def register_stats_routes(app):
                 func.date(Job.applied_at).label('date'),
                 func.count(Job.id).label('count')
             )
-            .filter(Job.is_applied == True, Job.applied_at >= cutoff_date)
+            .filter(Job.is_applied == True, Job.applied_at >= cutoff_date, Job.is_hidden == False)
             .group_by(func.date(Job.applied_at))
             .order_by(func.date(Job.applied_at).desc())
         )
@@ -258,7 +258,7 @@ def register_stats_routes(app):
                 func.date(Job.applied_at).label('date'),
                 func.count(Job.id).label('count')
             )
-            .filter(Job.is_applied == True, Job.applied_at >= cutoff_date)
+            .filter(Job.is_applied == True, Job.applied_at >= cutoff_date, Job.is_hidden == False)
             .group_by(func.date(Job.applied_at))
             .order_by(func.date(Job.applied_at).desc())
         )

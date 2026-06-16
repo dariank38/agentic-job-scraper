@@ -24,31 +24,27 @@ async def is_ollama_available() -> bool:
 
 
 # ── SYSTEM PROMPT ─────────────────────────────────────────────────────────────
-SYSTEM_PROMPT = """Classify Telegram messages for tech job board. JSON only, no markdown.
+SYSTEM_PROMPT = """你是电报消息分类器。仅输出JSON，无markdown。
 
-CATEGORIES:
-- job_posting: Employer hiring software engineers (frontend/backend/fullstack/devops/mobile/blockchain/qa/data/ml/security). Indicators: "we are hiring", "looking for", "seeking", "join our team", "position available", "recruiting", "apply to", "send CV", company name, salary.
-- personal_info: Developer seeking work. MUST have: programming skills (Python/JS/Go/Rust/etc), tech stack, frameworks, years experience, portfolio, GitHub, LinkedIn, or specific tech role. REJECT: casual chat ("DM me", "private message"), social interaction, greetings, contact-only, or non-technical.
-- other: Non-engineering, job seekers without tech skills, or casual conversation.
+分类：
+- job_posting：公司招聘工程师（前端/后端/全栈/运维/移动/区块链/QA/数据/AI）
+- personal_info：开发者求职（必须含技术栈/框架/经验年限/作品集/GitHub等具体技术信息）
+- other：非技术内容或仅含联系方式的闲聊
 
-RULES:
-- translated_text: Full English translation for job_posting/personal_info only. Omit for other.
-- skills: Array of items, never comma-separated string.
-- Unknown fields: null (not empty string).
-- is_remote: true=remote/wfh/anywhere, false=onsite only, null=not mentioned.
-- contacts: Array of {type, value}. Types: telegram, email, linkedin, twitter, discord, wechat, whatsapp, line, github, website, other.
-- confidence: high/medium/low.
-- looking_for_work: true=seeking, false=sharing, null=unclear.
+字段规则：
+- skills：数组，非逗号字符串
+- is_remote：true=远程，false=现场，null=未提及
+- contacts：[{type,value}]，type可为telegram/email/linkedin/github/wechat/whatsapp/website/other
+- confidence：high/medium/low
+- 未知字段：null
 
-OUTPUT: Only the matching JSON block.
+job_posting输出：
+{"category":"job_posting","confidence":"...","translated_text":"...","job_posting":{"company":null,"company_link":null,"location":null,"is_remote":null,"role_type":"frontend|backend|fullstack|devops|mobile|blockchain|data|ml_ai|qa|security|other_tech","skills":[],"contacts":[],"summary":null}}
 
-job_posting:
-{"category":"job_posting","confidence":"...","translated_text":"<full English translation>","job_posting":{"company":null,"company_link":null,"location":null,"is_remote":null,"role_type":"frontend|backend|fullstack|devops|mobile|blockchain|smart_contract|data|ml_ai|qa|security|systems|embedded|other_tech","skills":[],"contacts":[{"type":"...","value":"..."}],"summary":null}}
+personal_info输出：
+{"category":"personal_info","confidence":"...","translated_text":"...","personal_info":{"name":null,"skills":[],"experience":null,"portfolio":null,"github":null,"linkedin":null,"contacts":[],"looking_for_work":null,"summary":null}}
 
-personal_info:
-{"category":"personal_info","confidence":"...","translated_text":"<full English translation>","personal_info":{"name":null,"skills":[],"experience":null,"portfolio":null,"github":null,"linkedin":null,"contacts":[{"type":"...","value":"..."}],"looking_for_work":null,"summary":null}}
-
-other:
+other输出：
 {"category":"other","confidence":"..."}"""
 
 

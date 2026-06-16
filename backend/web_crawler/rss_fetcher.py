@@ -29,7 +29,7 @@ class Fetcher:
         cutoff_date = datetime.now(timezone.utc) - timedelta(days=days_back)
 
         try:
-            async with httpx.AsyncClient(timeout=10) as client:
+            async with httpx.AsyncClient(timeout=30) as client:
                 r = await client.get(url, headers={"User-Agent": USER_AGENT})
                 if r.status_code == 200:
                     # Handle encoding properly for Chinese content
@@ -78,7 +78,7 @@ class Fetcher:
                     logger.error(f"[RSS FETCH] HTTP {r.status_code} for {url}")
                     return {"type": "rss", "content": []}
         except Exception as e:
-            logger.error(f"[RSS FETCH] Error fetching {url}: {e}")
+            logger.error(f"[RSS FETCH] Error fetching {url}: {type(e).__name__}: {e}")
             return {"type": "rss", "content": []}
 
 
@@ -100,7 +100,7 @@ class V2EXFetcher:
         cutoff_date = datetime.now(timezone.utc) - timedelta(days=days_back)
 
         try:
-            async with httpx.AsyncClient(timeout=10) as client:
+            async with httpx.AsyncClient(timeout=30) as client:
                 r = await client.get(url, headers={"User-Agent": USER_AGENT})
                 if r.status_code == 200:
                     # Handle encoding properly for Chinese content
@@ -137,5 +137,5 @@ class V2EXFetcher:
                     logger.error(f"[V2EX FETCH] HTTP {r.status_code} for {url}")
                     return {"type": "v2ex", "entries": []}
         except Exception as e:
-            logger.error(f"[V2EX FETCH] Error fetching {url}: {e}")
+            logger.error(f"[V2EX FETCH] Error fetching {url}: {type(e).__name__}: {e}")
             return {"type": "v2ex", "entries": []}

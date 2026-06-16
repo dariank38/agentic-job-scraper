@@ -153,7 +153,7 @@ def register_channel_routes(app):
         )
         job_count_subq = (
             select(func.count())
-            .where(Job.channel_id == Channel.id)
+            .where(Job.channel_id == Channel.id, Job.is_hidden == False)
             .correlate(Channel)
             .scalar_subquery()
         )

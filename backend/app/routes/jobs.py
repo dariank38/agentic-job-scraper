@@ -24,7 +24,7 @@ def register_job_routes(app):
     ):
         """Get jobs as JSON with search and filters."""
         # Build base query - show all jobs regardless of channel/website source status
-        query = select(Job)
+        query = select(Job).filter(Job.is_hidden == False)
 
         # Filter by source type if specified
         if source_type:
@@ -151,21 +151,14 @@ def register_job_routes(app):
 
     @app.delete("/api/jobs/{job_id}")
     async def api_delete_job(job_id: int, db: AsyncSession = Depends(get_db)):
-        """Delete a job and its associated message."""
+        """Hide a job (soft-delete). Message is kept to prevent duplicate re-fetching."""
         try:
             result = await db.execute(select(Job).filter(Job.id == job_id))
             job = result.scalar_one_or_none()
             if not job:
                 raise HTTPException(status_code=404, detail="Job not found")
 
-            # Delete associated message if exists
-            if job.message_id:
-                message_result = await db.execute(select(Message).filter(Message.id == job.message_id))
-                message = message_result.scalar_one_or_none()
-                if message:
-                    await db.delete(message)
-
-            await db.delete(job)
+            job.is_hidden = True
             await db.commit()
 
             return {"success": True}
@@ -174,4 +167,4 @@ def register_job_routes(app):
             raise
         except Exception as e:
             await db.rollback()
-            raise HTTPException(status_code=500, detail=f"Failed to delete job: {str(e)}")
+            raise HTTPException(status_code=500, detail=f"Failed to hide job: {str(e)}")

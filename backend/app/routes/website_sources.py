@@ -43,7 +43,7 @@ def register_website_source_routes(app):
         )
         job_count_subq = (
             select(func.count())
-            .where(Job.website_source_id == WebsiteSource.id)
+            .where(Job.website_source_id == WebsiteSource.id, Job.is_hidden == False)
             .correlate(WebsiteSource)
             .scalar_subquery()
         )

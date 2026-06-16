@@ -68,6 +68,25 @@ export const DailyJobsChart = ({ days = 30 }: DailyJobsChartProps) => {
   // Generate colors for channels
   const colors = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899', '#06b6d4', '#84cc16'];
 
+  const CustomTooltip = ({ active, payload, label }: any) => {
+    if (!active || !payload || payload.length === 0) return null;
+    return (
+      <div
+        className="bg-white/95 border border-gray-200 rounded-lg px-3 py-2 shadow-lg max-h-60 overflow-y-auto pointer-events-auto"
+        onWheel={(e) => e.stopPropagation()}
+      >
+        <p className="text-xs font-medium text-gray-700 mb-1">{label}</p>
+        {payload.map((entry: any) => (
+          <div key={entry.dataKey} className="flex items-center gap-2 text-xs py-0.5">
+            <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ backgroundColor: entry.color }} />
+            <span className="text-gray-600 truncate max-w-[140px]">{entry.dataKey}</span>
+            <span className="font-medium ml-auto">{entry.value}</span>
+          </div>
+        ))}
+      </div>
+    );
+  };
+
   if (loading) {
     return <div className="h-64 flex items-center justify-center text-sm text-gray-500">{t('common.loading')}</div>;
   }
@@ -122,10 +141,7 @@ export const DailyJobsChart = ({ days = 30 }: DailyJobsChartProps) => {
             tickFormatter={(value) => { const [,m,d] = value.split('-'); return `${new Date(0, parseInt(m)-1).toLocaleString('en-US',{month:'short'})} ${parseInt(d)}`; }}
           />
           <YAxis tick={{ fontSize: 12 }} />
-          <Tooltip
-            labelFormatter={(value) => value}
-            contentStyle={{ backgroundColor: 'rgba(255, 255, 255, 0.95)', border: '1px solid #e5e7eb', borderRadius: '8px' }}
-          />
+          <Tooltip content={<CustomTooltip />} wrapperStyle={{ pointerEvents: 'auto' }} />
           {channels.map((channel, index) =>
             hiddenChannels.has(channel) ? null : (
               <Line

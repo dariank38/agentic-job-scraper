@@ -28,6 +28,8 @@ import {
   RotateCcw,
   ChevronDown,
   ChevronUp,
+  Copy,
+  Check,
 } from 'lucide-react';
 import api from '@/services/api';
 import { useWebSocketProgress, useToast } from '@/components/Layout';
@@ -83,6 +85,7 @@ const Messages = () => {
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [messageToDelete, setMessageToDelete] = useState<number | null>(null);
   const [expandedMessageId, setExpandedMessageId] = useState<number | null>(null);
+  const [copiedId, setCopiedId] = useState<number | null>(null);
   const limit = 8;
   const offset = parseInt(searchParams.get('offset') || '0');
   const { showToast } = useToast();
@@ -100,7 +103,7 @@ const Messages = () => {
   const loadChannelsAndSources = async () => {
     try {
       const [channelsData, sourcesData] = await Promise.all([
-        api.getChannels(),
+        api.getChannels({ limit: 1000 }),
         api.getWebsiteSources()
       ]);
       setChannels(channelsData.channels || []);
@@ -460,6 +463,20 @@ const Messages = () => {
                               </Button>
                             </>
                           )}
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              const text = msg.text?.replace(/<[^>]*>/g, '') || '';
+                              navigator.clipboard.writeText(text);
+                              setCopiedId(msg.id);
+                              setTimeout(() => setCopiedId(null), 2000);
+                            }}
+                            className="text-xs h-7 px-2"
+                          >
+                            {copiedId === msg.id ? <Check className="w-3.5 h-3.5 text-green-500" /> : <Copy className="w-3.5 h-3.5" />}
+                          </Button>
                           <Button
                             variant="ghost"
                             size="sm"

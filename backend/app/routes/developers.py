@@ -25,7 +25,7 @@ def register_developer_routes(app):
     ):
         """Get developers as JSON with search and filters."""
         # Build base query - show all developers regardless of channel/website source status
-        query = select(Developer)
+        query = select(Developer).filter(Developer.is_hidden == False)
 
         if looking_for_work is not None:
             query = query.filter(Developer.looking_for_work == looking_for_work)
@@ -163,21 +163,14 @@ def register_developer_routes(app):
 
     @app.delete("/api/developers/{developer_id}")
     async def api_delete_developer(developer_id: int, db: AsyncSession = Depends(get_db)):
-        """Delete a developer and its associated message."""
+        """Hide a developer (soft-delete). Message is kept to prevent duplicate re-fetching."""
         try:
             result = await db.execute(select(Developer).filter(Developer.id == developer_id))
             developer = result.scalar_one_or_none()
             if not developer:
                 raise HTTPException(status_code=404, detail="Developer not found")
 
-            # Delete associated message if exists
-            if developer.message_id:
-                message_result = await db.execute(select(Message).filter(Message.id == developer.message_id))
-                message = message_result.scalar_one_or_none()
-                if message:
-                    await db.delete(message)
-
-            await db.delete(developer)
+            developer.is_hidden = True
             await db.commit()
 
             return {"success": True}
@@ -186,4 +179,4 @@ def register_developer_routes(app):
             raise
         except Exception as e:
             await db.rollback()
-            raise HTTPException(status_code=500, detail=f"Failed to delete developer: {str(e)}")
+            raise HTTPException(status_code=500, detail=f"Failed to hide developer: {str(e)}")

@@ -164,6 +164,7 @@ class Job(Base):
 
     is_applied = Column(Boolean, default=False)
     applied_at = Column(DateTime, nullable=True)
+    is_hidden = Column(Boolean, default=False)
     notes = Column(Text, nullable=True)
 
     created_at = Column(DateTime, default=datetime.utcnow)
@@ -233,6 +234,7 @@ class Developer(Base):
 
     is_contacted = Column(Boolean, default=False)
     contacted_at = Column(DateTime, nullable=True)
+    is_hidden = Column(Boolean, default=False)
     notes = Column(Text, nullable=True)
 
     created_at = Column(DateTime, default=datetime.utcnow)
