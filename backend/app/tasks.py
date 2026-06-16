@@ -1192,6 +1192,11 @@ async def continuous_scanner(
                                 fetch_result = await fetch_and_store_messages(db, channel, days_back=1)
                                 if fetch_result["success"]:
                                     last_fetch_time[channel_id] = now
+                                    # Analyze new pending messages after fetch
+                                    try:
+                                        await analyze_messages(db, channel)
+                                    except Exception as e:
+                                        pass
                             except Exception as e:
                                 pass
 
