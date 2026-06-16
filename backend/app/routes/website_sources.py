@@ -304,22 +304,20 @@ def register_website_source_routes(app):
                     except:
                         pass
 
-                # Use post_id for deduplication if available, otherwise fall back to text
+                # Check for duplicate: by post_id first, then fall back to text content
                 if post_id:
                     existing_result = await db.execute(
                         select(Message).filter(
-                            Message.website_source_id == source_id,
                             Message.website_post_id == f"{source_id}-{post_id}"
                         )
                     )
                 else:
                     existing_result = await db.execute(
                         select(Message).filter(
-                            Message.website_source_id == source_id,
                             Message.text == entry_text
                         )
                     )
-                existing = existing_result.scalar_one_or_none()
+                existing = existing_result.scalars().first()
                 if existing:
                     continue
 
@@ -434,22 +432,20 @@ def register_website_source_routes(app):
                             except:
                                 pass
 
-                        # Use post_id for deduplication if available
+                        # Check for duplicate: by post_id first, then fall back to text content
                         if post_id:
                             existing_result = await db.execute(
                                 select(Message).filter(
-                                    Message.website_source_id == source.id,
                                     Message.website_post_id == f"{source.id}-{post_id}"
                                 )
                             )
                         else:
                             existing_result = await db.execute(
                                 select(Message).filter(
-                                    Message.website_source_id == source.id,
                                     Message.text == entry_text
                                 )
                             )
-                        existing = existing_result.scalar_one_or_none()
+                        existing = existing_result.scalars().first()
                         if existing:
                             continue
 

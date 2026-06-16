@@ -41,6 +41,9 @@ bulk_stop_events_lock = asyncio.Lock()
 cron_running = False
 cron_task: asyncio.Task | None = None
 
+# Global auto-analyze preference (shared across listener and cron)
+_auto_analyze_enabled = False
+
 # Real-time listener state - support multiple accounts
 # Keyed by telegram_account_id
 telegram_listeners: dict[int, TelegramMessageListener] = {}
@@ -255,6 +258,15 @@ async def cleanup_old_messages():
 
 def is_cron_running() -> bool:
     return cron_running
+
+
+def get_auto_analyze() -> bool:
+    return _auto_analyze_enabled
+
+
+def set_auto_analyze(enabled: bool) -> None:
+    global _auto_analyze_enabled
+    _auto_analyze_enabled = enabled
 
 
 async def start_cron_task() -> bool:
@@ -564,7 +576,7 @@ async def fetch_and_store_messages(
                             Message.text == msg_data.get("text"),
                         )
                     )
-                    existing = result.scalar_one_or_none()
+                    existing = result.scalars().first()
                     if existing:
                         continue
 
@@ -1250,22 +1262,20 @@ async def continuous_scanner(
                                             except:
                                                 pass
 
-                                        # Use post_id for deduplication if available
+                                        # Check for duplicate: by post_id first, then fall back to text content
                                         if post_id:
                                             existing_result = await db.execute(
                                                 select(Message).filter(
-                                                    Message.website_source_id == website.id,
                                                     Message.website_post_id == f"{website.id}-{post_id}"
                                                 )
                                             )
                                         else:
                                             existing_result = await db.execute(
                                                 select(Message).filter(
-                                                    Message.website_source_id == website.id,
                                                     Message.text == entry_text
                                                 )
                                             )
-                                        existing = existing_result.scalar_one_or_none()
+                                        existing = existing_result.scalars().first()
                                         if existing:
                                             continue
 
@@ -1434,7 +1444,7 @@ async def analyze_website_posts(
                             existing_job = await db.execute(
                                 select(Job).filter(Job.company_link == job.url)
                             )
-                            if existing_job.scalar_one_or_none():
+                            if existing_job.scalars().first():
                                 # Job already exists with this URL, skip and will delete message later
                                 continue
 
@@ -1442,7 +1452,7 @@ async def analyze_website_posts(
                         existing_job = await db.execute(
                             select(Job).filter(Job.message_id == message_id)
                         )
-                        if existing_job.scalar_one_or_none():
+                        if existing_job.scalars().first():
                             # Job already exists for this message, skip and will delete message later
                             continue
 
@@ -1799,7 +1809,7 @@ async def start_telegram_listener(
                             Message.text == message_data['text']
                         )
                     )
-                    if existing_result.scalar_one_or_none():
+                    if existing_result.scalars().first():
                         logger.info(f"Duplicate message skipped: {message_data['text'][:50]}...")
                         return
                     
@@ -1833,8 +1843,8 @@ async def start_telegram_listener(
                         "account_id": telegram_account_id,
                     })
                     
-                    # Auto-analyze if enabled - only analyze the new message
-                    if auto_analyze:
+                    # Auto-analyze if enabled (reads global preference) - only analyze the new message
+                    if _auto_analyze_enabled:
                         from services.ollama_service import get_analyzer, is_ollama_available
                         if await is_ollama_available():
                             analyzer = get_analyzer()
@@ -2189,7 +2199,7 @@ async def restore_listeners_from_db():
                         continue
 
                     # Start listener for this account
-                    result = await start_telegram_listener(usernames, auto_analyze=False, telegram_account_id=account_id)
+                    result = await start_telegram_listener(usernames, telegram_account_id=account_id)
                     if result.get("success"):
                         logger.info(f"Restored listener for account {account.phone_number} with {len(usernames)} channels")
                     else:

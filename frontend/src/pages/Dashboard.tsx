@@ -51,10 +51,7 @@ const Dashboard = () => {
   const [recentDevelopers, setRecentDevelopers] = useState<Developer[]>([]);
   const [telegramAccounts, setTelegramAccounts] = useState<TelegramAccount[]>([]);
   const [dailyStatsTable, setDailyStatsTable] = useState<any[]>([]);
-  const [autoAnalyze, setAutoAnalyze] = useState(() => {
-    const saved = localStorage.getItem('autoAnalyze');
-    return saved ? JSON.parse(saved) : false;
-  });
+  const [autoAnalyze, setAutoAnalyze] = useState(false);
 
   const { progress: wsProgress, channelProgress, operations, bulkOperations, requestStop, currentAnalyzingMessage, statsUpdate, cronStatus, listenerStatus, channelUpdates } = useWebSocketProgress();
 
@@ -122,10 +119,19 @@ const Dashboard = () => {
     }
   }, [channelUpdates]);
 
-  // Persist autoAnalyze preference to localStorage
+  // Load auto-analyze preference from backend on mount
   useEffect(() => {
-    localStorage.setItem('autoAnalyze', JSON.stringify(autoAnalyze));
-  }, [autoAnalyze]);
+    api.getAutoAnalyze().then(data => {
+      if (data.success) setAutoAnalyze(data.enabled);
+    }).catch(() => {});
+  }, []);
+
+  // Sync autoAnalyze preference to backend and localStorage
+  const handleAutoAnalyzeChange = (enabled: boolean) => {
+    setAutoAnalyze(enabled);
+    localStorage.setItem('autoAnalyze', JSON.stringify(enabled));
+    api.setAutoAnalyze(enabled).catch(() => {});
+  };
 
   // Track which website sources are currently being analyzed via WS (keyed by source name)
   const wsSourceAnalyzing: Record<string, boolean> = {};
@@ -665,7 +671,7 @@ const Dashboard = () => {
                   type="checkbox"
                   id="autoAnalyze"
                   checked={autoAnalyze}
-                  onChange={(e) => setAutoAnalyze(e.target.checked)}
+                  onChange={(e) => handleAutoAnalyzeChange(e.target.checked)}
                   className="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
                 />
                 <label htmlFor="autoAnalyze" className="text-xs text-muted-foreground cursor-pointer">

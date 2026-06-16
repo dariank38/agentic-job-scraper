@@ -35,8 +35,10 @@ Agentic Job Scraper 是一个自动化系统，从 Telegram 频道和 RSS 订阅
 ### 数据管理
 - **🔍 智能搜索** — 服务器端搜索职位（标题、公司、技能、角色）和开发者（姓名、技能、经验）
 - **📈 分析仪表板** — 按频道、联系的开发者、申请职位的每日图表
-- **🧹 消息清理** — 删除 N 天前的消息（职位删除，开发者保留）
+- **🧹 消息清理** — 自动清理 2 天前的消息（保留已申请职位和已联系开发者）
 - **🏷️ 状态跟踪** — 标记职位为已申请，开发者为已联系并添加备注
+- **👻 软删除** — 隐藏职位/开发者而非删除，防止重复抓取
+- **📋 复制到剪贴板** — 在消息、职位、开发者页面复制原始消息内容
 
 ### 用户体验
 - **🎨 现代 UI** — 使用 React、TypeScript 和 shadcn/ui 构建的简洁响应式界面
@@ -51,6 +53,8 @@ Agentic Job Scraper 是一个自动化系统，从 Telegram 频道和 RSS 订阅
 - **📝 自定义提示词** — 为每个网站源自定义提取提示词
 - **🇨🇳 V2EX 专用** — 针对中文技术职位的专用提示词，支持翻译
 - **💾 Token 监控** — 实时跟踪 Ollama API 调用的 token 使用情况
+- **🔄 定时自动分析** — 持续扫描器在获取后自动分析（Telegram 和 RSS）
+- **⏱️ 健壮的 RSS 获取** — 30 秒超时和 7 天回看窗口
 
 ## 🚀 计划功能
 
@@ -433,6 +437,8 @@ ollama pull qwen2.5:7b   # 更快性能
 ollama serve
 ```
 
+> **💡 提示：** 更大的模型能显著提升推理质量。如果硬件允许，建议使用 `qwen2.5:14b` 或更高版本（如 `qwen2.5:32b`），以获得更准确的职位/开发者信息提取。较小的模型如 `7b` 速度更快，但可能遗漏细节或产生低置信度的分类结果。
+
 ## 🚀 运行应用程序
 
 ### 开发模式
@@ -570,11 +576,12 @@ npm run dev
 7. **监控进度** — 查看实时进度，包括 token 使用情况和每条消息状态
 8. **查看结果** — 浏览 Jobs 和 Developers 页面查看提取的信息
 9. **跟踪进度** — 标记职位为已申请或开发者为已联系并添加备注
-10. **持续扫描** — 启用 cron 任务进行自动定期获取
+10. **持续扫描** — 启用 cron 任务进行自动定期获取和分析
 11. **分析** — 在仪表板上查看按频道、联系的开发者和申请职位的每日图表
-12. **清理** — 使用"Cleanup Old Messages"删除 N 天前的消息
-13. **自定义提示词** — 为每个网站源自定义提取提示词以提高准确性
-14. **V2EX 配置** — 添加 V2EX 时设置 `site_type="v2ex"` 以使用专用的中文职位提示词
+12. **清理** — 2 天前的消息在启动时自动清理（保留已申请职位和已联系开发者）
+13. **复制消息** — 在消息、职位、开发者页面点击复制按钮复制原始消息文本
+14. **自定义提示词** — 为每个网站源自定义提取提示词以提高准确性
+15. **V2EX 配置** — 添加 V2EX 时设置 `site_type="v2ex"` 以使用专用的中文职位提示词
 
 ## 🔌 API 端点
 
@@ -613,13 +620,13 @@ npm run dev
 - `GET /api/jobs` — 列出提取的职位（带搜索过滤器）
 - `GET /api/jobs/{id}` — 获取职位详情
 - `POST /api/jobs/{id}/toggle-applied` — 标记职位为已申请/未申请
-- `DELETE /api/jobs/{id}` — 删除职位
+- `DELETE /api/jobs/{id}` — 隐藏职位（软删除）
 
 ### 开发者
 - `GET /api/developers` — 列出提取的开发者（带搜索过滤器）
 - `GET /api/developers/{id}` — 获取开发者详情
 - `POST /api/developers/{id}/toggle-contacted` — 标记开发者为已联系/未联系
-- `DELETE /api/developers/{id}` — 删除开发者
+- `DELETE /api/developers/{id}` — 隐藏开发者（软删除）
 
 ### 操作
 - `POST /api/fetch/{channel_id}` — 从频道获取消息
@@ -756,11 +763,17 @@ for f in *.sql; do psql -U your_username -d job_scraper -f "$f"; done
 可用迁移：
 - `add_telegram_accounts.sql` — 添加 Telegram 账号表
 - `add_phone_code_hash.sql` — 添加电话代码哈希列
+- `add_telegram_account_id_to_channels.sql` — 添加 telegram_account_id 到频道
 - `make_developer_message_id_nullable.sql` — 使 developer.message_id 可为空
-- `migrate_website_crawler.sql` — 添加网站源表
-- `migrate_make_telegram_id_nullable.sql` — 使 telegram_id 可为空
-- `migrate_add_extraction_prompt.sql` — 添加 extraction_prompt 列
-- `migrate_add_site_type.sql` — 添加 site_type 列
+- `add_channel_name_to_jobs.sql` — 添加 channel_name 列到职位
+- `add_last_fetch_tracking.sql` — 添加最后获取跟踪列
+- `add_message_analysis_flags.sql` — 添加消息分析标志
+- `add_operations_table.sql` — 添加操作跟踪表
+- `add_analysis_runs_table.sql` — 添加分析运行表
+- `migrate_add_skip_reason.sql` — 添加 skip_reason 列到消息
+- `migrate_operations_cascade.sql` — 添加操作级联删除
+- `fix_skills_default.sql` — 修复 skills 列默认值
+- `add_is_hidden_to_jobs_developers.sql` — 添加 is_hidden 列用于软删除
 
 ## 🔧 故障排除
 

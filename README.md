@@ -35,8 +35,10 @@ Agentic Job Scraper is an automated system that fetches software development job
 ### Data Management
 - **🔍 Smart Search** — Server-side search across jobs (title, company, skills, role) and developers (name, skills, experience)
 - **📈 Analytics Dashboard** — Daily charts for job postings, developers contacted, and jobs applied
-- **🧹 Message Cleanup** — Remove messages older than N days (jobs deleted, developers preserved)
+- **🧹 Message Cleanup** — Auto-cleanup messages older than 2 days (preserves applied jobs and contacted developers)
 - **🏷️ Status Tracking** — Mark jobs as applied and developers as contacted with notes
+- **👻 Soft-Delete** — Hide jobs/developers instead of deleting to prevent duplicate re-fetching
+- **📋 Copy to Clipboard** — Copy original message content on Messages, Jobs, and Developers pages
 
 ### User Experience
 - **🎨 Modern UI** — Clean, responsive interface built with React, TypeScript, and shadcn/ui
@@ -51,6 +53,8 @@ Agentic Job Scraper is an automated system that fetches software development job
 - **📝 Custom Prompts** — Customize extraction prompts per website source
 - **🇨🇳 V2EX-Specific** — Specialized prompt for Chinese tech job posts with translation
 - **💾 Token Monitoring** — Real-time token usage tracking for Ollama API calls
+- **🔄 Cron Auto-Analysis** — Continuous scanner automatically analyzes after fetching (both Telegram and RSS)
+- **⏱️ Robust RSS Fetching** — 30-second timeout and 7-day lookback window for RSS feeds
 
 ## 🚀 Planned Features
 
@@ -433,6 +437,8 @@ ollama pull qwen2.5:7b   # Faster performance
 ollama serve
 ```
 
+> **💡 Tip:** Larger models produce significantly better inference results. If your hardware supports it, prefer `qwen2.5:14b` or higher (e.g., `qwen2.5:32b`) for more accurate job/developer extraction. Smaller models like `7b` are faster but may miss details or produce lower-confidence classifications.
+
 ## 🚀 Running the Application
 
 ### Development Mode
@@ -570,11 +576,12 @@ npm run dev
 7. **Monitor Progress** — View real-time progress including token usage and per-message status
 8. **View Results** — Browse Jobs and Developers pages to see extracted information
 9. **Track Progress** — Mark jobs as applied and developers as contacted with notes
-10. **Continuous Scanning** — Enable cron job for automatic periodic fetching
+10. **Continuous Scanning** — Enable cron job for automatic periodic fetching and analysis
 11. **Analytics** — View daily charts on Dashboard for job postings, developers contacted, jobs applied
-12. **Cleanup** — Use "Cleanup Old Messages" to remove messages older than N days
-13. **Custom Prompts** — Customize extraction prompts per website source for better accuracy
-14. **V2EX Configuration** — Set `site_type="v2ex"` when adding V2EX for specialized Chinese job post prompt
+12. **Cleanup** — Messages older than 2 days are auto-cleaned on startup (applied jobs and contacted developers preserved)
+13. **Copy Messages** — Click the copy button on Messages, Jobs, or Developers pages to copy original message text
+14. **Custom Prompts** — Customize extraction prompts per website source for better accuracy
+15. **V2EX Configuration** — Set `site_type="v2ex"` when adding V2EX for specialized Chinese job post prompt
 
 ## 🔌 API Endpoints
 
@@ -613,13 +620,13 @@ npm run dev
 - `GET /api/jobs` — List extracted jobs (with search filters)
 - `GET /api/jobs/{id}` — Get job details
 - `POST /api/jobs/{id}/toggle-applied` — Mark job as applied/unapplied
-- `DELETE /api/jobs/{id}` — Delete a job
+- `DELETE /api/jobs/{id}` — Hide a job (soft-delete)
 
 ### Developers
 - `GET /api/developers` — List extracted developers (with search filters)
 - `GET /api/developers/{id}` — Get developer details
 - `POST /api/developers/{id}/toggle-contacted` — Mark developer as contacted/uncontacted
-- `DELETE /api/developers/{id}` — Delete a developer
+- `DELETE /api/developers/{id}` — Hide a developer (soft-delete)
 
 ### Actions
 - `POST /api/fetch/{channel_id}` — Fetch messages from a channel
@@ -756,11 +763,17 @@ for f in *.sql; do psql -U your_username -d job_scraper -f "$f"; done
 Available migrations:
 - `add_telegram_accounts.sql` — Add Telegram accounts table
 - `add_phone_code_hash.sql` — Add phone code hash column
+- `add_telegram_account_id_to_channels.sql` — Add telegram_account_id to channels
 - `make_developer_message_id_nullable.sql` — Make developer.message_id nullable
-- `migrate_website_crawler.sql` — Add website sources table
-- `migrate_make_telegram_id_nullable.sql` — Make telegram_id nullable
-- `migrate_add_extraction_prompt.sql` — Add extraction_prompt column
-- `migrate_add_site_type.sql` — Add site_type column
+- `add_channel_name_to_jobs.sql` — Add channel_name column to jobs
+- `add_last_fetch_tracking.sql` — Add last fetch tracking columns
+- `add_message_analysis_flags.sql` — Add message analysis flags
+- `add_operations_table.sql` — Add operations tracking table
+- `add_analysis_runs_table.sql` — Add analysis runs table
+- `migrate_add_skip_reason.sql` — Add skip_reason column to messages
+- `migrate_operations_cascade.sql` — Add cascade delete to operations
+- `fix_skills_default.sql` — Fix skills column default value
+- `add_is_hidden_to_jobs_developers.sql` — Add is_hidden column for soft-delete
 
 ## 🔧 Troubleshooting
 

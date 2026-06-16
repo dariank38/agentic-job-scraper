@@ -22,6 +22,9 @@ logging.basicConfig(
 )
 logging.info(f"Logging to file: {log_file}")
 
+# Suppress noisy websockets disconnect tracebacks (normal when clients close connection)
+logging.getLogger("websockets").setLevel(logging.WARNING)
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles

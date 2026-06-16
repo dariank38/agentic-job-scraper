@@ -352,6 +352,18 @@ const api = {
     return response.json();
   },
 
+  getAutoAnalyze: async (): Promise<any> => {
+    const response = await fetch(`${API_BASE}/api/auto-analyze`);
+    return response.json();
+  },
+
+  setAutoAnalyze: async (enabled: boolean): Promise<any> => {
+    const response = await fetch(`${API_BASE}/api/auto-analyze?enabled=${enabled}`, {
+      method: 'POST',
+    });
+    return response.json();
+  },
+
   cleanupOldMessages: async (days: number = 30): Promise<any> => {
     const response = await fetch(`${API_BASE}/api/cleanup/old-messages?days=${days}`, { method: 'POST' });
     return response.json();

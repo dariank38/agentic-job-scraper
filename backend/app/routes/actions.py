@@ -795,6 +795,19 @@ def register_action_routes(app):
         except Exception as e:
             raise HTTPException(status_code=500, detail=f"Failed to get cron status: {str(e)}")
 
+    @app.get("/api/auto-analyze")
+    async def get_auto_analyze_status():
+        """Get the current auto-analyze preference."""
+        from app.tasks import get_auto_analyze
+        return {"success": True, "enabled": get_auto_analyze()}
+
+    @app.post("/api/auto-analyze")
+    async def set_auto_analyze_status(enabled: bool = Query(..., description="Enable or disable auto-analyze")):
+        """Set the global auto-analyze preference."""
+        from app.tasks import set_auto_analyze
+        set_auto_analyze(enabled)
+        return {"success": True, "enabled": enabled}
+
     @app.post("/api/cleanup/old-messages")
     async def cleanup_old_messages(days: int = Query(30, description="Delete messages older than this many days"), db: AsyncSession = Depends(get_db)):
         """Delete messages older than specified days (and their associated jobs). Developers are kept."""
@@ -903,7 +916,8 @@ def register_action_routes(app):
     async def start_listener(request: StartListenerRequest):
         """Start real-time Telegram message listener for specified channels."""
         try:
-            from app.tasks import broadcast_progress
+            from app.tasks import broadcast_progress, set_auto_analyze
+            set_auto_analyze(request.auto_analyze)
             result = await start_telegram_listener(
                 channel_usernames=request.channel_usernames,
                 auto_analyze=request.auto_analyze,
