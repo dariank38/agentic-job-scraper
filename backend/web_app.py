@@ -4,26 +4,37 @@ import logging
 import sys
 from pathlib import Path
 
-# Configure logging at startup to show INFO level logs
-log_file = Path(__file__).parent / "app.log"
-
-# Fix Windows console encoding for Chinese characters
+# Fix Windows console encoding for Chinese/emoji characters (must be before logging setup)
 if sys.platform == 'win32':
     import io
     sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8')
 
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-    handlers=[
-        logging.StreamHandler(sys.stdout),
-        logging.FileHandler(str(log_file), mode='a', encoding='utf-8')
-    ]
-)
+# Configure colored logging
+log_file = Path(__file__).parent / "app.log"
+from colored_logging import setup_colored_logging
+setup_colored_logging(str(log_file))
 logging.info(f"Logging to file: {log_file}")
 
 # Suppress noisy websockets disconnect tracebacks (normal when clients close connection)
 logging.getLogger("websockets").setLevel(logging.WARNING)
+
+class _SuppressWsDisconnect(logging.Filter):
+    """Drop uvicorn 'data transfer failed' / WinError 121 records — harmless client disconnects."""
+    _SUPPRESS = ("data transfer failed", "WinError 121", "WinError 64")
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        msg = record.getMessage()
+        if any(s in msg for s in self._SUPPRESS):
+            return False
+        if record.exc_info:
+            import traceback
+            tb = "".join(traceback.format_exception(*record.exc_info))
+            if any(s in tb for s in self._SUPPRESS):
+                return False
+        return True
+
+logging.getLogger("uvicorn.error").addFilter(_SuppressWsDisconnect())
+logging.getLogger("uvicorn").addFilter(_SuppressWsDisconnect())
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware

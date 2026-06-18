@@ -1213,8 +1213,9 @@ async def continuous_scanner(
 
                         if website_due:
                             try:
+                                from web_crawler.config import DEFAULT_DAYS_BACK as WEB_DAYS_BACK
                                 crawler = Fetcher()
-                                fetch_result = await crawler.fetch(website.url)
+                                fetch_result = await crawler.fetch(website.url, days_back=WEB_DAYS_BACK)
                                 rss_entries = fetch_result["content"]
 
                                 if rss_entries:
@@ -1735,34 +1736,25 @@ async def start_telegram_listener(
 
                     channel = None
 
-                    # Try to find by username first (try both with and without @)
-                    if channel_username:
-                        # Try with @ prefix
-                        channel_result = await db.execute(
-                            select(Channel).filter(Channel.username == channel_username)
-                        )
-                        channel = channel_result.scalar_one_or_none()
-                        
-                        # If not found, try without @ prefix
-                        if not channel and channel_username.startswith('@'):
-                            channel_result = await db.execute(
-                                select(Channel).filter(Channel.username == channel_username.lstrip('@'))
-                            )
-                            channel = channel_result.scalar_one_or_none()
-                        
-                        # If still not found, try with @ prefix (if original didn't have it)
-                        if not channel and not channel_username.startswith('@'):
-                            channel_result = await db.execute(
-                                select(Channel).filter(Channel.username == f"@{channel_username}")
-                            )
-                            channel = channel_result.scalar_one_or_none()
-
-                    # If not found by username, try by telegram_id
-                    if not channel and channel_id:
+                    # Try telegram_id first (works for groups without usernames)
+                    if channel_id:
                         channel_result = await db.execute(
                             select(Channel).filter(Channel.telegram_id == channel_id)
                         )
                         channel = channel_result.scalar_one_or_none()
+
+                    # Fall back to username lookup (try both with and without @)
+                    if not channel and channel_username:
+                        channel_result = await db.execute(
+                            select(Channel).filter(Channel.username == f"@{channel_username}")
+                        )
+                        channel = channel_result.scalar_one_or_none()
+
+                        if not channel:
+                            channel_result = await db.execute(
+                                select(Channel).filter(Channel.username == channel_username)
+                            )
+                            channel = channel_result.scalar_one_or_none()
 
                     # If channel not found, try to create it from message data
                     if not channel:

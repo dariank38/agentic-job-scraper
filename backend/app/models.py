@@ -91,8 +91,8 @@ class Message(Base):
     # Relationships
     channel = relationship("Channel", back_populates="messages")
     website_source = relationship("WebsiteSource", back_populates="messages")
-    job = relationship("Job", back_populates="message", uselist=False, cascade="all, delete-orphan")
-    developer = relationship("Developer", back_populates="message", uselist=False)
+    job = relationship("Job", back_populates="message", uselist=False, cascade="all, delete-orphan", passive_deletes=True)
+    developer = relationship("Developer", back_populates="message", uselist=False, cascade="all, delete-orphan", passive_deletes=True)
 
     def __repr__(self) -> str:
         return f"<Message {self.telegram_id} from {self.channel_id}>"

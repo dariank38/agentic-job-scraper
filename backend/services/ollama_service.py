@@ -36,6 +36,7 @@ SYSTEM_PROMPT = """你是电报消息分类器。仅输出JSON，无markdown。
 - is_remote：true=远程，false=现场，null=未提及
 - contacts：[{type,value}]，type可为telegram/email/linkedin/github/wechat/whatsapp/website/other
 - confidence：high/medium/low
+- translated_text：将原始消息完整翻译为英文。若原文已是英文，则输出null（不重复原文）。
 - 未知字段：null
 
 job_posting输出：

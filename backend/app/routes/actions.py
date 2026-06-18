@@ -957,10 +957,25 @@ def register_action_routes(app):
         if telegram_account_id is not None:
             # Return status for specific account
             listener = telegram_listeners.get(telegram_account_id)
+            running = telegram_listener_running.get(telegram_account_id, False)
+
+            # If not running in-memory, check DB for is_listened channels (handles restart)
+            listening_to = listener.listened_channels if listener else []
+            if not running and not listening_to:
+                async with AsyncSessionLocal() as db:
+                    result = await db.execute(
+                        select(Channel).filter(
+                            Channel.is_listened == 1,
+                            Channel.telegram_account_id == telegram_account_id
+                        )
+                    )
+                    db_channels = result.scalars().all()
+                    listening_to = [c.username for c in db_channels if c.username]
+
             return {
-                "running": telegram_listener_running.get(telegram_account_id, False),
+                "running": running,
                 "account_id": telegram_account_id,
-                "listening_to": listener.listened_channels if listener else [],
+                "listening_to": listening_to,
             }
         else:
             # Return status for all accounts
@@ -972,8 +987,32 @@ def register_action_routes(app):
                         "account_id": aid,
                         "listening_to": listener.listened_channels if listener else [],
                     })
+
+            # If no in-memory listeners, fall back to DB is_listened channels
+            if not accounts:
+                async with AsyncSessionLocal() as db:
+                    result = await db.execute(
+                        select(Channel).filter(Channel.is_listened == 1)
+                    )
+                    db_channels = result.scalars().all()
+                    if db_channels:
+                        # Group by account
+                        by_account: dict = {}
+                        for ch in db_channels:
+                            aid = ch.telegram_account_id
+                            if aid not in by_account:
+                                by_account[aid] = []
+                            if ch.username:
+                                by_account[aid].append(ch.username)
+                        for aid, usernames in by_account.items():
+                            accounts.append({
+                                "account_id": aid,
+                                "listening_to": usernames,
+                                "restoring": True,  # hint: in-memory listener not yet active
+                            })
+
             return {
-                "running": len(accounts) > 0,
+                "running": any(not a.get("restoring") for a in accounts),
                 "accounts": accounts,
                 "total_listeners": len(accounts),
             }
