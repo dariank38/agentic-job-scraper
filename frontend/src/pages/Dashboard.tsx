@@ -255,14 +255,13 @@ const Dashboard = () => {
           const statusData = await api.getListenerStatus(account.id);
           if (statusData.running) {
             anyRunning = true;
-            const channelsData = await api.getListenerChannels(account.id);
-            if (channelsData.listening_to) {
-              // Normalize usernames to include @ prefix
-              const normalizedChannels = channelsData.listening_to.map((username: string) =>
-                username.startsWith('@') ? username : `@${username}`
-              );
-              allListenedChannels.push(...normalizedChannels);
-            }
+          }
+          // listening_to now includes DB fallback from backend (works after restart too)
+          if (statusData.listening_to && statusData.listening_to.length > 0) {
+            const normalizedChannels = statusData.listening_to.map((username: string) =>
+              username.startsWith('@') ? username : `@${username}`
+            );
+            allListenedChannels.push(...normalizedChannels);
           }
         } catch (e) {
           // Skip accounts that fail
@@ -630,8 +629,14 @@ const Dashboard = () => {
               <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">{t('dashboard.realTimeListener')}</p>
               <div className="flex items-center justify-between p-2 rounded-lg bg-muted/50">
                 <div className="flex items-center gap-2">
-                  <Radio size={12} className={listenerRunning ? 'text-green-500' : 'text-gray-400'} />
-                  <span className="text-xs font-medium">{listenerRunning ? t('dashboard.listening') : t('dashboard.stopped')}</span>
+                  <Radio size={12} className={listenerRunning ? 'text-green-500' : listenedChannels.length > 0 ? 'text-yellow-500' : 'text-gray-400'} />
+                  <span className="text-xs font-medium">
+                    {listenerRunning
+                      ? t('dashboard.listening')
+                      : listenedChannels.length > 0
+                        ? t('dashboard.listenerNotRunning')
+                        : t('dashboard.stopped')}
+                  </span>
                   {listenedChannels.length > 0 && (
                     <span className="text-xs text-muted-foreground">({listenedChannels.length})</span>
                   )}

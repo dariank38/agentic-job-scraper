@@ -253,8 +253,9 @@ const WebSocketProgressProvider = ({ children }: { children: React.ReactNode }) 
     const connect = () => {
       try {
         // Use environment variable or construct from current location for same-domain requests
+        const isLocalhost = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
         const wsUrl = import.meta.env.VITE_WS_BASE_URL || 
-          `${window.location.protocol === 'https:' ? 'wss:' : 'ws:'}//${window.location.host}/ws/progress`;
+          `${window.location.protocol === 'https:' ? 'wss:' : 'ws:'}//${isLocalhost ? `${window.location.hostname}:8000` : window.location.host}/ws/progress`;
         ws = new WebSocket(wsUrl);
         wsRef.current = ws;
 
@@ -322,11 +323,11 @@ const WebSocketProgressProvider = ({ children }: { children: React.ReactNode }) 
                   }
                 }));
               }
-              // Update message results
+              // Update message results (cap at 100 per channel to prevent memory leak)
               if (data.message_results && data.message_results.length > 0) {
                 setMessageResults(prev => ({
                   ...prev,
-                  [channel]: [...(prev[channel] || []), ...data.message_results!]
+                  [channel]: [...(prev[channel] || []), ...data.message_results!].slice(-100)
                 }));
                 // Show notifications for job/developer discoveries
                 data.message_results.forEach((result: any) => {
