@@ -4,6 +4,11 @@ import logging
 import sys
 from pathlib import Path
 
+# Fix Python 3.13 asyncio subprocess issue on Windows (must be before any asyncio usage)
+if sys.platform == 'win32' and sys.version_info >= (3, 13):
+    import asyncio
+    asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
+
 # Fix Windows console encoding for Chinese/emoji characters (must be before logging setup)
 if sys.platform == 'win32':
     import io

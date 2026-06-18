@@ -6,12 +6,55 @@ import logging
 import re
 import time
 from typing import Any
+from enum import Enum
 
 from ollama import AsyncClient
 
 from telegram_processor.config import OLLAMA_BASE_URL, OLLAMA_MODEL
 
 logger = logging.getLogger(__name__)
+
+
+class Language(Enum):
+    ENGLISH = "english"
+    CHINESE = "chinese"
+    MIXED = "mixed"
+    UNKNOWN = "unknown"
+
+
+def detect_language(text: str) -> Language:
+    """Detect if text is English, Chinese, or mixed based on character ranges."""
+    if not text:
+        return Language.UNKNOWN
+
+    # Count Chinese characters (CJK Unified Ideographs)
+    chinese_chars = len(re.findall(r'[\u4e00-\u9fff\u3400-\u4dbf\U00020000-\U0002a6df\U0002a700-\U0002b73f\U0002b740-\U0002b81f\U0002b820-\U0002ceaf\uf900-\ufaff\u3300-\u33ff\ufe30-\ufe4f\uf900-\ufaff\U0002f800-\U0002fa1f]', text))
+    
+    # Count ASCII characters (English letters, numbers, basic punctuation)
+    ascii_chars = len(re.findall(r'[a-zA-Z0-9\s\.,!?;:()\-"\'\[\]{}]', text))
+    
+    total_chars = len(text.strip())
+    
+    if total_chars == 0:
+        return Language.UNKNOWN
+    
+    chinese_ratio = chinese_chars / total_chars
+    ascii_ratio = ascii_chars / total_chars
+    
+    # If mostly Chinese (>30% Chinese chars and Chinese > ASCII)
+    if chinese_ratio > 0.3 and chinese_ratio > ascii_ratio:
+        return Language.CHINESE
+    # If mostly English (>50% ASCII and ASCII > Chinese)
+    elif ascii_ratio > 0.5 and ascii_ratio > chinese_ratio:
+        return Language.ENGLISH
+    # Otherwise mixed
+    elif chinese_chars > 0 and ascii_chars > 0:
+        return Language.MIXED
+    # Fallback based on whichever has more
+    elif chinese_chars > ascii_chars:
+        return Language.CHINESE
+    else:
+        return Language.ENGLISH
 
 
 async def is_ollama_available() -> bool:
@@ -123,6 +166,10 @@ class AsyncOllamaAnalyzer:
                 "category": "other",
                 "usage": {"input_tokens": 0, "output_tokens": 0, "total_tokens": 0},
             }
+
+        # Detect language
+        language = detect_language(message_text)
+        logger.info("[OLLAMA] Detected language: %s", language.value)
 
         # Normalize whitespace and limit to 2000 chars
         clean_text = " ".join(message_text.split())[:2000]
