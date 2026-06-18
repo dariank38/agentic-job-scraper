@@ -721,6 +721,7 @@ async def _fetch_bossjob_bg(source_id: int, operation_id: str, days_back: int):
                         website_source_id=source_id,
                         source_type="website",
                         text=post.get("text", ""),
+                        analysis_text=post.get("analysis_text"),  # Condensed text for Ollama analysis
                         date=datetime.now(),
                         analysis_status="pending",
                     )
