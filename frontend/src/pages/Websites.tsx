@@ -25,6 +25,7 @@ const Websites = () => {
   const [editDialogOpen, setEditDialogOpen] = useState(false);
   const [editingSource, setEditingSource] = useState<WebsiteSource | null>(null);
   const [editPrompt, setEditPrompt] = useState('');
+  const [editCookies, setEditCookies] = useState('');
   const [initialLoading, setInitialLoading] = useState(true);
 
   useEffect(() => {
@@ -175,6 +176,7 @@ const Websites = () => {
   const handleEditPrompt = (source: WebsiteSource) => {
     setEditingSource(source);
     setEditPrompt(source.extraction_prompt || '');
+    setEditCookies(source.cookies || '');
     setEditDialogOpen(true);
   };
 
@@ -183,6 +185,9 @@ const Websites = () => {
     try {
       const formData = new FormData();
       formData.append('extraction_prompt', editPrompt);
+      if (editCookies) {
+        formData.append('cookies', editCookies);
+      }
       const data = await api.updateWebsiteSource(editingSource.id, formData);
       if (data.success) {
         showToast('success', t('websites.promptUpdated'));
@@ -473,27 +478,39 @@ const Websites = () => {
         </DialogContent>
       </Dialog>
 
-      {/* Edit Extraction Prompt Dialog */}
+      {/* Edit Website Source Dialog */}
       <Dialog open={editDialogOpen} onOpenChange={setEditDialogOpen}>
-        <DialogContent className="max-w-2xl">
+        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle>{t('common.edit')} {t('websites.customPrompt')}</DialogTitle>
+            <DialogTitle>{t('common.edit')} {editingSource?.name}</DialogTitle>
             <DialogDescription>
-              {t('websites.customPromptHint', { name: editingSource?.name })}
+              {t('websites.editSourceHint', { name: editingSource?.name })}
             </DialogDescription>
           </DialogHeader>
-          <div className="space-y-4">
+          <div className="space-y-4 py-4">
             <div>
               <label className="text-sm font-medium">{t('websites.customPrompt')}</label>
               <Textarea
                 value={editPrompt}
                 onChange={(e) => setEditPrompt(e.target.value)}
                 placeholder={t('websites.customPrompt') + '...'}
-                className="mt-1 min-h-[200px] font-mono text-sm"
+                className="mt-1 min-h-[150px] font-mono text-sm whitespace-pre-wrap break-all"
               />
             </div>
             <p className="text-xs text-gray-500">
               {t('websites.promptHint')}
+            </p>
+            <div>
+              <label className="text-sm font-medium">{t('websites.cookies')}</label>
+              <Textarea
+                value={editCookies}
+                onChange={(e) => setEditCookies(e.target.value)}
+                placeholder='[{"name":"sessionid","value":"xxx","domain":"bossjob.com","path":"/"}]'
+                className="mt-1 min-h-[100px] font-mono text-xs whitespace-pre-wrap break-all"
+              />
+            </div>
+            <p className="text-xs text-gray-500">
+              {t('websites.cookiesHint')}
             </p>
           </div>
           <DialogFooter>

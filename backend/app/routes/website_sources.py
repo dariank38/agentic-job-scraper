@@ -2,7 +2,7 @@
 
 import logging
 from typing import Optional
-from datetime import datetime
+from datetime import datetime, timezone
 from fastapi import Depends, Form, HTTPException, BackgroundTasks
 from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -23,6 +23,8 @@ def detect_site_type(url: str) -> str:
         return 'v2ex'
     elif 'eleduck.com' in url_lower:
         return 'eleduck'
+    elif 'bossjob.com' in url_lower:
+        return 'bossjob'
     else:
         # Default to generic (will use smart crawler)
         return 'generic'
@@ -155,6 +157,7 @@ def register_website_source_routes(app):
         url: Optional[str] = Form(None),
         is_active: Optional[bool] = Form(None),
         extraction_prompt: Optional[str] = Form(None),
+        cookies: Optional[str] = Form(None),
         db: AsyncSession = Depends(get_db),
     ):
         """Update a website source."""
@@ -174,6 +177,8 @@ def register_website_source_routes(app):
                 source.is_active = is_active
             if extraction_prompt is not None:
                 source.extraction_prompt = extraction_prompt
+            if cookies is not None:
+                source.cookies = cookies
 
             source.updated_at = func.now()
             await db.commit()
@@ -240,10 +245,21 @@ def register_website_source_routes(app):
                 "operation_id": operation_id,
             })
 
-            # Fetch RSS — save as Messages, analyze separately via Analyze button
-            crawler = Fetcher()
-            fetch_result = await crawler.fetch(source.url, days_back=DEFAULT_DAYS_BACK)
-            rss_entries = fetch_result["content"]
+            # Fetch based on site type — RSS for feeds, Playwright for dynamic sites
+            if source.site_type == "bossjob":
+                # Run bossjob fetch in background (Playwright is slow)
+                background_tasks.add_task(_fetch_bossjob_bg, source_id, operation_id, days_back or DEFAULT_DAYS_BACK)
+                return {
+                    "success": True,
+                    "message": f"Bossjob fetch started for {source.name} in background (pages 1-10)",
+                    "operation_id": operation_id,
+                    "fetch_method": "playwright_async",
+                }
+            else:
+                # Use RSS fetcher for RSS feeds
+                crawler = Fetcher()
+                fetch_result = await crawler.fetch(source.url, days_back=DEFAULT_DAYS_BACK)
+                rss_entries = fetch_result["content"]
 
             if not rss_entries:
                 await update_operation(db, operation_id, status="completed")
@@ -326,6 +342,7 @@ def register_website_source_routes(app):
                     website_source_id=source_id,
                     source_type="website",
                     text=entry_text,
+                    analysis_text=post.get("analysis_text"),  # Condensed text for Ollama analysis
                     date=published_date,
                     sender_username=source.name,
                     analysis_status="pending",
@@ -388,10 +405,28 @@ def register_website_source_routes(app):
 
             for source in sources:
                 try:
-                    # Use RSS fetcher to fetch RSS content
-                    crawler = Fetcher()
-                    fetch_result = await crawler.fetch(source.url)
-                    rss_entries = fetch_result["content"]
+                    # Fetch based on site type
+                    if source.site_type == "bossjob":
+                        # Use Playwright for bossjob.com
+                        from web_crawler import fetch_posts
+                        posts = await fetch_posts(
+                            source.url,
+                            site_type="bossjob",
+                            days_back=days_back or DEFAULT_DAYS_BACK,
+                        )
+                        rss_entries = [
+                            {
+                                "text": post.get("text", ""),
+                                "link": post.get("url", ""),
+                                "published": post.get("date").isoformat() if post.get("date") else None,
+                            }
+                            for post in posts
+                        ]
+                    else:
+                        # Use RSS fetcher for RSS feeds
+                        crawler = Fetcher()
+                        fetch_result = await crawler.fetch(source.url, days_back=days_back or DEFAULT_DAYS_BACK)
+                        rss_entries = fetch_result["content"]
 
                     if not rss_entries:
                         continue
@@ -617,6 +652,103 @@ def register_website_source_routes(app):
         except Exception as e:
             logger.error(f"[WEBSITE SOURCE] Error stopping operation: {e}", exc_info=True)
             raise HTTPException(status_code=500, detail=str(e))
+
+
+async def _fetch_bossjob_bg(source_id: int, operation_id: str, days_back: int):
+    """Background task: fetch bossjob.com jobs with Playwright."""
+    from app.connection import AsyncSessionLocal
+    from app.models import Message, WebsiteSource
+    from web_crawler import fetch_posts
+    from app.tasks import update_operation, broadcast_progress
+
+    async with AsyncSessionLocal() as db:
+        try:
+            result = await db.execute(select(WebsiteSource).filter(WebsiteSource.id == source_id))
+            source = result.scalar_one_or_none()
+            if not source:
+                logger.warning(f"[BG FETCH BOSSJOB] Source {source_id} not found")
+                return
+
+            logger.info(f"[BG FETCH BOSSJOB] Starting fetch for {source.name}")
+            await broadcast_progress("fetch_start", {
+                "channel": source.name,
+                "channel_id": source_id,
+                "operation_id": operation_id,
+            })
+
+            # Fetch with Playwright
+            import json
+            cookies = None
+            if source.cookies:
+                try:
+                    cookies = json.loads(source.cookies)
+                    if not isinstance(cookies, list):
+                        cookies = [cookies]
+                except json.JSONDecodeError:
+                    logger.warning(f"[BG FETCH BOSSJOB] Invalid cookies JSON for source {source_id}")
+
+            posts = await fetch_posts(
+                source.url,
+                site_type="bossjob",
+                days_back=days_back,
+                cookies=cookies,
+            )
+
+            if not posts:
+                logger.info(f"[BG FETCH BOSSJOB] No posts found for {source.name}")
+                await update_operation(db, operation_id, status="completed")
+                await broadcast_progress("fetch_complete", {
+                    "channel": source.name,
+                    "new_messages": 0,
+                    "operation_id": operation_id,
+                })
+                return
+
+            # Save posts as Messages
+            messages_added = 0
+            for post in posts:
+                try:
+                    post_id = post.get("id", f"{source_id}-{hash(post.get('text', ''))}")
+                    existing = await db.execute(
+                        select(Message).filter(Message.website_post_id == f"{source_id}-{post_id}")
+                    )
+                    if existing.scalar_one_or_none():
+                        continue
+
+                    msg = Message(
+                        website_post_id=f"{source_id}-{post_id}",
+                        website_source_id=source_id,
+                        source_type="website",
+                        text=post.get("text", ""),
+                        date=datetime.now(),
+                        analysis_status="pending",
+                    )
+                    db.add(msg)
+                    messages_added += 1
+                except Exception as e:
+                    logger.warning(f"[BG FETCH BOSSJOB] Error saving message: {e}")
+                    continue
+
+            await db.commit()
+            source.last_fetch_at = datetime.now()
+            source.last_fetch_new_count = messages_added
+            await db.commit()
+
+            await update_operation(db, operation_id, status="completed")
+            await broadcast_progress("fetch_complete", {
+                "channel": source.name,
+                "new_messages": messages_added,
+                "operation_id": operation_id,
+            })
+
+            logger.info(f"[BG FETCH BOSSJOB] Completed: {messages_added} new messages from {source.name}")
+
+        except Exception as e:
+            logger.error(f"[BG FETCH BOSSJOB] Error: {e}", exc_info=True)
+            try:
+                await update_operation(db, operation_id, status="error", error_message=str(e))
+            except Exception:
+                pass
 
 
 # Background task functions

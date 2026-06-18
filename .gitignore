@@ -60,3 +60,6 @@ pnpm-debug.log*
 # Telegram session files
 *.session
 *.session-journal
+
+# Other sites
+bossjob/

@@ -701,8 +701,10 @@ async def _analyze_single(analyzer, message, channel_username: str):
 
     for attempt in range(max_retries):
         try:
+            # Use analysis_text if available (for website sources), otherwise use full text
+            text_to_analyze = getattr(message, 'analysis_text', None) or message.text
             result = await asyncio.wait_for(
-                analyzer.analyze_message(message.text),
+                analyzer.analyze_message(text_to_analyze),
                 timeout=300,  # Timeout for analysis
             )
             elapsed = time.time() - start_time
@@ -1214,9 +1216,29 @@ async def continuous_scanner(
                         if website_due:
                             try:
                                 from web_crawler.config import DEFAULT_DAYS_BACK as WEB_DAYS_BACK
-                                crawler = Fetcher()
-                                fetch_result = await crawler.fetch(website.url, days_back=WEB_DAYS_BACK)
-                                rss_entries = fetch_result["content"]
+
+                                # Fetch based on site type
+                                if website.site_type == "bossjob":
+                                    # Use Playwright for bossjob.com
+                                    from web_crawler import fetch_posts
+                                    posts = await fetch_posts(
+                                        website.url,
+                                        site_type="bossjob",
+                                        days_back=WEB_DAYS_BACK,
+                                    )
+                                    rss_entries = [
+                                        {
+                                            "text": post.get("text", ""),
+                                            "link": post.get("url", ""),
+                                            "published": post.get("date").isoformat() if post.get("date") else None,
+                                        }
+                                        for post in posts
+                                    ]
+                                else:
+                                    # Use RSS fetcher for RSS feeds
+                                    crawler = Fetcher()
+                                    fetch_result = await crawler.fetch(website.url, days_back=WEB_DAYS_BACK)
+                                    rss_entries = fetch_result["content"]
 
                                 if rss_entries:
                                     new_count = 0

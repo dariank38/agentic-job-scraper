@@ -115,6 +115,7 @@ export interface WebsiteSource {
   last_fetch_new_count: number;
   last_fetch_at: string | null;
   extraction_prompt: string | null;
+  cookies: string | null;
   job_count: number;
   message_count: number;
   pending_count: number;

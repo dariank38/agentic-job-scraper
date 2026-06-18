@@ -78,6 +78,7 @@ class Message(Base):
     source_type = Column(String, default="telegram")  # 'telegram' or 'website'
     date = Column(DateTime, nullable=True)
     text = Column(Text, nullable=True)
+    analysis_text = Column(Text, nullable=True)  # Condensed text for Ollama analysis (description + requirements for website sources)
     sender_id = Column(BigInteger, nullable=True)
     sender_username = Column(String, nullable=True)
     sender_first_name = Column(String, nullable=True)
@@ -374,6 +375,7 @@ class WebsiteSource(Base):
     last_fetch_new_count = Column(Integer, default=0)  # Number of new posts from last fetch
     last_fetch_at = Column(DateTime, nullable=True)  # Timestamp of last fetch
     extraction_prompt = Column(Text, nullable=True)  # Custom prompt for this site
+    cookies = Column(Text, nullable=True)  # JSON cookies for authenticated sites (bossjob, etc.)
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
