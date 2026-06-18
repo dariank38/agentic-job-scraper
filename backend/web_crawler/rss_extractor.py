@@ -135,7 +135,11 @@ class Extractor:
             for j in r.get("job_postings", []):
                 # Add job posting even if title is missing - backend will apply fallback
                 if j.get("title") or j.get("summary") or j.get("company") or j.get("role_type"):
-                    jobs.append(JobPosting(**{k: v for k, v in j.items() if v}))
+                    # Normalize fields: convert list requirements to string
+                    job_data = {k: v for k, v in j.items() if v}
+                    if isinstance(job_data.get("requirements"), list):
+                        job_data["requirements"] = "; ".join(job_data["requirements"])
+                    jobs.append(JobPosting(**job_data))
 
             dev = r.get("developer_info", {})
             if dev:
@@ -162,15 +166,18 @@ class Extractor:
 
         contact_info = None
         if emails or phones or socials or persons:
-            # Deduplicate social links (dicts) by converting to tuples
+            # Deduplicate and normalize social links (convert dicts to strings)
             socials_dedup = []
             seen = set()
             for s in socials:
-                # Convert dict to tuple of sorted items for deduplication
-                s_tuple = tuple(sorted(s.items())) if isinstance(s, dict) else s
-                if s_tuple not in seen:
-                    seen.add(s_tuple)
-                    socials_dedup.append(s)
+                # Convert dict to formatted string
+                if isinstance(s, dict):
+                    s_str = f"{s.get('type', 'link')}: {s.get('value', '')}".strip()
+                else:
+                    s_str = str(s)
+                if s_str not in seen:
+                    seen.add(s_str)
+                    socials_dedup.append(s_str)
 
             contact_info = ContactInfo(
                 emails=list(set(emails)),
