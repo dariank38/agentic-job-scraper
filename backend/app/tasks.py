@@ -2198,11 +2198,12 @@ async def lifespan(app):
     except Exception as e:
         pass
 
-    # Restore listeners from database
-    try:
-        await restore_listeners_from_db()
-    except Exception as e:
-        logger.error(f"Error restoring listeners on startup: {e}", exc_info=True)
+    # NOTE: Listeners are NOT restored automatically on startup.
+    # Use the "Start Listener" button in the dashboard to start listening manually.
+    # try:
+    #     await restore_listeners_from_db()
+    # except Exception as e:
+    #     logger.error(f"Error restoring listeners on startup: {e}", exc_info=True)
 
     # Note: cleanup_old_messages removed from lifespan to avoid greenlet_spawn error
     # Will be added as a background task or manual trigger later

@@ -140,7 +140,7 @@ class Job(Base):
     __tablename__ = "jobs"
 
     id = Column(Integer, primary_key=True)
-    message_id = Column(Integer, ForeignKey("messages.id"), unique=True, nullable=True)  # Nullable for website sources
+    message_id = Column(Integer, ForeignKey("messages.id", ondelete="CASCADE"), unique=True, nullable=True)  # Nullable for website sources
     channel_id = Column(Integer, ForeignKey("channels.id"), nullable=True)  # Null for website sources
     website_source_id = Column(Integer, ForeignKey("website_sources.id"), nullable=True)  # For website sources
     channel_name = Column(String, nullable=True)  # Store channel/source name for reference
@@ -171,8 +171,8 @@ class Job(Base):
     analyzed_at = Column(DateTime, default=datetime.utcnow)
 
     # Relationships
-    message = relationship("Message", back_populates="job")
-    channel = relationship("Channel", back_populates="jobs")
+    message = relationship("Message", back_populates="job", lazy="selectin")
+    channel = relationship("Channel", back_populates="jobs", lazy="selectin")
     website_source = relationship("WebsiteSource", back_populates="jobs")
 
     def __repr__(self) -> str:
@@ -212,7 +212,7 @@ class Developer(Base):
     __tablename__ = "developers"
 
     id = Column(Integer, primary_key=True)
-    message_id = Column(Integer, ForeignKey("messages.id"), unique=True, nullable=True)
+    message_id = Column(Integer, ForeignKey("messages.id", ondelete="CASCADE"), unique=True, nullable=True)
     channel_id = Column(Integer, ForeignKey("channels.id"), nullable=True)  # Null for website sources
     website_source_id = Column(Integer, ForeignKey("website_sources.id"), nullable=True)  # For website sources
 
@@ -241,8 +241,8 @@ class Developer(Base):
     analyzed_at = Column(DateTime, default=datetime.utcnow)
 
     # Relationships
-    message = relationship("Message", back_populates="developer")
-    channel = relationship("Channel", back_populates="developers")
+    message = relationship("Message", back_populates="developer", lazy="selectin")
+    channel = relationship("Channel", back_populates="developers", lazy="selectin")
     website_source = relationship("WebsiteSource", back_populates="developers")
 
     def __repr__(self) -> str:
