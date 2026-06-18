@@ -1,5 +1,6 @@
 """Website source-related API routes."""
 
+import asyncio
 import logging
 from typing import Optional
 from datetime import datetime, timezone
@@ -248,7 +249,7 @@ def register_website_source_routes(app):
             # Fetch based on site type — RSS for feeds, Playwright for dynamic sites
             if source.site_type == "bossjob":
                 # Run bossjob fetch in background (Playwright is slow)
-                background_tasks.add_task(_fetch_bossjob_bg, source_id, operation_id, days_back or DEFAULT_DAYS_BACK)
+                asyncio.create_task(_fetch_bossjob_bg(source_id, operation_id, days_back or DEFAULT_DAYS_BACK))
                 return {
                     "success": True,
                     "message": f"Bossjob fetch started for {source.name} in background (pages 1-10)",
@@ -342,7 +343,7 @@ def register_website_source_routes(app):
                     website_source_id=source_id,
                     source_type="website",
                     text=entry_text,
-                    analysis_text=post.get("analysis_text"),  # Condensed text for Ollama analysis
+                    analysis_text=entry.get("analysis_text") if isinstance(entry, dict) else None,  # Condensed text for Ollama analysis
                     date=published_date,
                     sender_username=source.name,
                     analysis_status="pending",
@@ -540,7 +541,7 @@ def register_website_source_routes(app):
                 raise HTTPException(status_code=400, detail="Website source is not active")
 
             # Start background analysis
-            background_tasks.add_task(_analyze_website_source_bg, source_id)
+            asyncio.create_task(_analyze_website_source_bg(source_id))
             return {
                 "success": True,
                 "message": f"Analysis started for {source.name}",
@@ -573,7 +574,7 @@ def register_website_source_routes(app):
 
             import uuid
             operation_id = f"analyze-websites-{uuid.uuid4().hex[:8]}"
-            background_tasks.add_task(_run_analyze_websites, source_ids, operation_id)
+            asyncio.create_task(_run_analyze_websites(source_ids, operation_id))
             return {
                 "success": True,
                 "message": f"Analysis started for {len(source_ids)} website source(s)",
