@@ -257,7 +257,13 @@ const Jobs = () => {
   };
 
   const getSkills = (job: Job) => {
-    return job.skills || [];
+    const skills = job.skills;
+    if (Array.isArray(skills)) {
+      return skills;
+    } else if (typeof skills === 'string') {
+      return skills.split('\n').filter(s => s.trim());
+    }
+    return [];
   };
 
   return (

@@ -24,7 +24,7 @@ export interface Job {
   location?: string;
   is_remote?: boolean;
   role_type?: string;
-  skills?: string[];
+  skills?: string[] | string;
   contact?: string;
   contact_type?: string;
   summary?: string;
@@ -535,6 +535,32 @@ const api = {
 
   stopWebsiteSource: async (id: number): Promise<any> => {
     const response = await fetch(`${API_BASE}/api/website-sources/${id}/stop`, { method: 'POST' });
+    return response.json();
+  },
+
+  // Autonomous
+  getAutonomousStatus: async (): Promise<any> => {
+    const response = await fetch(`${API_BASE}/api/autonomous/status`);
+    return response.json();
+  },
+
+  getAutonomousSources: async (): Promise<any> => {
+    const response = await fetch(`${API_BASE}/api/autonomous/sources`);
+    return response.json();
+  },
+
+  getAutonomousOutcomes: async (limit: number = 50): Promise<any> => {
+    const response = await fetch(`${API_BASE}/api/autonomous/outcomes?limit=${limit}`);
+    return response.json();
+  },
+
+  getAutonomousState: async (): Promise<any> => {
+    const response = await fetch(`${API_BASE}/api/autonomous/state`);
+    return response.json();
+  },
+
+  getAutonomousDiscovered: async (): Promise<any> => {
+    const response = await fetch(`${API_BASE}/api/autonomous/discovered`);
     return response.json();
   },
 };

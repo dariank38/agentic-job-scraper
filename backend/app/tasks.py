@@ -2229,9 +2229,26 @@ async def lifespan(app):
 
     # Note: cleanup_old_messages removed from lifespan to avoid greenlet_spawn error
     # Will be added as a background task or manual trigger later
+
+    # Start autonomous orchestrator if enabled
+    autonomous_orchestrator = None
+    try:
+        from app.autonomous.orchestrator import AutonomousOrchestrator
+        autonomous_orchestrator = AutonomousOrchestrator()
+        asyncio.create_task(autonomous_orchestrator.start())
+    except Exception as e:
+        logger.error(f"Error starting autonomous orchestrator: {e}", exc_info=True)
+
     try:
         yield
     finally:
+        # Stop autonomous orchestrator
+        if autonomous_orchestrator:
+            try:
+                await autonomous_orchestrator.stop()
+            except Exception as e:
+                logger.error(f"Error stopping autonomous orchestrator: {e}")
+
         # Stop all listeners on shutdown
         try:
             for account_id in list(telegram_listener_running.keys()):

@@ -11,3 +11,5 @@ fastapi
 httpx
 feedparser
 pydantic
+apscheduler
+playwright

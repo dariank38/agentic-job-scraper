@@ -844,7 +844,12 @@ const Dashboard = () => {
             ) : (
               <div className="space-y-2">
                 {recentJobs.map((job) => {
-                  const skills = job.skills || [];
+                  let skills: string[] = [];
+                  if (Array.isArray(job.skills)) {
+                    skills = job.skills;
+                  } else if (typeof job.skills === 'string') {
+                    skills = (job.skills as string).split('\n').filter(s => s.trim());
+                  }
                   return (
                     <div key={job.id} className="p-3 rounded-lg bg-gradient-to-r from-white/50 to-white/30 hover:from-white/70 hover:to-white/50 transition-all border border-border">
                       <div className="flex items-center gap-2 mb-0.5">

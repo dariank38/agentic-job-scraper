@@ -16,6 +16,7 @@ import {
   Menu,
   Zap,
   Globe,
+  Bot,
 } from 'lucide-react';
 
 type ToastType = 'success' | 'error' | 'info' | 'warning';
@@ -463,6 +464,7 @@ const Layout = ({ children }: { children: React.ReactNode }) => {
     { path: '/websites', label: t('nav.websites'), icon: Globe },
     { path: '/channels', label: t('nav.channels'), icon: Radio },
     { path: '/telegram-accounts', label: t('nav.telegramAccounts'), icon: Radio },
+    { path: '/autonomous', label: 'Autonomous', icon: Bot },
   ];
 
   const isActive = (path: string) =>

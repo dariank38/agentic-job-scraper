@@ -1,6 +1,7 @@
 """API routes registration for job scraper."""
 
 from app.routes.actions import register_action_routes
+from app.routes.autonomous import register_autonomous_routes
 from app.routes.channels import register_channel_routes
 from app.routes.developers import register_developer_routes
 from app.routes.jobs import register_job_routes
@@ -24,3 +25,4 @@ def register_api_routes(app):
     register_operations_routes(app)
     register_telegram_account_routes(app)
     register_website_source_routes(app)
+    register_autonomous_routes(app)

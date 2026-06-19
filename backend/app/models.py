@@ -407,3 +407,60 @@ class TelegramAccount(Base):
 
     def __repr__(self) -> str:
         return f"<TelegramAccount {self.id} {self.username or self.phone_number}>"
+
+
+class AutonomousState(Base):
+    """Persist volatile, dynamically generated autonomous state.
+
+    Used for learned scheduling patterns, selector registries, Ollama budgets,
+    fingerprint rotation indices, and any other state that must survive restarts.
+    """
+
+    __tablename__ = "autonomous_states"
+
+    key = Column(String, primary_key=True)
+    value = Column(JSON, nullable=False, default=dict)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    def __repr__(self) -> str:
+        return f"<AutonomousState {self.key}>"
+
+
+class FetchOutcome(Base):
+    """Track every fetch result for autonomous schedule optimization."""
+
+    __tablename__ = "fetch_outcomes"
+
+    id = Column(Integer, primary_key=True)
+    source_id = Column(Integer, nullable=True, index=True)
+    source_type = Column(String, default="website")  # 'telegram' or 'website'
+    fetched_at = Column(DateTime, default=datetime.utcnow, index=True)
+    new_jobs_found = Column(Integer, default=0)
+    new_messages = Column(Integer, default=0)
+    duration_seconds = Column(Integer, nullable=True)
+    error_type = Column(String, nullable=True)
+    error_message = Column(Text, nullable=True)
+
+    def __repr__(self) -> str:
+        return f"<FetchOutcome source={self.source_id} jobs={self.new_jobs_found}>"
+
+
+class SourceScoring(Base):
+    """Learned scoring and optimal windows for each source."""
+
+    __tablename__ = "source_scorings"
+
+    source_id = Column(Integer, primary_key=True)
+    source_type = Column(String, nullable=False)  # 'telegram' or 'website'
+    hourly_yield_24h = Column(Integer, default=0)
+    hourly_yield_7d = Column(Integer, default=0)
+    best_window_start = Column(String, nullable=True)  # HH:MM
+    best_window_end = Column(String, nullable=True)    # HH:MM
+    recommended_interval_minutes = Column(Integer, default=60)
+    consecutive_failures = Column(Integer, default=0)
+    last_optimized_at = Column(DateTime, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    def __repr__(self) -> str:
+        return f"<SourceScoring source={self.source_id} interval={self.recommended_interval_minutes}m>"

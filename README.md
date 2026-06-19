@@ -57,6 +57,19 @@ Agentic Job Scraper is an automated system that fetches software development job
 - **🔄 Cron Auto-Analysis** — Continuous scanner automatically analyzes after fetching (both Telegram and RSS)
 - **⏱ Robust RSS Fetching** — 30-second timeout and 7-day lookback window for RSS feeds
 - **🍪 Cookie Extension** — Chrome extension for one-click Bossjob.com cookie export
+- **🤖 Autonomous Agent Mode** — Self-adjusting schedules, self-healing Playwright scrapers, and automated source discovery
+
+### Autonomous Agent Mode (Optional)
+
+The system can run as a self-sustaining agent when `ENABLE_AUTONOMOUS_MODE=true` is set:
+
+- **Self-Adjusting Cron** — Analyzes historical yield per source and shifts fetch frequency dynamically (10 min to 12 hours)
+- **Self-Healing Playwright** — Rotates fingerprints/proxies and uses LLM to recover from broken selectors
+- **Token Budget Guard** — Enforces a daily Ollama token budget so self-learning cannot exhaust resources
+
+Works with existing sources: Telegram channels, Bossjob.com, Dianya (电鸭社区), V2EX.
+
+Auto-apply is explicitly **not** implemented; autonomy is limited to optimizing existing sources.
 
 ## 🚀 Planned Features
 
