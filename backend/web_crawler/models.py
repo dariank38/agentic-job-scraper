@@ -6,7 +6,7 @@ from typing import Optional, List
 
 class JobPosting(BaseModel):
     """Structured job posting data."""
-    title: str = Field(..., description="Job title")
+    title: Optional[str] = Field(None, description="Job title")
     requirements: Optional[str] = Field(None, description="Job requirements or qualifications")
     deadline: Optional[str] = Field(None, description="Application deadline")
     url: Optional[str] = Field(None, description="Job posting URL")

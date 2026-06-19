@@ -139,6 +139,22 @@ class Extractor:
                     job_data = {k: v for k, v in j.items() if v}
                     if isinstance(job_data.get("requirements"), list):
                         job_data["requirements"] = "; ".join(job_data["requirements"])
+                    if isinstance(job_data.get("location"), list):
+                        job_data["location"] = ", ".join(job_data["location"])
+                    # Normalize salary: convert dict to string
+                    if isinstance(job_data.get("salary"), dict):
+                        salary_dict = job_data["salary"]
+                        min_salary = salary_dict.get("min")
+                        max_salary = salary_dict.get("max")
+                        if min_salary and max_salary:
+                            job_data["salary"] = f"{min_salary}-{max_salary}"
+                        elif min_salary:
+                            job_data["salary"] = str(min_salary)
+                        elif max_salary:
+                            job_data["salary"] = str(max_salary)
+                    # Normalize role_type: convert comma-separated to pipe-separated for consistent tag display
+                    if isinstance(job_data.get("role_type"), str) and "," in job_data["role_type"]:
+                        job_data["role_type"] = job_data["role_type"].replace(", ", "|").replace(",", "|")
                     jobs.append(JobPosting(**job_data))
 
             dev = r.get("developer_info", {})
