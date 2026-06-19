@@ -56,6 +56,7 @@ Agentic Job Scraper is an automated system that fetches software development job
 - **💾 Token Monitoring** — Real-time token usage tracking for Ollama API calls
 - **🔄 Cron Auto-Analysis** — Continuous scanner automatically analyzes after fetching (both Telegram and RSS)
 - **⏱ Robust RSS Fetching** — 30-second timeout and 7-day lookback window for RSS feeds
+- **🍪 Cookie Extension** — Chrome extension for one-click Bossjob.com cookie export
 
 ## 🚀 Planned Features
 
