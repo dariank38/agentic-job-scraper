@@ -19,7 +19,7 @@
 
 ## 🎯 Overview
 
-Agentic Job Scraper is an automated system that fetches software development job postings from Telegram channels and RSS feeds (e.g., V2EX, 电鸭社区), analyzes them using local AI (Ollama), and presents them in a modern web interface. Perfect for developers hunting for remote opportunities or recruiters monitoring market trends.
+Agentic Job Scraper is an automated system that fetches software development job postings from Telegram channels, RSS feeds (e.g., V2EX, 电鸭社区), and job boards (Bossjob.com), analyzes them using local AI (Ollama), and presents them in a modern web interface. Perfect for developers hunting for remote opportunities or recruiters monitoring market trends.
 
 ## ✨ Features
 
@@ -27,6 +27,7 @@ Agentic Job Scraper is an automated system that fetches software development job
 - **📡 Telegram Integration** — Monitor multiple Telegram channels for job postings with multi-account support
 - **📡 Real-time Listener** — Start/stop real-time message listener from dashboard for instant job posting capture
 - **🌐 RSS Feed Support** — Fetch and analyze job postings from RSS feeds (V2EX, 电鸭社区, etc.)
+- **🎯 Bossjob.com Integration** — Playwright-based scraping with structured job extraction (title, company, location, requirements)
 - **🤖 AI-Powered Analysis** — Uses Ollama (qwen2.5:14b or qwen2.5:7b) to extract structured job/developer data
 - **📊 Real-time Progress** — WebSocket-based progress tracking with per-message status updates
 - **🔔 Browser Notifications** — Get notified when new jobs or developers are discovered
@@ -58,8 +59,7 @@ Agentic Job Scraper is an automated system that fetches software development job
 
 ## 🚀 Planned Features
 
-- [ ] Extended job board support (more career sites)
-- [ ] Playwright integration for full content fetching
+- [ ] Extended job board support (more career sites beyond Bossjob.com)
 - [ ] Additional i18n languages
 - [ ] Docker containerization
 - [ ] CI/CD pipeline

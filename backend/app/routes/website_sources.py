@@ -705,45 +705,55 @@ async def _fetch_bossjob_bg(source_id: int, operation_id: str, days_back: int):
                 })
                 return
 
-            # Save posts as Messages
-            messages_added = 0
+            # Save posts as Jobs directly (Bossjob has structured data)
+            jobs_added = 0
             for post in posts:
                 try:
                     post_id = post.get("id", f"{source_id}-{hash(post.get('text', ''))}")
-                    existing = await db.execute(
-                        select(Message).filter(Message.website_post_id == f"{source_id}-{post_id}")
+                    job_url = post.get("url", "")
+                    
+                    # Check for duplicate by URL
+                    existing_job = await db.execute(
+                        select(Job).filter(
+                            Job.website_source_id == source_id,
+                            Job.summary.like(f"%{job_url}%")  # URL stored in summary for dedup
+                        )
                     )
-                    if existing.scalar_one_or_none():
+                    if existing_job.scalar_one_or_none():
                         continue
 
-                    msg = Message(
-                        website_post_id=f"{source_id}-{post_id}",
+                    # Create Job record directly from structured Bossjob data
+                    job = Job(
                         website_source_id=source_id,
+                        channel_name=source.name,
                         source_type="website",
-                        text=post.get("text", ""),
-                        analysis_text=post.get("analysis_text"),  # Condensed text for Ollama analysis
-                        date=datetime.now(),
-                        analysis_status="pending",
+                        title=post.get("title", ""),
+                        company=post.get("company", ""),
+                        location=post.get("location", ""),
+                        summary=post.get("description", "") + f"\n\nURL: {job_url}",
+                        skills=post.get("requirements", ""),  # Store requirements in skills field
+                        is_applied=False,
+                        is_hidden=False,
                     )
-                    db.add(msg)
-                    messages_added += 1
+                    db.add(job)
+                    jobs_added += 1
                 except Exception as e:
-                    logger.warning(f"[BG FETCH BOSSJOB] Error saving message: {e}")
+                    logger.warning(f"[BG FETCH BOSSJOB] Error saving job: {e}")
                     continue
 
             await db.commit()
             source.last_fetch_at = datetime.now()
-            source.last_fetch_new_count = messages_added
+            source.last_fetch_new_count = jobs_added
             await db.commit()
 
             await update_operation(db, operation_id, status="completed")
             await broadcast_progress("fetch_complete", {
                 "channel": source.name,
-                "new_messages": messages_added,
+                "new_messages": jobs_added,
                 "operation_id": operation_id,
             })
 
-            logger.info(f"[BG FETCH BOSSJOB] Completed: {messages_added} new messages from {source.name}")
+            logger.info(f"[BG FETCH BOSSJOB] Completed: {jobs_added} new jobs from {source.name}")
 
         except Exception as e:
             logger.error(f"[BG FETCH BOSSJOB] Error: {e}", exc_info=True)
