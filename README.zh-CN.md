@@ -19,7 +19,7 @@
 
 ## 🎯 概述
 
-Agentic Job Scraper 是一个自动化系统，从 Telegram 频道和 RSS 订阅源（如 V2EX、电鸭社区）获取软件开发职位信息，使用本地 AI (Ollama) 进行分析，并在现代化的 Web 界面中展示。非常适合寻找远程机会的开发者或监控市场趋势的招聘人员。
+Agentic Job Scraper 是一个自动化系统，从 Telegram 频道、RSS 订阅源（如 V2EX、电鸭社区）和招聘网站（Bossjob.com）获取软件开发职位信息，使用本地 AI (Ollama) 进行分析，并在现代化的 Web 界面中展示。非常适合寻找远程机会的开发者或监控市场趋势的招聘人员。
 
 ## ✨ 功能特性
 
@@ -27,6 +27,7 @@ Agentic Job Scraper 是一个自动化系统，从 Telegram 频道和 RSS 订阅
 - **📡 Telegram 集成** — 监控多个 Telegram 频道的职位发布，支持多账号
 - **📡 实时监听器** — 从仪表板启动/停止实时消息监听器，即时捕获职位发布
 - **🌐 RSS 订阅源支持** — 从 RSS 订阅源获取和分析职位信息（V2EX、电鸭社区等）
+- **🎯 Bossjob.com 集成** — 基于 Playwright 的抓取，结构化职位提取（标题、公司、地点、要求）
 - **🤖 AI 驱动分析** — 使用 Ollama (qwen2.5:14b 或 qwen2.5:7b) 提取结构化职位/开发者数据
 - **📊 实时进度** — 基于 WebSocket 的进度跟踪，每条消息状态更新
 - **🔔 浏览器通知** — 发现新职位或开发者时收到通知
@@ -55,11 +56,11 @@ Agentic Job Scraper 是一个自动化系统，从 Telegram 频道和 RSS 订阅
 - **💾 Token 监控** — 实时跟踪 Ollama API 调用的 token 使用情况
 - **🔄 定时自动分析** — 持续扫描器在获取后自动分析（Telegram 和 RSS）
 - **⏱ 健壮的 RSS 获取** — 30 秒超时和 7 天回看窗口
+- **🍪 Cookie 扩展** — Chrome 扩展，一键导出 Bossjob.com Cookie
 
 ## 🚀 计划功能
 
-- [ ] 扩展职位板支持（更多招聘网站）
-- [ ] Playwright 集成以获取完整内容
+- [ ] 扩展职位板支持（Bossjob.com 之外的更多招聘网站）
 - [ ] 更多 i18n 语言
 - [ ] Docker 容器化
 - [ ] CI/CD 管道
