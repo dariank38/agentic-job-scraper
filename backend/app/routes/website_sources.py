@@ -698,42 +698,50 @@ def register_website_source_routes(app):
             raise HTTPException(status_code=500, detail=str(e))
 
 
-def is_software_engineering_job(title: str, requirements: str = "") -> bool:
-    """Check if job title or requirements are software engineering related."""
-    if not title and not requirements:
+def is_software_engineering_job(title: str, requirements: str = "", description: str = "") -> bool:
+    """Check if job title, requirements or description are software engineering related."""
+    if not title and not requirements and not description:
         return False
     
-    # Combine title and requirements for checking
-    text_to_check = f"{title} {requirements}".lower()
+    # Combine title, requirements and description for checking
+    text_to_check = f"{title} {requirements} {description}".lower()
     
     # Software engineering keywords (English)
     se_keywords = [
         'software engineer', 'software developer', 'full stack', 'fullstack',
-        'backend', 'front end', 'frontend', 'web developer', 'web engineer',
+        'backend', 'back-end', 'front end', 'frontend', 'front-end',
+        'web developer', 'web engineer', 'web application',
         'mobile developer', 'ios developer', 'android developer',
-        'devops', 'sre', 'site reliability',
-        'data engineer', 'machine learning', 'ml engineer', 'ai engineer',
-        'python developer', 'java developer', 'javascript', 'typescript',
-        'react', 'vue', 'angular', 'node', 'go', 'golang', 'rust',
-        'qa engineer', 'quality assurance', 'test engineer',
-        'embedded', 'firmware', 'system engineer',
-        'blockchain', 'web3', 'smart contract',
+        'devops', 'sre', 'site reliability', 'platform engineer', 'cloud engineer',
+        'data engineer', 'data scientist', 'machine learning', 'ml engineer', 'ai engineer',
+        'python', 'java developer', 'javascript', 'typescript',
+        'react', 'vue', 'angular', 'node.js', 'nodejs', 'next.js',
+        'golang', 'rust', 'kotlin', 'swift', 'flutter', 'dart',
+        'qa engineer', 'quality assurance', 'test engineer', 'automation engineer',
+        'embedded', 'firmware', 'systems engineer',
+        'blockchain', 'web3', 'smart contract', 'solidity',
         'engineering manager', 'tech lead', 'principal engineer',
         'staff engineer', 'senior engineer', 'junior engineer',
+        'database', 'sql', 'postgresql', 'mysql', 'mongodb',
+        'cloud', 'aws', 'gcp', 'azure', 'kubernetes', 'docker',
+        'api developer', 'api engineer', 'microservices',
+        'security engineer', 'cybersecurity', 'penetration test',
+        'game developer', 'unity developer', 'unreal',
     ]
     
     # Software engineering keywords (Chinese)
     se_keywords_zh = [
         '软件工程师', '软件开发', '全栈', '后端', '前端', '网页开发',
         '移动开发', 'ios开发', 'android开发', '安卓开发',
-        '运维', '测试工程师', '质量保证',
-        '数据工程师', '机器学习', '人工智能', 'ai工程师',
+        '运维', '测试工程师', '质量保证', '自动化测试',
+        '数据工程师', '数据科学家', '机器学习', '人工智能', 'ai工程师',
         'python开发', 'java开发', 'javascript', 'typescript',
-        'react', 'vue', 'angular', 'node', 'go', 'golang', 'rust',
-        '嵌入式', '固件', '系统工程师',
+        'react', 'vue', 'angular', 'node', 'go', 'golang', 'rust', 'kotlin', 'swift',
+        '嵌入式', '固件', '系统工程师', '云工程师', '平台工程师',
         '区块链', 'web3', '智能合约',
         '技术经理', '技术主管', '首席工程师',
         '资深工程师', '高级工程师', '初级工程师',
+        '数据库', '安全工程师', '游戏开发',
     ]
     
     # Check if any English keyword is in the text
@@ -742,7 +750,7 @@ def is_software_engineering_job(title: str, requirements: str = "") -> bool:
             return True
     
     # Check if any Chinese keyword is in the text (case-sensitive for Chinese)
-    text_to_check_original = f"{title} {requirements}"
+    text_to_check_original = f"{title} {requirements} {description}"
     for keyword in se_keywords_zh:
         if keyword in text_to_check_original:
             return True
@@ -823,9 +831,10 @@ async def _fetch_bossjob_bg(source_id: int, operation_id: str, days_back: int):
                 try:
                     title = post.get("title", "")
                     requirements = post.get("requirements", "")
+                    description = post.get("description", "")
                     
-                    # Filter: only save software engineering jobs (check title and requirements)
-                    if not is_software_engineering_job(title, requirements):
+                    # Filter: only save software engineering jobs (check title, requirements, description)
+                    if not is_software_engineering_job(title, requirements, description):
                         jobs_filtered += 1
                         logger.info(f"[BG FETCH BOSSJOB] Filtered non-SE job: {title[:50]}...")
                         continue

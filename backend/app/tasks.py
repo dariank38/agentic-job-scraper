@@ -1012,7 +1012,7 @@ async def analyze_messages(
                     })
                 except Exception as e:
                     skipped_count += 1
-                    message.analysis_status = "pending"
+                    message.analysis_status = "failed"
                     message_results[-1]["status"] = "db_error"
                     message_results[-1]["error"] = str(e)
 
@@ -1081,7 +1081,7 @@ async def analyze_messages(
                     message.analysis_status = "analyzed"
                 except Exception as e:
                     skipped_count += 1
-                    message.analysis_status = "pending"
+                    message.analysis_status = "failed"
                     message_results[-1]["status"] = "db_error"
                     message_results[-1]["error"] = str(e)
 
