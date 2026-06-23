@@ -281,9 +281,10 @@ const api = {
   },
 
   // Messages
-  getMessages: async (params?: { channel_id?: number; search?: string; analysis_status?: string; limit?: number; offset?: number }): Promise<any> => {
+  getMessages: async (params?: { channel_id?: number; website_source_id?: number; search?: string; analysis_status?: string; limit?: number; offset?: number }): Promise<any> => {
     const queryParams = new URLSearchParams();
     if (params?.channel_id) queryParams.append('channel_id', params.channel_id.toString());
+    if (params?.website_source_id) queryParams.append('website_source_id', params.website_source_id.toString());
     if (params?.search) queryParams.append('search', params.search);
     if (params?.analysis_status) queryParams.append('analysis_status', params.analysis_status);
     if (params?.limit) queryParams.append('limit', params.limit.toString());
