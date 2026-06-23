@@ -311,6 +311,12 @@ graph TB
 ### Websites
 ![Websites](screenshots/Websites.png)
 
+### Settings
+![Settings](screenshots/Settings.png)
+
+### Autonomous Agent
+![Autonomous Agent](screenshots/Autonomous.png)
+
 ### Backend API
 ![Backend API](screenshots/Backend.png)
 
@@ -1203,6 +1209,12 @@ graph TB
 
 ### 网站
 ![网站](screenshots/Websites.png)
+
+### 设置
+![设置](screenshots/Settings.png)
+
+### 自动模式
+![自动模式](screenshots/Autonomous.png)
 
 ### 后端 API
 ![后端 API](screenshots/Backend.png)
