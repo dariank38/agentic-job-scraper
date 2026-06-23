@@ -78,8 +78,16 @@ class AsyncNvidiaAnalyzer:
             finish_reason = choice.get("finish_reason")
             message = choice.get("message", {})
             raw = message.get("content", "").strip()
+            usage_data = data.get("usage", {})
 
             if not raw:
+                if finish_reason == "stop":
+                    logger.warning(
+                        "[NVIDIA] Empty content with finish_reason=stop (content filter/refusal) | msg: %.50s... — returning 'other'",
+                        msg_preview,
+                    )
+                    prompt_tokens = usage_data.get("prompt_tokens", 0)
+                    return {"category": "other", "usage": {"input_tokens": prompt_tokens, "output_tokens": 0, "total_tokens": prompt_tokens}}
                 logger.error(
                     "[NVIDIA] Empty content | finish_reason: %s | raw response: %s",
                     finish_reason, json.dumps(data)[:500],
@@ -92,7 +100,6 @@ class AsyncNvidiaAnalyzer:
                     max_tokens, msg_preview,
                 )
 
-            usage_data = data.get("usage", {})
             usage = {
                 "input_tokens": usage_data.get("prompt_tokens", 0),
                 "output_tokens": usage_data.get("completion_tokens", 0),
