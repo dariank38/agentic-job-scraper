@@ -563,6 +563,96 @@ const api = {
     const response = await fetch(`${API_BASE}/api/autonomous/discovered`);
     return response.json();
   },
+
+  enhanceResume: async (jobId: number, resumeText: string, onChunk: (text: string) => void): Promise<void> => {
+    const response = await fetch(`${API_BASE}/api/resume/enhance`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ job_id: jobId, resume_text: resumeText }),
+    });
+    if (!response.ok) {
+      const err = await response.json().catch(() => ({}));
+      throw new Error(err.detail || `Resume enhancement failed: ${response.status}`);
+    }
+    const reader = response.body!.getReader();
+    const decoder = new TextDecoder();
+    let buffer = '';
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      const lines = buffer.split('\n');
+      buffer = lines.pop() || '';
+      for (const line of lines) {
+        if (!line.startsWith('data:')) continue;
+        const data = line.slice(5).trim();
+        if (data === '[DONE]') return;
+        try {
+          const chunk = JSON.parse(data);
+          if (chunk.error) throw new Error(chunk.error);
+          if (chunk.content) onChunk(chunk.content);
+        } catch (e: any) {
+          if (e.message && !e.message.startsWith('JSON')) throw e;
+        }
+      }
+    }
+  },
+
+  scoreResume: async (jobId: number, resumeText: string): Promise<{
+    score: number;
+    level: string;
+    summary: string;
+    matched_skills: string[];
+    missing_skills: string[];
+    strengths: string[];
+    improvements: string[];
+  }> => {
+    const response = await fetch(`${API_BASE}/api/resume/score`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ job_id: jobId, resume_text: resumeText }),
+    });
+    if (!response.ok) {
+      const err = await response.json().catch(() => ({}));
+      throw new Error(err.detail || `Score failed: ${response.status}`);
+    }
+    const data = await response.json();
+    return data.result;
+  },
+
+  generateResume: async (jobId: number, onChunk: (text: string) => void): Promise<void> => {
+    const response = await fetch(`${API_BASE}/api/resume/generate`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ job_id: jobId }),
+    });
+    if (!response.ok) {
+      const err = await response.json().catch(() => ({}));
+      throw new Error(err.detail || `Resume generation failed: ${response.status}`);
+    }
+    const reader = response.body!.getReader();
+    const decoder = new TextDecoder();
+    let buffer = '';
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      const lines = buffer.split('\n');
+      buffer = lines.pop() || '';
+      for (const line of lines) {
+        if (!line.startsWith('data:')) continue;
+        const data = line.slice(5).trim();
+        if (data === '[DONE]') return;
+        try {
+          const chunk = JSON.parse(data);
+          if (chunk.error) throw new Error(chunk.error);
+          if (chunk.content) onChunk(chunk.content);
+        } catch (e: any) {
+          if (e.message && !e.message.startsWith('JSON')) throw e;
+        }
+      }
+    }
+  },
 };
 
 export default api;

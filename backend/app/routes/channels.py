@@ -7,7 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.connection import get_db
-from app.models import Channel, Message, Job
+from app.models import Channel, Developer, Message, Job
 
 
 def register_channel_routes(app):
@@ -65,13 +65,16 @@ def register_channel_routes(app):
 
     @app.delete("/api/channels/{channel_id}")
     async def delete_channel(channel_id: int, db: AsyncSession = Depends(get_db)):
-        """Delete a channel."""
+        """Delete a channel and all related messages, jobs, and developers."""
         try:
             result = await db.execute(select(Channel).filter(Channel.id == channel_id))
             channel = result.scalar_one_or_none()
             if not channel:
                 raise HTTPException(status_code=404, detail="Channel not found")
 
+            await db.execute(delete(Job).where(Job.channel_id == channel_id))
+            await db.execute(delete(Developer).where(Developer.channel_id == channel_id))
+            await db.execute(delete(Message).where(Message.channel_id == channel_id))
             await db.delete(channel)
             await db.commit()
 

@@ -53,6 +53,7 @@ interface WebSocketProgressContextType {
   cronStatus: { running: boolean } | null;
   listenerStatus: { running: boolean; account_id?: number } | null;
   channelUpdates: Array<{ id: number; username: string; is_listened: number; telegram_account_id: number | null }> | null;
+  resumeGenerating: { job_id: number; job_title: string } | null;
   requestStop: (channelId: number, channelUsername: string) => void;
 }
 
@@ -111,6 +112,7 @@ const WebSocketProgressProvider = ({ children }: { children: React.ReactNode }) 
   const [cronStatus, setCronStatus] = useState<{ running: boolean } | null>(null);
   const [listenerStatus, setListenerStatus] = useState<{ running: boolean; account_id?: number } | null>(null);
   const [channelUpdates, setChannelUpdates] = useState<Array<{ id: number; username: string; is_listened: number; telegram_account_id: number | null }> | null>(null);
+  const [resumeGenerating, setResumeGenerating] = useState<{ job_id: number; job_title: string } | null>(null);
   const wsRef = useRef<WebSocket | null>(null);
   const lastNotificationRef = useRef<Record<string, number>>({});
 
@@ -394,6 +396,10 @@ const WebSocketProgressProvider = ({ children }: { children: React.ReactNode }) 
               setCronStatus({ running: data.running || false });
             } else if (data.type === 'listener_status') {
               setListenerStatus({ running: data.running || false, account_id: data.account_id });
+            } else if (data.type === 'resume_generating') {
+              setResumeGenerating({ job_id: data.job_id ?? 0, job_title: data.job_title || '' });
+            } else if (data.type === 'resume_complete') {
+              setResumeGenerating(null);
             } else if (data.type === 'channel_update') {
               setChannelUpdates(data.channels || []);
             } else if (data.type === 'bulk_fetch_start') {
@@ -445,7 +451,7 @@ const WebSocketProgressProvider = ({ children }: { children: React.ReactNode }) 
   }, []);
 
   return (
-    <WebSocketProgressContext.Provider value={{ progress, isConnected, channelProgress, operations, bulkOperations, stoppingChannels, tokenUsage, messageResults, currentAnalyzingMessage, statsUpdate, cronStatus, listenerStatus, channelUpdates, requestStop }}>
+    <WebSocketProgressContext.Provider value={{ progress, isConnected, channelProgress, operations, bulkOperations, stoppingChannels, tokenUsage, messageResults, currentAnalyzingMessage, statsUpdate, cronStatus, listenerStatus, channelUpdates, resumeGenerating, requestStop }}>
       {children}
     </WebSocketProgressContext.Provider>
   );

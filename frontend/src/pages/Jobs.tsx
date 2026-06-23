@@ -14,6 +14,8 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Textarea } from '@/components/ui/textarea';
 import {
   Mail,
   MessageSquare,
@@ -30,11 +32,18 @@ import {
   MapPin,
   ExternalLink,
   Copy,
-  Check
+  Check,
+  ScrollText,
+  Loader2,
+  Sparkles,
+  Star,
+  CheckCircle,
+  XCircle,
+  TrendingUp,
 } from 'lucide-react';
 import api from '@/services/api';
 import type { Job } from '@/services/api';
-import { useToast } from '@/components/Layout';
+import { useToast, useWebSocketProgress } from '@/components/Layout';
 
 const getInitials = (name: string) => {
   return name.split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2);
@@ -53,12 +62,31 @@ const Jobs = () => {
   const [copiedMsg, setCopiedMsg] = useState(false);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [jobToDelete, setJobToDelete] = useState<number | null>(null);
+  const [resumeDialogOpen, setResumeDialogOpen] = useState(false);
+  const [resumeTab, setResumeTab] = useState<'generate' | 'enhance' | 'score'>('generate');
+  const [resumeJobTitle, setResumeJobTitle] = useState('');
+  // Generate tab
+  const [generatedText, setGeneratedText] = useState('');
+  const [generateLoading, setGenerateLoading] = useState(false);
+  // Enhance tab
+  const [userResumeInput, setUserResumeInput] = useState('');
+  const [enhancedText, setEnhancedText] = useState('');
+  const [enhanceLoading, setEnhanceLoading] = useState(false);
+  // Score tab
+  const [scoreResumeInput, setScoreResumeInput] = useState('');
+  const [scoreResult, setScoreResult] = useState<null | {
+    score: number; level: string; summary: string;
+    matched_skills: string[]; missing_skills: string[];
+    strengths: string[]; improvements: string[];
+  }>(null);
+  const [scoreLoading, setScoreLoading] = useState(false);
   const appliedFilter = searchParams.get('is_applied');
   const sourceFilter = searchParams.get('source_type');
   const limit = 10;
   const offset = parseInt(searchParams.get('offset') || '0');
   const jobIdParam = searchParams.get('jobId');
   const { showToast } = useToast();
+  const { resumeGenerating } = useWebSocketProgress();
 
   useEffect(() => {
     loadJobs();
@@ -254,6 +282,77 @@ const Jobs = () => {
     document.body.removeChild(link);
 
     showToast('success', t('jobs.exportedJobs', { count: jobs.length }));
+  };
+
+  const openResumeDialog = (job: Job, tab: 'generate' | 'enhance' | 'score' = 'generate') => {
+    setResumeJobTitle(job.title || job.company || 'Job');
+    setResumeTab(tab);
+    setResumeDialogOpen(true);
+  };
+
+  const handleGenerateResume = async (job: Job) => {
+    setGenerateLoading(true);
+    try {
+      await api.generateResume(job.id, (chunk) => setGeneratedText(prev => prev + chunk));
+    } catch (e: any) {
+      showToast('error', e.message || 'Resume generation failed');
+    } finally {
+      setGenerateLoading(false);
+    }
+  };
+
+  const handleEnhanceResume = async (job: Job) => {
+    if (!userResumeInput.trim()) { showToast('error', 'Please paste your resume first'); return; }
+    setEnhancedText('');
+    setEnhanceLoading(true);
+    try {
+      await api.enhanceResume(job.id, userResumeInput, (chunk) => setEnhancedText(prev => prev + chunk));
+    } catch (e: any) {
+      showToast('error', e.message || 'Enhancement failed');
+    } finally {
+      setEnhanceLoading(false);
+    }
+  };
+
+  const handleScoreResume = async (job: Job) => {
+    if (!scoreResumeInput.trim()) { showToast('error', 'Please paste your resume first'); return; }
+    setScoreResult(null);
+    setScoreLoading(true);
+    try {
+      const result = await api.scoreResume(job.id, scoreResumeInput);
+      setScoreResult(result);
+    } catch (e: any) {
+      showToast('error', e.message || 'Scoring failed');
+    } finally {
+      setScoreLoading(false);
+    }
+  };
+
+  const copyText = (text: string) => {
+    navigator.clipboard.writeText(text);
+    showToast('success', 'Copied to clipboard');
+  };
+
+  const downloadText = (text: string, prefix: string) => {
+    const blob = new Blob([text], { type: 'text/plain;charset=utf-8;' });
+    const link = document.createElement('a');
+    link.href = URL.createObjectURL(blob);
+    link.download = `${prefix}_${resumeJobTitle.replace(/\s+/g, '_')}_${new Date().toISOString().split('T')[0]}.txt`;
+    link.click();
+  };
+
+  const scoreLevelColor = (level: string) => {
+    if (level === 'excellent') return 'text-green-600';
+    if (level === 'good') return 'text-blue-600';
+    if (level === 'fair') return 'text-yellow-600';
+    return 'text-red-600';
+  };
+
+  const scoreBarColor = (score: number) => {
+    if (score >= 90) return 'bg-green-500';
+    if (score >= 70) return 'bg-blue-500';
+    if (score >= 50) return 'bg-yellow-500';
+    return 'bg-red-500';
   };
 
   const getSkills = (job: Job) => {
@@ -519,13 +618,13 @@ const Jobs = () => {
                   </div>
 
                   {/* Action Buttons */}
-                  <div className="flex gap-2 pt-2">
+                  <div className="flex flex-wrap gap-2 pt-2">
                     {!selectedJob.is_applied && (
                       <Input
                         placeholder={t('jobs.addNotes')}
                         value={jobNotes}
                         onChange={(e) => setJobNotes(e.target.value)}
-                        className="flex-1"
+                        className="flex-1 min-w-32"
                       />
                     )}
                     <Button
@@ -535,6 +634,20 @@ const Jobs = () => {
                       disabled={loadingActions.has(`toggle-${selectedJob.id}`)}
                     >
                       {selectedJob.is_applied ? t('jobs.applied') + ' ✓' : t('jobs.markApplied')}
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="border-purple-200 text-purple-700 hover:bg-purple-50"
+                      onClick={() => openResumeDialog(selectedJob, 'generate')}
+                      disabled={!!resumeGenerating}
+                      title={resumeGenerating ? `Resume generating for: ${resumeGenerating.job_title}` : undefined}
+                    >
+                      {resumeGenerating ? (
+                        <><Loader2 className="w-3.5 h-3.5 mr-1.5 animate-spin" />Generating...</>
+                      ) : (
+                        <><ScrollText className="w-3.5 h-3.5 mr-1.5" />Generate Resume</>
+                      )}
                     </Button>
                     <Button
                       size="sm"
@@ -711,6 +824,182 @@ const Jobs = () => {
           </Card>
         </div>
       )}
+
+      {/* Resume Dialog — Generate / Enhance / Score */}
+      <Dialog open={resumeDialogOpen} onOpenChange={setResumeDialogOpen}>
+        <DialogContent className="max-w-3xl max-h-[90vh] flex flex-col">
+          <DialogHeader className="pb-0">
+            <DialogTitle className="flex items-center gap-2">
+              <ScrollText className="w-4 h-4 text-purple-600" />
+              AI Resume Tools
+            </DialogTitle>
+            <DialogDescription>
+              For: <span className="font-medium">{resumeJobTitle}</span>
+            </DialogDescription>
+          </DialogHeader>
+
+          <Tabs value={resumeTab} onValueChange={(v) => setResumeTab(v as any)} className="flex-1 flex flex-col min-h-0">
+            <TabsList className="grid grid-cols-3 w-full">
+              <TabsTrigger value="generate">
+                <ScrollText className="w-3.5 h-3.5 mr-1.5" />Generate
+              </TabsTrigger>
+              <TabsTrigger value="enhance">
+                <Sparkles className="w-3.5 h-3.5 mr-1.5" />Enhance
+              </TabsTrigger>
+              <TabsTrigger value="score">
+                <Star className="w-3.5 h-3.5 mr-1.5" />Match Score
+              </TabsTrigger>
+            </TabsList>
+
+            {/* ── GENERATE TAB ── */}
+            <TabsContent value="generate" className="flex-1 flex flex-col min-h-0 mt-3 gap-3">
+              <p className="text-xs text-muted-foreground">Generate a tailored resume from scratch based on this job.</p>
+              <div className="flex-1 overflow-y-auto">
+                <pre className="text-sm text-gray-800 whitespace-pre-wrap break-words leading-relaxed font-sans bg-gray-50 rounded-lg p-4 border min-h-32">
+                  {generatedText || (generateLoading ? 'Generating...' : 'Click Generate to create a tailored resume.')}
+                </pre>
+              </div>
+              <div className="flex flex-wrap gap-2 pt-1">
+                <Button variant="outline" size="sm" onClick={() => setResumeDialogOpen(false)}>Close</Button>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="border-purple-200 text-purple-700 hover:bg-purple-50"
+                  onClick={() => { if (selectedJob) { setGeneratedText(''); void handleGenerateResume(selectedJob); } }}
+                  disabled={generateLoading || !!resumeGenerating}
+                >
+                  {generateLoading ? <><Loader2 className="w-3.5 h-3.5 mr-1.5 animate-spin" />Generating...</> : <><ScrollText className="w-3.5 h-3.5 mr-1.5" />{generatedText ? 'Regenerate' : 'Generate'}</>}
+                </Button>
+                {generatedText && (
+                  <>
+                    <Button variant="outline" size="sm" onClick={() => copyText(generatedText)}>
+                      <Copy className="w-3.5 h-3.5 mr-1.5" />Copy
+                    </Button>
+                    <Button size="sm" onClick={() => downloadText(generatedText, 'resume')}>
+                      <Download className="w-3.5 h-3.5 mr-1.5" />Download .txt
+                    </Button>
+                  </>
+                )}
+              </div>
+            </TabsContent>
+
+            {/* ── ENHANCE TAB ── */}
+            <TabsContent value="enhance" className="flex-1 flex flex-col min-h-0 mt-3 gap-3">
+              <p className="text-xs text-muted-foreground">Paste your existing resume and AI will rewrite it tailored to this job.</p>
+              <Textarea
+                placeholder="Paste your current resume here..."
+                value={userResumeInput}
+                onChange={(e) => setUserResumeInput(e.target.value)}
+                className="min-h-[120px] text-sm resize-none"
+              />
+              <Button
+                size="sm"
+                className="bg-purple-600 hover:bg-purple-700 text-white self-start"
+                onClick={() => selectedJob && handleEnhanceResume(selectedJob)}
+                disabled={enhanceLoading || !userResumeInput.trim()}
+              >
+                {enhanceLoading ? <><Loader2 className="w-3.5 h-3.5 mr-1.5 animate-spin" />Enhancing...</> : <><Sparkles className="w-3.5 h-3.5 mr-1.5" />Enhance Resume</>}
+              </Button>
+              {(enhancedText || enhanceLoading) && (
+                <div className="flex-1 overflow-y-auto">
+                  <pre className="text-sm text-gray-800 whitespace-pre-wrap break-words leading-relaxed font-sans bg-gray-50 rounded-lg p-4 border min-h-24">
+                    {enhancedText || 'Enhancing...'}
+                  </pre>
+                </div>
+              )}
+              {enhancedText && (
+                <div className="flex gap-2">
+                  <Button variant="outline" size="sm" onClick={() => copyText(enhancedText)}>
+                    <Copy className="w-3.5 h-3.5 mr-1.5" />Copy
+                  </Button>
+                  <Button size="sm" onClick={() => downloadText(enhancedText, 'enhanced_resume')}>
+                    <Download className="w-3.5 h-3.5 mr-1.5" />Download .txt
+                  </Button>
+                </div>
+              )}
+            </TabsContent>
+
+            {/* ── SCORE TAB ── */}
+            <TabsContent value="score" className="flex-1 flex flex-col min-h-0 mt-3 gap-3">
+              <p className="text-xs text-muted-foreground">Paste your resume and get an AI-powered match score for this job.</p>
+              <Textarea
+                placeholder="Paste your resume here..."
+                value={scoreResumeInput}
+                onChange={(e) => setScoreResumeInput(e.target.value)}
+                className="min-h-[120px] text-sm resize-none"
+              />
+              <Button
+                size="sm"
+                className="bg-blue-600 hover:bg-blue-700 text-white self-start"
+                onClick={() => selectedJob && handleScoreResume(selectedJob)}
+                disabled={scoreLoading || !scoreResumeInput.trim()}
+              >
+                {scoreLoading ? <><Loader2 className="w-3.5 h-3.5 mr-1.5 animate-spin" />Analyzing...</> : <><TrendingUp className="w-3.5 h-3.5 mr-1.5" />Score My Resume</>}
+              </Button>
+              {scoreResult && (
+                <div className="flex-1 overflow-y-auto space-y-4">
+                  {/* Score banner */}
+                  <div className="flex items-center gap-4 p-4 rounded-xl bg-gray-50 border">
+                    <div className="text-center">
+                      <div className={`text-4xl font-bold ${scoreLevelColor(scoreResult.level)}`}>{scoreResult.score}</div>
+                      <div className="text-xs text-gray-500 mt-0.5">/ 100</div>
+                    </div>
+                    <div className="flex-1">
+                      <div className="w-full bg-gray-200 rounded-full h-2.5 mb-2">
+                        <div className={`h-2.5 rounded-full transition-all ${scoreBarColor(scoreResult.score)}`} style={{ width: `${scoreResult.score}%` }} />
+                      </div>
+                      <p className={`text-sm font-semibold capitalize ${scoreLevelColor(scoreResult.level)}`}>{scoreResult.level}</p>
+                      <p className="text-xs text-gray-600 mt-0.5">{scoreResult.summary}</p>
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-2 gap-3">
+                    {/* Matched skills */}
+                    <div className="rounded-lg border p-3">
+                      <div className="flex items-center gap-1.5 mb-2 text-green-700 font-medium text-xs">
+                        <CheckCircle className="w-3.5 h-3.5" />Matched Skills
+                      </div>
+                      <div className="flex flex-wrap gap-1">
+                        {scoreResult.matched_skills.map((s, i) => (
+                          <span key={i} className="text-xs px-2 py-0.5 bg-green-50 text-green-700 border border-green-200 rounded-full">{s}</span>
+                        ))}
+                      </div>
+                    </div>
+                    {/* Missing skills */}
+                    <div className="rounded-lg border p-3">
+                      <div className="flex items-center gap-1.5 mb-2 text-red-600 font-medium text-xs">
+                        <XCircle className="w-3.5 h-3.5" />Missing Skills
+                      </div>
+                      <div className="flex flex-wrap gap-1">
+                        {scoreResult.missing_skills.map((s, i) => (
+                          <span key={i} className="text-xs px-2 py-0.5 bg-red-50 text-red-700 border border-red-200 rounded-full">{s}</span>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                  {/* Strengths */}
+                  <div className="rounded-lg border p-3">
+                    <div className="flex items-center gap-1.5 mb-2 text-blue-700 font-medium text-xs">
+                      <Star className="w-3.5 h-3.5" />Strengths
+                    </div>
+                    <ul className="space-y-1">
+                      {scoreResult.strengths.map((s, i) => <li key={i} className="text-xs text-gray-700">• {s}</li>)}
+                    </ul>
+                  </div>
+                  {/* Improvements */}
+                  <div className="rounded-lg border p-3">
+                    <div className="flex items-center gap-1.5 mb-2 text-amber-600 font-medium text-xs">
+                      <TrendingUp className="w-3.5 h-3.5" />Improvements
+                    </div>
+                    <ul className="space-y-1">
+                      {scoreResult.improvements.map((s, i) => <li key={i} className="text-xs text-gray-700">• {s}</li>)}
+                    </ul>
+                  </div>
+                </div>
+              )}
+            </TabsContent>
+          </Tabs>
+        </DialogContent>
+      </Dialog>
 
       {/* Delete Confirmation Dialog */}
       <Dialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>

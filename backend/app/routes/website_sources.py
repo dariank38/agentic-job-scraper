@@ -5,12 +5,12 @@ import logging
 from typing import Optional
 from datetime import datetime, timezone
 from fastapi import Depends, Form, HTTPException, BackgroundTasks
-from sqlalchemy import select, func
+from sqlalchemy import delete, select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.connection import get_db
 from web_crawler.config import DEFAULT_DAYS_BACK
-from app.models import WebsiteSource, Message, Job
+from app.models import Developer, WebsiteSource, Message, Job
 from web_crawler import Fetcher, Extractor
 from app.tasks import broadcast_progress, create_operation, update_operation, stop_website_operation, website_stop_events, record_fetch_outcome
 from services.ollama_service import get_analyzer, is_ollama_available
@@ -135,13 +135,16 @@ def register_website_source_routes(app):
 
     @app.delete("/api/website-sources/{source_id}")
     async def delete_website_source(source_id: int, db: AsyncSession = Depends(get_db)):
-        """Delete a website source."""
+        """Delete a website source and all related messages, jobs, and developers."""
         try:
             result = await db.execute(select(WebsiteSource).filter(WebsiteSource.id == source_id))
             source = result.scalar_one_or_none()
             if not source:
                 raise HTTPException(status_code=404, detail="Website source not found")
 
+            await db.execute(delete(Job).where(Job.website_source_id == source_id))
+            await db.execute(delete(Developer).where(Developer.website_source_id == source_id))
+            await db.execute(delete(Message).where(Message.website_source_id == source_id))
             await db.delete(source)
             await db.commit()
 
