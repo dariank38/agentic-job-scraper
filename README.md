@@ -47,6 +47,14 @@ Agentic Job Scraper is an automated system that fetches software development job
 - **📱 Responsive Design** — Works seamlessly on desktop and mobile
 - **⚡ Fast Performance** — Sequential processing with real-time progress updates
 
+### AI Resume Tools
+- **📄 Generate Resume** — AI generates a tailored resume from scratch based on any job posting using NVIDIA API (streaming)
+- **✨ Enhance Resume** — Paste your existing resume and AI rewrites it specifically for the target job while preserving real experience
+- **🎯 Match Score** — AI scores your resume against the job (0–100) with matched skills, missing skills, strengths, and improvement suggestions
+- **🔄 Real-time Streaming** — Resume generation and enhancement stream token-by-token for instant feedback
+- **🌐 Cross-browser Sync** — WebSocket broadcasts generation status so multiple users can't generate simultaneously
+- **📋 Copy & Download** — Copy to clipboard or download generated/enhanced resumes as `.txt`
+
 ### Advanced Features
 - **🔐 Multi-Account Auth** — Manage multiple Telegram accounts with interactive authentication
 - **🎯 Remote-First** — Prioritizes remote/work-from-home opportunities
@@ -58,6 +66,7 @@ Agentic Job Scraper is an automated system that fetches software development job
 - **⏱ Robust RSS Fetching** — 30-second timeout and 7-day lookback window for RSS feeds
 - **🍪 Cookie Extension** — Chrome extension for one-click Bossjob.com cookie export
 - **🤖 Autonomous Agent Mode** — Self-adjusting schedules, self-healing Playwright scrapers, and automated source discovery
+- **🗑 Cascade Delete** — Deleting a channel or website source automatically removes all associated messages, jobs, and developers
 
 ### Autonomous Agent Mode (Optional)
 
@@ -596,6 +605,11 @@ npm run dev
 13. **Copy Messages** — Click the copy button on Messages, Jobs, or Developers pages to copy original message text
 14. **Custom Prompts** — Customize extraction prompts per website source for better accuracy
 15. **V2EX Configuration** — Set `site_type="v2ex"` when adding V2EX for specialized Chinese job post prompt
+16. **AI Resume Tools** — Click "Generate Resume" on any job to open the AI Resume Tools dialog:
+    - **Generate tab** — Generate a tailored resume from scratch, then copy or download
+    - **Enhance tab** — Paste your existing resume and AI rewrites it for the job
+    - **Match Score tab** — Paste your resume to get a 0–100 match score with skill breakdown
+    - > **💡 Free API Key:** You can get a free NVIDIA API key using [free-claude-code](https://github.com/Alishahryar1/free-claude-code). Set `NVIDIA_API_KEY` in your backend `.env` to enable all resume features.
 
 ## 🔌 API Endpoints
 
@@ -635,6 +649,11 @@ npm run dev
 - `GET /api/jobs/{id}` — Get job details
 - `POST /api/jobs/{id}/toggle-applied` — Mark job as applied/unapplied
 - `DELETE /api/jobs/{id}` — Hide a job (soft-delete)
+
+### Resume (NVIDIA API)
+- `POST /api/resume/generate` — Generate a tailored resume for a job (streaming SSE)
+- `POST /api/resume/enhance` — Enhance an existing resume for a job (streaming SSE)
+- `POST /api/resume/score` — Score resume match against a job (returns JSON breakdown)
 
 ### Developers
 - `GET /api/developers` — List extracted developers (with search filters)
@@ -741,6 +760,16 @@ Get your API credentials from [my.telegram.org/apps](https://my.telegram.org/app
 OLLAMA_BASE_URL=http://localhost:11434
 OLLAMA_MODEL=qwen2.5:14b
 ```
+
+### NVIDIA API (Resume Tools)
+
+The AI Resume Tools (Generate, Enhance, Match Score) use the NVIDIA NIM API:
+
+```env
+NVIDIA_API_KEY=your_nvidia_api_key_here
+```
+
+> Get a free API key at [build.nvidia.com](https://build.nvidia.com) or via [free-claude-code](https://github.com/Alishahryar1/free-claude-code). Without this key, the resume endpoints return a 500 error. All other features work without it.
 
 **Advanced Options** (in `ollama_service.py`):
 - `num_predict` — Maximum tokens to generate (dynamically adjusted based on message length + system prompt)
