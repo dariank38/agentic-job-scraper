@@ -60,7 +60,9 @@
     "developers": "开发者",
     "messages": "消息",
     "telegramAccounts": "Telegram 账号",
-    "websites": "网站"
+    "websites": "网站",
+    "settings": "设置",
+    "autonomous": "自动模式"
   },
   "dashboard": {
     "title": "仪表板",

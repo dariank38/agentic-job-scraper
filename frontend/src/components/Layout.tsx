@@ -481,8 +481,8 @@ const Layout = ({ children }: { children: React.ReactNode }) => {
     { path: '/channels', label: t('nav.channels'), icon: Radio },
     { path: '/websites', label: t('nav.websites'), icon: Globe },
     { path: '/telegram-accounts', label: t('nav.telegramAccounts'), icon: Radio },
-    { path: '/settings', label: 'Settings', icon: Settings2 },
-    { path: '/autonomous', label: 'Autonomous', icon: Bot },
+    { path: '/settings', label: t('nav.settings'), icon: Settings2 },
+    { path: '/autonomous', label: t('nav.autonomous'), icon: Bot },
   ];
 
   const isActive = (path: string) =>

@@ -60,7 +60,9 @@
     "developers": "Developers",
     "messages": "Messages",
     "telegramAccounts": "Telegram",
-    "websites": "Websites"
+    "websites": "Websites",
+    "settings": "Settings",
+    "autonomous": "Autonomous"
   },
   "dashboard": {
     "title": "Dashboard",
