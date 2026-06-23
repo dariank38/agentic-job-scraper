@@ -303,6 +303,16 @@ const WebSocketProgressProvider = ({ children }: { children: React.ReactNode }) 
                   message_preview: data.message_preview || ""
                 }
               }));
+              // Update progress counter immediately when a message starts (not just when it finishes)
+              if (data.total_messages || data.total) {
+                setChannelProgress(prev => ({
+                  ...prev,
+                  [channel]: {
+                    analyzed: data.analyzed ?? prev[channel]?.analyzed ?? 0,
+                    total: data.total_messages || data.total || prev[channel]?.total || 0,
+                  }
+                }));
+              }
             } else if (channel && data.type === 'analyze_progress') {
               setChannelProgress(prev => ({
                 ...prev,
@@ -500,14 +510,15 @@ const Layout = ({ children }: { children: React.ReactNode }) => {
               <Link
                 key={path}
                 to={path}
-                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-sm font-medium no-underline transition-colors ${
+                title={label}
+                className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-full text-sm font-medium no-underline transition-colors ${
                   isActive(path)
                     ? 'bg-primary text-primary-foreground'
                     : 'text-muted-foreground hover:text-foreground hover:bg-accent'
                 }`}
               >
                 <Icon size={14} />
-                {label}
+                <span className="hidden xl:inline">{label}</span>
               </Link>
             ))}
             <LanguageSwitcher />

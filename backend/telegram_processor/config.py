@@ -29,8 +29,8 @@ TELEGRAM_SESSION_PATH = SESSION_DIR / "telegram.session"
 OLLAMA_BASE_URL = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
 OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "qwen2.5:7b")
 
-# Resume AI provider: "nvidia" (requires NVIDIA_API_KEY) or "ollama" (uses local Ollama)
-RESUME_PROVIDER = os.getenv("RESUME_PROVIDER", "nvidia").lower()
+# Resume AI provider: "ollama" (default, local) or "nvidia" (requires NVIDIA_API_KEY)
+RESUME_PROVIDER = os.getenv("RESUME_PROVIDER", "ollama").lower()
 
 # Analysis AI provider: "ollama" (default, local) or "nvidia" (requires NVIDIA_API_KEY)
 ANALYZE_PROVIDER = os.getenv("ANALYZE_PROVIDER", "ollama").lower()

@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Settings2, Cpu, RefreshCw, CheckCircle, AlertCircle, Zap, Bot, ExternalLink, Server } from 'lucide-react';
+import { Settings2, Cpu, RefreshCw, CheckCircle, AlertCircle, Zap, Bot, ExternalLink, Server, Pencil, X, Check } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
@@ -7,6 +7,7 @@ import { Separator } from '@/components/ui/separator';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { Badge } from '@/components/ui/badge';
+import { Input } from '@/components/ui/input';
 import { useToast } from '@/components/Layout';
 import api from '@/services/api';
 
@@ -93,7 +94,8 @@ function ProviderCard({
 export default function Settings() {
   const [settings, setSettings] = useState<ProviderSettings | null>(null);
   const [loading, setLoading] = useState(true);
-  const [saving, setSaving] = useState<'analyze' | 'resume' | null>(null);
+  const [saving, setSaving] = useState<'analyze' | 'resume' | 'nvidia_model' | null>(null);
+  const [editingModel, setEditingModel] = useState<string | null>(null);
   const { showToast } = useToast();
 
   const load = async () => {
@@ -119,6 +121,23 @@ export default function Settings() {
       showToast('success', `${field === 'analyze_provider' ? 'Analysis' : 'Resume'} provider updated to ${value}`);
     } catch (e: any) {
       showToast('error', e.message || 'Failed to update provider');
+    } finally {
+      setSaving(null);
+    }
+  };
+
+  const handleSaveModel = async () => {
+    if (!settings || editingModel === null) return;
+    const trimmed = editingModel.trim();
+    if (!trimmed) { showToast('error', 'Model name cannot be empty'); return; }
+    setSaving('nvidia_model');
+    try {
+      const updated = await api.updateProviderSettings({ nvidia_model: trimmed });
+      setSettings(prev => prev ? { ...prev, nvidia_model: updated.nvidia_model } : prev);
+      setEditingModel(null);
+      showToast('success', `NVIDIA model updated to ${updated.nvidia_model}`);
+    } catch (e: any) {
+      showToast('error', e.message || 'Failed to update model');
     } finally {
       setSaving(null);
     }
@@ -298,10 +317,34 @@ export default function Settings() {
               <Server className="w-4 h-4 text-green-500" /> NVIDIA Configuration
             </CardTitle>
           </CardHeader>
-          <CardContent className="space-y-2 pb-4">
-            <div className="flex items-center justify-between text-sm">
-              <span className="text-muted-foreground">Model</span>
-              <code className="font-mono text-xs bg-muted px-1.5 py-0.5 rounded">{settings.nvidia_model}</code>
+          <CardContent className="space-y-3 pb-4">
+            <div className="space-y-1.5">
+              <span className="text-sm text-muted-foreground">Model</span>
+              {editingModel !== null ? (
+                <div className="flex items-center gap-2">
+                  <Input
+                    value={editingModel}
+                    onChange={e => setEditingModel(e.target.value)}
+                    onKeyDown={e => { if (e.key === 'Enter') handleSaveModel(); if (e.key === 'Escape') setEditingModel(null); }}
+                    className="h-7 text-xs font-mono"
+                    autoFocus
+                    disabled={saving === 'nvidia_model'}
+                  />
+                  <Button size="icon" variant="ghost" className="h-7 w-7" onClick={handleSaveModel} disabled={saving === 'nvidia_model'}>
+                    {saving === 'nvidia_model' ? <RefreshCw className="w-3 h-3 animate-spin" /> : <Check className="w-3 h-3 text-green-600" />}
+                  </Button>
+                  <Button size="icon" variant="ghost" className="h-7 w-7" onClick={() => setEditingModel(null)} disabled={saving === 'nvidia_model'}>
+                    <X className="w-3 h-3" />
+                  </Button>
+                </div>
+              ) : (
+                <div className="flex items-center gap-2">
+                  <code className="font-mono text-xs bg-muted px-1.5 py-0.5 rounded flex-1">{settings.nvidia_model}</code>
+                  <Button size="icon" variant="ghost" className="h-6 w-6" onClick={() => setEditingModel(settings.nvidia_model)}>
+                    <Pencil className="w-3 h-3" />
+                  </Button>
+                </div>
+              )}
             </div>
             <div className="flex items-center justify-between text-sm">
               <span className="text-muted-foreground">API Key</span>
@@ -311,7 +354,7 @@ export default function Settings() {
               </Badge>
             </div>
             <p className="text-xs text-muted-foreground pt-1">
-              Change via <code className="font-mono">NVIDIA_MODEL</code> / <code className="font-mono">NVIDIA_API_KEY</code> in <code className="font-mono">backend/.env</code>
+              Set <code className="font-mono">NVIDIA_API_KEY</code> in <code className="font-mono">backend/.env</code>
             </p>
           </CardContent>
         </Card>
