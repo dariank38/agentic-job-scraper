@@ -8,6 +8,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
+import { useTranslation } from 'react-i18next';
 import { useToast } from '@/components/Layout';
 import api from '@/services/api';
 
@@ -54,6 +55,7 @@ function ProviderCard({
 }) {
   const p = PROVIDERS.find(p => p.value === value)!;
   const isActive = current === value;
+  const { t } = useTranslation();
 
   const card = (
     <button
@@ -67,7 +69,7 @@ function ProviderCard({
         <div className="flex-1 min-w-0">
           <div className="font-semibold text-sm flex items-center gap-1.5">
             {p.label}
-            {isActive && <Badge variant="secondary" className="text-xs px-1.5 py-0">Active</Badge>}
+            {isActive && <Badge variant="secondary" className="text-xs px-1.5 py-0">{t('settings.active')}</Badge>}
           </div>
           <div className="text-xs text-muted-foreground mt-0.5">{p.description}</div>
         </div>
@@ -97,6 +99,7 @@ export default function Settings() {
   const [saving, setSaving] = useState<'analyze' | 'resume' | 'nvidia_model' | null>(null);
   const [editingModel, setEditingModel] = useState<string | null>(null);
   const { showToast } = useToast();
+  const { t } = useTranslation();
 
   const load = async () => {
     setLoading(true);
@@ -104,7 +107,7 @@ export default function Settings() {
       const data = await api.getProviderSettings();
       setSettings(data);
     } catch {
-      showToast('error', 'Failed to load provider settings');
+      showToast('error', t('settings.failedLoad'));
     } finally {
       setLoading(false);
     }
@@ -118,9 +121,9 @@ export default function Settings() {
     try {
       const updated = await api.updateProviderSettings({ [field]: value });
       setSettings(prev => prev ? { ...prev, ...updated } : prev);
-      showToast('success', `${field === 'analyze_provider' ? 'Analysis' : 'Resume'} provider updated to ${value}`);
+      showToast('success', t('settings.updatedProvider', { type: field === 'analyze_provider' ? t('settings.analysisProvider') : t('settings.resumeProvider'), value }));
     } catch (e: any) {
-      showToast('error', e.message || 'Failed to update provider');
+      showToast('error', e.message || t('settings.failedProvider'));
     } finally {
       setSaving(null);
     }
@@ -129,15 +132,15 @@ export default function Settings() {
   const handleSaveModel = async () => {
     if (!settings || editingModel === null) return;
     const trimmed = editingModel.trim();
-    if (!trimmed) { showToast('error', 'Model name cannot be empty'); return; }
+    if (!trimmed) { showToast('error', t('settings.modelEmpty')); return; }
     setSaving('nvidia_model');
     try {
       const updated = await api.updateProviderSettings({ nvidia_model: trimmed });
       setSettings(prev => prev ? { ...prev, nvidia_model: updated.nvidia_model } : prev);
       setEditingModel(null);
-      showToast('success', `NVIDIA model updated to ${updated.nvidia_model}`);
+      showToast('success', t('settings.updatedModel', { model: updated.nvidia_model }));
     } catch (e: any) {
-      showToast('error', e.message || 'Failed to update model');
+      showToast('error', e.message || t('settings.failedModel'));
     } finally {
       setSaving(null);
     }
@@ -162,7 +165,7 @@ export default function Settings() {
 
   if (!settings) return null;
 
-  const nvidiaDisabledReason = 'NVIDIA_API_KEY is not set in backend .env';
+  const nvidiaDisabledReason = t('settings.nvidiaDisabledReason');
 
   return (
     <div className="space-y-6">
@@ -172,11 +175,11 @@ export default function Settings() {
           <Settings2 size={18} />
         </div>
         <div>
-          <h1 className="text-2xl font-bold">Settings</h1>
-          <p className="text-sm text-muted-foreground">Configure AI providers for analysis and resume features</p>
+          <h1 className="text-2xl font-bold">{t('settings.title')}</h1>
+          <p className="text-sm text-muted-foreground">{t('settings.subtitle')}</p>
         </div>
         <Button variant="outline" size="sm" className="ml-auto gap-1.5" onClick={load}>
-          <RefreshCw className="w-3.5 h-3.5" /> Refresh
+          <RefreshCw className="w-3.5 h-3.5" /> {t('settings.refresh')}
         </Button>
       </div>
 
@@ -189,11 +192,11 @@ export default function Settings() {
           ? <CheckCircle className="h-4 w-4 text-green-600" />
           : <AlertCircle className="h-4 w-4 text-yellow-600" />}
         <AlertTitle className="font-semibold">
-          NVIDIA API Key: {settings.nvidia_api_key_configured ? 'Configured' : 'Not configured'}
+          {settings.nvidia_api_key_configured ? t('settings.nvidiaKeyConfigured') : t('settings.nvidiaKeyNotConfigured')}
         </AlertTitle>
         <AlertDescription className="text-xs">
           {settings.nvidia_api_key_configured ? (
-            <span>Active model: <code className="font-mono bg-green-100 px-1 rounded">{settings.nvidia_model}</code></span>
+            <span>{t('settings.nvidiaActiveModel')} <code className="font-mono bg-green-100 px-1 rounded">{settings.nvidia_model}</code></span>
           ) : (
             <span>Set <code className="font-mono bg-yellow-100 px-1 rounded">NVIDIA_API_KEY</code> in <code className="font-mono bg-yellow-100 px-1 rounded">backend/.env</code> to enable NVIDIA.
               {' '}Get a free key at{' '}
@@ -214,13 +217,13 @@ export default function Settings() {
               <div className="w-7 h-7 rounded-md bg-purple-100 flex items-center justify-center">
                 <Bot className="w-4 h-4 text-purple-600" />
               </div>
-              Message Analysis
+              {t('settings.messageAnalysis')}
             </CardTitle>
             <CardDescription className="text-xs">
-              Classifies Telegram &amp; RSS messages into jobs, developers, or other.
+              {t('settings.messageAnalysisDesc')}
             </CardDescription>
             <div className="mt-1 flex items-center gap-1.5 text-xs text-muted-foreground">
-              <span>Model:</span>
+              <span>{t('settings.model')}</span>
               <code className="font-mono bg-muted px-1.5 py-0.5 rounded text-foreground">
                 {settings.analyze_provider === 'nvidia' ? settings.nvidia_model : settings.ollama_model}
               </code>
@@ -241,7 +244,7 @@ export default function Settings() {
             </div>
             {saving === 'analyze' && (
               <p className="text-xs text-muted-foreground flex items-center gap-1">
-                <RefreshCw className="w-3 h-3 animate-spin" /> Saving…
+                <RefreshCw className="w-3 h-3 animate-spin" /> {t('settings.saving')}
               </p>
             )}
           </CardContent>
@@ -254,13 +257,13 @@ export default function Settings() {
               <div className="w-7 h-7 rounded-md bg-yellow-100 flex items-center justify-center">
                 <Zap className="w-4 h-4 text-yellow-600" />
               </div>
-              Resume Tools
+              {t('settings.resumeTools')}
             </CardTitle>
             <CardDescription className="text-xs">
-              Powers Generate Resume, Enhance Resume, and Match Score features.
+              {t('settings.resumeToolsDesc')}
             </CardDescription>
             <div className="mt-1 flex items-center gap-1.5 text-xs text-muted-foreground">
-              <span>Model:</span>
+              <span>{t('settings.model')}</span>
               <code className="font-mono bg-muted px-1.5 py-0.5 rounded text-foreground">
                 {settings.resume_provider === 'nvidia' ? settings.nvidia_model : settings.ollama_model}
               </code>
@@ -281,7 +284,7 @@ export default function Settings() {
             </div>
             {saving === 'resume' && (
               <p className="text-xs text-muted-foreground flex items-center gap-1">
-                <RefreshCw className="w-3 h-3 animate-spin" /> Saving…
+                <RefreshCw className="w-3 h-3 animate-spin" /> {t('settings.saving')}
               </p>
             )}
           </CardContent>
@@ -293,20 +296,20 @@ export default function Settings() {
         <Card className="border-dashed">
           <CardHeader className="pb-2 pt-4">
             <CardTitle className="text-sm flex items-center gap-2">
-              <Cpu className="w-4 h-4 text-blue-500" /> Ollama Configuration
+              <Cpu className="w-4 h-4 text-blue-500" /> {t('settings.ollamaConfig')}
             </CardTitle>
           </CardHeader>
           <CardContent className="space-y-2 pb-4">
             <div className="flex items-center justify-between text-sm">
-              <span className="text-muted-foreground">Base URL</span>
+              <span className="text-muted-foreground">{t('settings.baseUrl')}</span>
               <code className="font-mono text-xs bg-muted px-1.5 py-0.5 rounded">{settings.ollama_base_url}</code>
             </div>
             <div className="flex items-center justify-between text-sm">
-              <span className="text-muted-foreground">Model</span>
+              <span className="text-muted-foreground">{t('settings.model')}</span>
               <code className="font-mono text-xs bg-muted px-1.5 py-0.5 rounded">{settings.ollama_model}</code>
             </div>
             <p className="text-xs text-muted-foreground pt-1">
-              Change via <code className="font-mono">OLLAMA_BASE_URL</code> / <code className="font-mono">OLLAMA_MODEL</code> in <code className="font-mono">backend/.env</code>
+              {t('settings.ollamaEnvHint', { url: 'OLLAMA_BASE_URL', model: 'OLLAMA_MODEL', file: 'backend/.env' })}
             </p>
           </CardContent>
         </Card>
@@ -314,12 +317,12 @@ export default function Settings() {
         <Card className="border-dashed">
           <CardHeader className="pb-2 pt-4">
             <CardTitle className="text-sm flex items-center gap-2">
-              <Server className="w-4 h-4 text-green-500" /> NVIDIA Configuration
+              <Server className="w-4 h-4 text-green-500" /> {t('settings.nvidiaConfig')}
             </CardTitle>
           </CardHeader>
           <CardContent className="space-y-3 pb-4">
             <div className="space-y-1.5">
-              <span className="text-sm text-muted-foreground">Model</span>
+              <span className="text-sm text-muted-foreground">{t('settings.model')}</span>
               {editingModel !== null ? (
                 <div className="flex items-center gap-2">
                   <Input
@@ -347,14 +350,14 @@ export default function Settings() {
               )}
             </div>
             <div className="flex items-center justify-between text-sm">
-              <span className="text-muted-foreground">API Key</span>
+              <span className="text-muted-foreground">{t('settings.apiKey')}</span>
               <Badge variant={settings.nvidia_api_key_configured ? 'outline' : 'secondary'}
                 className={settings.nvidia_api_key_configured ? 'border-green-400 text-green-700 text-xs' : 'text-xs'}>
-                {settings.nvidia_api_key_configured ? '● Set' : '○ Not set'}
+                {settings.nvidia_api_key_configured ? t('settings.apiKeySet') : t('settings.apiKeyNotSet')}
               </Badge>
             </div>
             <p className="text-xs text-muted-foreground pt-1">
-              Set <code className="font-mono">NVIDIA_API_KEY</code> in <code className="font-mono">backend/.env</code>
+              {t('settings.nvidiaEnvHint', { key: 'NVIDIA_API_KEY', file: 'backend/.env' })}
             </p>
           </CardContent>
         </Card>

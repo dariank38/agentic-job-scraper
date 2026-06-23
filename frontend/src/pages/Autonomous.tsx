@@ -18,6 +18,7 @@ import {
   TrendingUp,
   Timer,
 } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 import { useToast } from '@/components/Layout';
 import api from '@/services/api';
 
@@ -83,6 +84,7 @@ const Autonomous = () => {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const { showToast } = useToast();
+  const { t } = useTranslation();
 
   const loadData = async (isManual = false) => {
     if (isManual) setRefreshing(true);
@@ -98,7 +100,7 @@ const Autonomous = () => {
       setOutcomes(outcomesRes);
       setDiscovered(discoveredRes);
     } catch (error: any) {
-      if (isManual) showToast('error', `Failed to load data: ${error.message || 'Unknown error'}`);
+      if (isManual) showToast('error', `${t('autonomous.failedToLoad')}: ${error.message || t('common.unknown')}`);
     } finally {
       setLoading(false);
       setRefreshing(false);
@@ -142,28 +144,28 @@ const Autonomous = () => {
 
   const statCards = [
     {
-      label: 'Scanner Status',
-      value: status?.enabled ? 'Running' : 'Stopped',
+      label: t('autonomous.scannerStatus'),
+      value: status?.enabled ? t('autonomous.running') : t('autonomous.stopped'),
       icon: status?.enabled ? CheckCircle : AlertTriangle,
       iconColor: status?.enabled ? 'text-green-500' : 'text-yellow-500',
       bg: status?.enabled ? 'bg-green-50' : 'bg-yellow-50',
     },
     {
-      label: 'Sources Scored',
+      label: t('autonomous.sourcesScored'),
       value: status?.sources_scored ?? 0,
       icon: Radio,
       iconColor: 'text-blue-500',
       bg: 'bg-blue-50',
     },
     {
-      label: 'Fetches (24h)',
+      label: t('autonomous.fetches24h'),
       value: status?.fetches_24h ?? 0,
       icon: TrendingUp,
       iconColor: 'text-purple-500',
       bg: 'bg-purple-50',
     },
     {
-      label: 'Failures (24h)',
+      label: t('autonomous.failures24h'),
       value: status?.failures_24h ?? 0,
       icon: AlertTriangle,
       iconColor: (status?.failures_24h ?? 0) > 0 ? 'text-red-500' : 'text-gray-400',
@@ -179,12 +181,12 @@ const Autonomous = () => {
           <Bot size={18} />
         </div>
         <div>
-          <h1 className="text-2xl font-bold">Autonomous</h1>
-          <p className="text-sm text-muted-foreground">Continuous scanner schedule and fetch history</p>
+          <h1 className="text-2xl font-bold">{t('autonomous.title')}</h1>
+          <p className="text-sm text-muted-foreground">{t('autonomous.subtitle')}</p>
         </div>
         <Button variant="outline" size="sm" className="ml-auto gap-1.5" onClick={() => loadData(true)} disabled={refreshing}>
           <RefreshCw className={`w-3.5 h-3.5 ${refreshing ? 'animate-spin' : ''}`} />
-          Refresh
+          {t('autonomous.refresh')}
         </Button>
       </div>
 
@@ -217,18 +219,18 @@ const Autonomous = () => {
               <div className="w-7 h-7 rounded-md bg-amber-100 flex items-center justify-center">
                 <Zap className="w-4 h-4 text-amber-600" />
               </div>
-              Token Budget
+              {t('autonomous.tokenBudget')}
             </CardTitle>
-            <CardDescription className="text-xs">Daily token usage for AI analysis</CardDescription>
+            <CardDescription className="text-xs">{t('autonomous.tokenBudgetDesc')}</CardDescription>
           </CardHeader>
           <CardContent>
             <div className="grid grid-cols-2 gap-6">
               <div className="space-y-0.5">
-                <p className="text-xs text-muted-foreground">Period</p>
+                <p className="text-xs text-muted-foreground">{t('autonomous.period')}</p>
                 <p className="text-lg font-semibold">{status.budget.day || '—'}</p>
               </div>
               <div className="space-y-0.5">
-                <p className="text-xs text-muted-foreground">Tokens Used</p>
+                <p className="text-xs text-muted-foreground">{t('autonomous.tokensUsed')}</p>
                 <p className="text-lg font-semibold">{status.budget.total_tokens?.toLocaleString() ?? 0}</p>
               </div>
             </div>
@@ -243,29 +245,29 @@ const Autonomous = () => {
             <div className="w-7 h-7 rounded-md bg-blue-100 flex items-center justify-center">
               <Timer className="w-4 h-4 text-blue-600" />
             </div>
-            Source Schedule Optimization
+            {t('autonomous.sourceSchedule')}
           </CardTitle>
-          <CardDescription className="text-xs">Adaptive fetch intervals based on historical yield</CardDescription>
+          <CardDescription className="text-xs">{t('autonomous.sourceScheduleDesc')}</CardDescription>
         </CardHeader>
         <CardContent className="p-0">
           {sources.length === 0 ? (
             <div className="py-12 text-center">
               <Clock size={40} className="text-gray-200 mx-auto mb-3" />
-              <p className="text-sm text-muted-foreground">No sources scored yet</p>
-              <p className="text-xs text-muted-foreground mt-1">Sources will appear after the first scanner cycle</p>
+              <p className="text-sm text-muted-foreground">{t('autonomous.noSourcesScored')}</p>
+              <p className="text-xs text-muted-foreground mt-1">{t('autonomous.noSourcesHint')}</p>
             </div>
           ) : (
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead>Source</TableHead>
-                  <TableHead>Type</TableHead>
-                  <TableHead className="text-right">Yield 24h</TableHead>
-                  <TableHead className="text-right">Yield 7d</TableHead>
-                  <TableHead>Best Window</TableHead>
-                  <TableHead>Interval</TableHead>
-                  <TableHead className="text-center">Failures</TableHead>
-                  <TableHead>Last Optimized</TableHead>
+                  <TableHead>{t('autonomous.source')}</TableHead>
+                  <TableHead>{t('autonomous.type')}</TableHead>
+                  <TableHead className="text-right">{t('autonomous.yield24h')}</TableHead>
+                  <TableHead className="text-right">{t('autonomous.yield7d')}</TableHead>
+                  <TableHead>{t('autonomous.bestWindow')}</TableHead>
+                  <TableHead>{t('autonomous.interval')}</TableHead>
+                  <TableHead className="text-center">{t('autonomous.failures')}</TableHead>
+                  <TableHead>{t('autonomous.lastOptimized')}</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -310,27 +312,27 @@ const Autonomous = () => {
             <div className="w-7 h-7 rounded-md bg-purple-100 flex items-center justify-center">
               <Activity className="w-4 h-4 text-purple-600" />
             </div>
-            Recent Fetch Outcomes
+            {t('autonomous.recentOutcomes')}
           </CardTitle>
-          <CardDescription className="text-xs">Last 20 fetch operations</CardDescription>
+          <CardDescription className="text-xs">{t('autonomous.recentOutcomesDesc')}</CardDescription>
         </CardHeader>
         <CardContent className="p-0">
           {outcomes.length === 0 ? (
             <div className="py-12 text-center">
               <Activity size={40} className="text-gray-200 mx-auto mb-3" />
-              <p className="text-sm text-muted-foreground">No fetch outcomes yet</p>
+              <p className="text-sm text-muted-foreground">{t('autonomous.noOutcomes')}</p>
             </div>
           ) : (
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead>Time</TableHead>
-                  <TableHead>Source</TableHead>
-                  <TableHead>Type</TableHead>
-                  <TableHead className="text-right">Jobs</TableHead>
-                  <TableHead className="text-right">Messages</TableHead>
-                  <TableHead className="text-right">Duration</TableHead>
-                  <TableHead>Status</TableHead>
+                  <TableHead>{t('autonomous.time')}</TableHead>
+                  <TableHead>{t('autonomous.source')}</TableHead>
+                  <TableHead>{t('autonomous.type')}</TableHead>
+                  <TableHead className="text-right">{t('autonomous.jobs')}</TableHead>
+                  <TableHead className="text-right">{t('autonomous.messages')}</TableHead>
+                  <TableHead className="text-right">{t('autonomous.duration')}</TableHead>
+                  <TableHead>{t('autonomous.status')}</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -355,7 +357,7 @@ const Autonomous = () => {
                         </Badge>
                       ) : (
                         <Badge variant="outline" className="text-xs border-green-300 text-green-700 bg-green-50">
-                          <CheckCircle className="w-3 h-3 mr-1" />Success
+                          <CheckCircle className="w-3 h-3 mr-1" />{t('autonomous.success')}
                         </Badge>
                       )}
                     </TableCell>
@@ -374,29 +376,29 @@ const Autonomous = () => {
             <div className="w-7 h-7 rounded-md bg-green-100 flex items-center justify-center">
               <Globe className="w-4 h-4 text-green-600" />
             </div>
-            Discovered Sources
-            <Badge variant="outline" className="text-xs ml-1">Pending Approval</Badge>
+            {t('autonomous.discoveredSources')}
+            <Badge variant="outline" className="text-xs ml-1">{t('autonomous.pendingApproval')}</Badge>
           </CardTitle>
-          <CardDescription className="text-xs">Sources found by the scanner that haven't been approved yet</CardDescription>
+          <CardDescription className="text-xs">{t('autonomous.discoveredSourcesDesc')}</CardDescription>
         </CardHeader>
         <CardContent className="space-y-5">
           {/* Telegram Channels */}
           <div>
             <div className="flex items-center gap-2 mb-3">
               <Radio className="w-3.5 h-3.5 text-muted-foreground" />
-              <span className="text-sm font-medium">Telegram Channels</span>
+              <span className="text-sm font-medium">{t('autonomous.telegramChannels')}</span>
               <Badge variant="secondary" className="text-xs">{discovered?.channels.length ?? 0}</Badge>
             </div>
             {!discovered?.channels.length ? (
-              <p className="text-sm text-muted-foreground pl-5">No discovered channels</p>
+              <p className="text-sm text-muted-foreground pl-5">{t('autonomous.noDiscoveredChannels')}</p>
             ) : (
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead>Username</TableHead>
-                    <TableHead>Name</TableHead>
-                    <TableHead>Description</TableHead>
-                    <TableHead>Discovered</TableHead>
+                    <TableHead>{t('autonomous.username')}</TableHead>
+                    <TableHead>{t('autonomous.name')}</TableHead>
+                    <TableHead>{t('autonomous.description')}</TableHead>
+                    <TableHead>{t('autonomous.discovered')}</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -421,19 +423,19 @@ const Autonomous = () => {
           <div>
             <div className="flex items-center gap-2 mb-3">
               <Globe className="w-3.5 h-3.5 text-muted-foreground" />
-              <span className="text-sm font-medium">Website Sources</span>
+              <span className="text-sm font-medium">{t('autonomous.websiteSources')}</span>
               <Badge variant="secondary" className="text-xs">{discovered?.websites.length ?? 0}</Badge>
             </div>
             {!discovered?.websites.length ? (
-              <p className="text-sm text-muted-foreground pl-5">No discovered websites</p>
+              <p className="text-sm text-muted-foreground pl-5">{t('autonomous.noDiscoveredWebsites')}</p>
             ) : (
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead>Name</TableHead>
-                    <TableHead>URL</TableHead>
-                    <TableHead>Type</TableHead>
-                    <TableHead>Discovered</TableHead>
+                    <TableHead>{t('autonomous.name')}</TableHead>
+                    <TableHead>{t('autonomous.url')}</TableHead>
+                    <TableHead>{t('autonomous.type')}</TableHead>
+                    <TableHead>{t('autonomous.discovered')}</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>

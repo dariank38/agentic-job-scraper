@@ -619,7 +619,7 @@ npm run dev
     - **Generate tab** — Generate a tailored resume from scratch, then copy or download
     - **Enhance tab** — Paste your existing resume and AI rewrites it for the job
     - **Match Score tab** — Paste your resume to get a 0–100 match score with skill breakdown
-    - > **💡 Tip:** Resume tools work out of the box with Ollama (default). To use NVIDIA instead, set `RESUME_PROVIDER=nvidia` and `NVIDIA_API_KEY` in your backend `.env`. Get a free key via [free-claude-code](https://github.com/Alishahryar1/free-claude-code).
+    - > **💡 Tip:** Resume tools work out of the box with Ollama (default). To use NVIDIA instead, set `RESUME_PROVIDER=nvidia` and `NVIDIA_API_KEY` in your backend `.env`. Get a free key at [build.nvidia.com](https://build.nvidia.com).
 
 ## 🔌 API Endpoints
 
@@ -780,7 +780,7 @@ RESUME_PROVIDER=nvidia
 NVIDIA_API_KEY=your_nvidia_api_key_here
 ```
 
-> Get a free NVIDIA API key at [build.nvidia.com](https://build.nvidia.com) or via [free-claude-code](https://github.com/Alishahryar1/free-claude-code). Ollama is the default and requires no key.
+> Get a free NVIDIA API key at [build.nvidia.com](https://build.nvidia.com). Ollama is the default and requires no key.
 
 **Advanced Options** (in `ollama_service.py`):
 - `num_predict` — Maximum tokens to generate (dynamically adjusted based on message length + system prompt)
@@ -1512,7 +1512,7 @@ npm run dev
     - **Generate（生成）** — 从零生成量身定制的简历，可复制或下载
     - **Enhance（优化）** — 粘贴您的现有简历，AI 针对该职位进行改写
     - **Match Score（匹配评分）** — 粘贴您的简历，获取 0–100 匹配分数及技能分析
-    - > **💡 提示：** 简历工具默认使用 Ollama，无需配置。如要使用 NVIDIA，请在后端 `.env` 中设置 `RESUME_PROVIDER=nvidia` 和 `NVIDIA_API_KEY`。可使用 [free-claude-code](https://github.com/Alishahryar1/free-claude-code) 免费获取 API Key。
+    - > **💡 提示：** 简历工具默认使用 Ollama，无需配置。如要使用 NVIDIA，请在后端 `.env` 中设置 `RESUME_PROVIDER=nvidia` 和 `NVIDIA_API_KEY`。可在 [build.nvidia.com](https://build.nvidia.com) 免费获取 API Key。
 
 ## 🔌 API 端点
 
@@ -1673,7 +1673,7 @@ RESUME_PROVIDER=nvidia
 NVIDIA_API_KEY=your_nvidia_api_key_here
 ```
 
-> 在 [build.nvidia.com](https://build.nvidia.com) 免费获取 NVIDIA API Key，或使用 [free-claude-code](https://github.com/Alishahryar1/free-claude-code)。默认使用 Ollama，无需配置 API Key。
+> 在 [build.nvidia.com](https://build.nvidia.com) 免费获取 NVIDIA API Key。默认使用 Ollama，无需配置 API Key。
 
 **高级选项**（在 `ollama_service.py` 中）:
 - `num_predict` — 最大生成 token 数（根据消息长度 + 系统提示词动态调整）
