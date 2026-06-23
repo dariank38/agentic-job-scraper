@@ -69,10 +69,14 @@ async def is_ollama_available() -> bool:
 # ── SYSTEM PROMPT ─────────────────────────────────────────────────────────────
 SYSTEM_PROMPT = """你是电报消息分类器。仅输出JSON，无markdown。
 
-分类：
-- job_posting：公司招聘工程师（前端/后端/全栈/运维/移动/区块链/QA/数据/AI）
-- personal_info：开发者求职（必须含技术栈/框架/经验年限/作品集/GitHub等具体技术信息）
-- other：非技术内容或仅含联系方式的闲聊
+分类规则（按优先级）：
+- job_posting：雇主/公司招聘。特征：列出多个职位/岗位、提供薪资待遇、含地点或包食宿、招聘联系方式。即使职位名称包含非工程师岗（产品/运营/DBA/技术总监）也算。
+- personal_info：个人求职。必须同时满足：(1)第一人称求职语气（"求职"/"找工作"/"本人"/"我"），(2)描述自己的技能/经验年限/作品集/GitHub。若消息列出多个岗位名称，则为job_posting而非personal_info。
+- other：非招聘内容，闲聊，广告，仅含联系方式无职位信息。
+
+歧义处理：
+- 消息同时含多个岗位名称（如"前端/java/产品/运维"）→ job_posting
+- 消息含"包食宿"/"单休"/"双休" → job_posting
 
 字段规则：
 - skills：数组，非逗号字符串
@@ -139,14 +143,10 @@ class AsyncOllamaAnalyzer:
         system_prompt_length = len(SYSTEM_PROMPT)
         total_input_length = message_length + system_prompt_length
 
-        if total_input_length < 512:
-            num_ctx, num_predict = 1024, 512
-        elif total_input_length < 1024:
-            num_ctx, num_predict = 2048, 1024
-        elif total_input_length < 2048:
-            num_ctx, num_predict = 4096, 2048
+        if total_input_length < 2048:
+            num_ctx, num_predict = 2048, 2048
         else:
-            num_ctx, num_predict = 8192, 4096
+            num_ctx, num_predict = 4096, 4096
 
         logger.info(
             "[OLLAMA] Message: %d chars | System prompt: %d chars | Total: %d chars | num_ctx: %d | num_predict: %d",

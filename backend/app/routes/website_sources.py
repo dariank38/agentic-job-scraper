@@ -699,62 +699,92 @@ def register_website_source_routes(app):
 
 
 def is_software_engineering_job(title: str, requirements: str = "", description: str = "") -> bool:
-    """Check if job title, requirements or description are software engineering related."""
+    """Check if job title, requirements or description are software engineering related.
+
+    Uses two tiers:
+    - Strong keywords: unambiguous SE phrases checked against title + requirements + description.
+    - Title-only keywords: broad tech words that could appear in any job description,
+      so they are only checked against the job title to avoid false positives.
+    """
     if not title and not requirements and not description:
         return False
-    
-    # Combine title, requirements and description for checking
-    text_to_check = f"{title} {requirements} {description}".lower()
-    
-    # Software engineering keywords (English)
-    se_keywords = [
+
+    title_lower = title.lower()
+    full_text_lower = f"{title} {requirements} {description}".lower()
+
+    # Strong SE keywords — safe to match anywhere in the full text
+    strong_keywords = [
         'software engineer', 'software developer', 'full stack', 'fullstack',
-        'backend', 'back-end', 'front end', 'frontend', 'front-end',
-        'web developer', 'web engineer', 'web application',
+        'backend developer', 'frontend developer', 'back-end developer', 'front-end developer',
+        'web developer', 'web engineer',
         'mobile developer', 'ios developer', 'android developer',
-        'devops', 'sre', 'site reliability', 'platform engineer', 'cloud engineer',
-        'data engineer', 'data scientist', 'machine learning', 'ml engineer', 'ai engineer',
-        'python', 'java developer', 'javascript', 'typescript',
-        'react', 'vue', 'angular', 'node.js', 'nodejs', 'next.js',
-        'golang', 'rust', 'kotlin', 'swift', 'flutter', 'dart',
-        'qa engineer', 'quality assurance', 'test engineer', 'automation engineer',
-        'embedded', 'firmware', 'systems engineer',
-        'blockchain', 'web3', 'smart contract', 'solidity',
+        'devops engineer', 'sre', 'site reliability engineer', 'platform engineer', 'cloud engineer',
+        'data engineer', 'data scientist', 'machine learning engineer', 'ml engineer', 'ai engineer',
+        'java developer', 'python developer', 'javascript developer', 'typescript developer',
+        'qa engineer', 'quality assurance engineer', 'test engineer', 'automation engineer',
+        'embedded engineer', 'firmware engineer', 'systems engineer',
+        'blockchain developer', 'web3 developer', 'smart contract', 'solidity developer',
         'engineering manager', 'tech lead', 'principal engineer',
-        'staff engineer', 'senior engineer', 'junior engineer',
-        'database', 'sql', 'postgresql', 'mysql', 'mongodb',
-        'cloud', 'aws', 'gcp', 'azure', 'kubernetes', 'docker',
+        'staff engineer', 'security engineer', 'cybersecurity engineer', 'penetration tester',
+        'game developer', 'unity developer', 'unreal developer',
         'api developer', 'api engineer', 'microservices',
-        'security engineer', 'cybersecurity', 'penetration test',
-        'game developer', 'unity developer', 'unreal',
+        'database administrator', 'dba',
     ]
-    
-    # Software engineering keywords (Chinese)
-    se_keywords_zh = [
-        '软件工程师', '软件开发', '全栈', '后端', '前端', '网页开发',
+
+    # Title-only keywords — too generic to match in descriptions (risk false positives)
+    title_only_keywords = [
+        'backend', 'frontend', 'front end', 'back end',
+        'devops', 'developer', 'engineer',
+        'python', 'javascript', 'typescript', 'golang', 'kotlin', 'flutter',
+        'react', 'vue', 'angular', 'node.js', 'nodejs', 'next.js', 'django', 'fastapi',
+        'rust', 'dart', 'swift',
+        'aws', 'gcp', 'azure', 'cloud', 'kubernetes', 'docker',
+        'sql', 'postgresql', 'mysql', 'mongodb', 'database',
+        'blockchain', 'web3',
+    ]
+
+    # Strong SE keywords (Chinese) — safe to match anywhere
+    strong_keywords_zh = [
+        '软件工程师', '软件开发', '全栈', '后端开发', '前端开发', '网页开发',
         '移动开发', 'ios开发', 'android开发', '安卓开发',
-        '运维', '测试工程师', '质量保证', '自动化测试',
-        '数据工程师', '数据科学家', '机器学习', '人工智能', 'ai工程师',
-        'python开发', 'java开发', 'javascript', 'typescript',
-        'react', 'vue', 'angular', 'node', 'go', 'golang', 'rust', 'kotlin', 'swift',
-        '嵌入式', '固件', '系统工程师', '云工程师', '平台工程师',
-        '区块链', 'web3', '智能合约',
+        '运维工程师', '测试工程师', '质量保证工程师', '自动化测试工程师',
+        '数据工程师', '数据科学家', '机器学习工程师', '人工智能工程师', 'ai工程师',
+        'python开发', 'java开发',
+        '嵌入式工程师', '固件工程师', '系统工程师', '云工程师', '平台工程师',
+        '区块链开发', '智能合约开发',
         '技术经理', '技术主管', '首席工程师',
         '资深工程师', '高级工程师', '初级工程师',
-        '数据库', '安全工程师', '游戏开发',
+        '安全工程师', '游戏开发工程师',
     ]
-    
-    # Check if any English keyword is in the text
-    for keyword in se_keywords:
-        if keyword in text_to_check:
+
+    # Title-only keywords (Chinese)
+    title_only_keywords_zh = [
+        '后端', '前端', '开发工程师', '开发者',
+        'javascript', 'typescript', 'react', 'vue', 'angular',
+        '数据库管理', '云计算',
+    ]
+
+    # Check strong keywords against full text
+    for keyword in strong_keywords:
+        if keyword in full_text_lower:
             return True
-    
-    # Check if any Chinese keyword is in the text (case-sensitive for Chinese)
-    text_to_check_original = f"{title} {requirements} {description}"
-    for keyword in se_keywords_zh:
-        if keyword in text_to_check_original:
+
+    # Check title-only keywords against title only
+    for keyword in title_only_keywords:
+        if keyword in title_lower:
             return True
-    
+
+    # Check Chinese strong keywords against full text
+    full_text_original = f"{title} {requirements} {description}"
+    for keyword in strong_keywords_zh:
+        if keyword in full_text_original:
+            return True
+
+    # Check Chinese title-only keywords against title only
+    for keyword in title_only_keywords_zh:
+        if keyword in title:
+            return True
+
     return False
 
 

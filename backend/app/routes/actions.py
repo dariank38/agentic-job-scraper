@@ -259,6 +259,10 @@ def register_action_routes(app):
                     break
                 async with AsyncSessionLocal() as db:
                     try:
+                        # Prevent greenlet errors: after each per-message commit, SQLAlchemy would
+                        # expire all ORM objects (incl. pre-loaded messages), causing implicit
+                        # lazy-load attempts that are forbidden in async context.
+                        db.sync_session.expire_on_commit = False
                         result = await db.execute(select(Channel).filter(Channel.id == channel_id))
                         channel = result.scalar_one_or_none()
                         if channel:

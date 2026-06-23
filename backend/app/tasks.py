@@ -353,7 +353,7 @@ async def broadcast_stats_update(db: AsyncSession):
         pending_messages_result = await db.execute(select(func.count()).select_from(Message).filter(Message.analysis_status == 'pending'))
         pending_messages = pending_messages_result.scalar()
 
-        skipped_messages_result = await db.execute(select(func.count()).select_from(Message).filter(Message.analysis_status == 'failed'))
+        skipped_messages_result = await db.execute(select(func.count()).select_from(Message).filter(Message.analysis_status == 'skipped'))
         skipped_messages = skipped_messages_result.scalar()
 
         await broadcast_progress("stats_update", {
@@ -812,7 +812,8 @@ async def analyze_messages(
         messages_result = await db.execute(
             select(Message).options(
                 selectinload(Message.job),
-                selectinload(Message.developer)
+                selectinload(Message.developer),
+                selectinload(Message.channel),
             ).filter(
                 Message.channel_id == channel_id,
                 Message.analysis_status == "pending",
@@ -844,9 +845,7 @@ async def analyze_messages(
         total_output_tokens = 0
         message_results: list[dict] = []
 
-        # Circuit breaker: stop after too many consecutive failures
         consecutive_failures = 0
-        max_consecutive_failures = MAX_CONSECUTIVE_FAILURES
 
         for msg_index, msg in enumerate(messages):
             # Check both individual channel stop and bulk operation stop
@@ -857,15 +856,11 @@ async def analyze_messages(
                 stopped_count = total_messages - msg_index
                 break
 
-            # Circuit breaker: stop if too many consecutive failures
-            if consecutive_failures >= max_consecutive_failures:
-                stopped_count = total_messages - msg_index
-                break
-
             # Pre-filter: skip spam and empty messages
             if not msg.text or not should_analyze_message(msg.text):
                 await db.delete(msg)
                 skipped_count += 1
+                logger.info(f"[ANALYZE] [{channel_username}] [{msg_index+1}/{total_messages}] SKIPPED (pre-filter) | msg_id={msg.id} | reason=empty_or_spam")
                 continue
 
             # Analyze one message at a time (sequential — no semaphore contention)
@@ -882,6 +877,12 @@ async def analyze_messages(
                     "status": msg_status,
                     "error": str(error),
                 })
+                logger.warning(f"[ANALYZE] [{channel_username}] [{msg_index+1}/{total_messages}] FAILED | msg_id={message.id} | error={str(error)[:120]}")
+                consecutive_failures += 1
+                try:
+                    await db.commit()
+                except Exception:
+                    await db.rollback()
                 continue
 
             if not result or result.get("category") == "other":
@@ -893,6 +894,7 @@ async def analyze_messages(
                     "message_id": message.id,
                     "status": msg_status,
                 })
+                logger.info(f"[ANALYZE] [{channel_username}] [{msg_index+1}/{total_messages}] SKIPPED (other) | msg_id={message.id} | category=other")
                 continue
 
             # Track token usage
@@ -906,6 +908,7 @@ async def analyze_messages(
 
             if not confidence or not category:
                 msg_status = "json_cutoff"
+                logger.warning(f"[ANALYZE] [{channel_username}] [{msg_index+1}/{total_messages}] JSON_CUTOFF | msg_id={message.id} | category={category!r} | confidence={confidence!r}")
             else:
                 msg_status = "success"
 
@@ -926,6 +929,7 @@ async def analyze_messages(
                     # On-site only — delete message instead of saving it
                     await db.delete(message)
                     skipped_count += 1
+                    logger.info(f"[ANALYZE] [{channel_username}] [{msg_index+1}/{total_messages}] SKIPPED (on-site) | msg_id={message.id} | title={job_data.get('title', '')[:50]}")
                     continue
 
                 # title extraction with multiple fallbacks
@@ -970,6 +974,7 @@ async def analyze_messages(
                         # Delete message for duplicate job instead of saving it
                         await db.delete(message)
                         skipped_count += 1
+                        logger.info(f"[ANALYZE] [{channel_username}] [{msg_index+1}/{total_messages}] SKIPPED (duplicate job) | msg_id={message.id} | title={title[:50]}")
                         continue
 
                 # Fix: role_type might be a list from Ollama, convert to string
@@ -999,6 +1004,7 @@ async def analyze_messages(
                     await db.refresh(job)
                     jobs_added += 1
                     message.analysis_status = "analyzed"
+                    logger.info(f"[ANALYZE] [{channel_username}] [{msg_index+1}/{total_messages}] ✓ JOB SAVED | msg_id={message.id} | title={title[:60]} | company={company} | remote={is_remote} | confidence={confidence}")
 
                     # Broadcast new job notification
                     await broadcast_progress("new_job", {
@@ -1015,6 +1021,8 @@ async def analyze_messages(
                     message.analysis_status = "failed"
                     message_results[-1]["status"] = "db_error"
                     message_results[-1]["error"] = str(e)
+                    logger.error(f"[ANALYZE] [{channel_username}] [{msg_index+1}/{total_messages}] FAILED (db_error job) | msg_id={message.id} | error={str(e)[:120]}")
+                    await db.rollback()
 
             # ── PERSONAL INFO ─────────────────────────────────────────────
             elif category == "personal_info":
@@ -1050,6 +1058,7 @@ async def analyze_messages(
                             # Delete message for duplicate developer instead of saving it
                             await db.delete(message)
                             skipped_count += 1
+                            logger.info(f"[ANALYZE] [{channel_username}] [{msg_index+1}/{total_messages}] SKIPPED (duplicate dev) | msg_id={message.id} | name={name[:50]}")
                             continue
 
                 # Fix: experience might be a list from Ollama, convert to string with newlines
@@ -1079,28 +1088,27 @@ async def analyze_messages(
                     db.add(developer)
                     devs_added += 1
                     message.analysis_status = "analyzed"
+                    logger.info(f"[ANALYZE] [{channel_username}] [{msg_index+1}/{total_messages}] ✓ DEV SAVED | msg_id={message.id} | name={name[:60]} | confidence={confidence}")
                 except Exception as e:
                     skipped_count += 1
                     message.analysis_status = "failed"
                     message_results[-1]["status"] = "db_error"
                     message_results[-1]["error"] = str(e)
+                    logger.error(f"[ANALYZE] [{channel_username}] [{msg_index+1}/{total_messages}] FAILED (db_error dev) | msg_id={message.id} | error={str(e)[:120]}")
+                    await db.rollback()
 
             else:
                 # Delete message with unknown category instead of saving it
                 await db.delete(message)
                 skipped_count += 1
+                logger.info(f"[ANALYZE] [{channel_username}] [{msg_index+1}/{total_messages}] SKIPPED (unknown category) | msg_id={message.id} | category={category!r}")
 
             # Append notification data to results
             message_results.append(notification_data)
 
             analyzed_count += 1
 
-            # Determine if this message succeeded or failed
             last_result = message_results[-1] if message_results else {}
-            if last_result.get("status") in ["failed", "db_error"]:
-                consecutive_failures += 1
-            else:
-                consecutive_failures = 0  # Reset on success
 
             await broadcast_progress("analyze_progress", {
                 "channel": channel_username,
@@ -1160,6 +1168,13 @@ async def analyze_messages(
                 await db.rollback()
 
         status = "stopped" if stopped_count > 0 else "completed"
+        failed_count = sum(1 for r in message_results if r.get("status") in ["failed", "db_error"])
+        logger.info(
+            f"[ANALYZE] [{channel_username}] ✓ COMPLETE | total={total_messages} | "
+            f"analyzed={analyzed_count} | jobs={jobs_added} | devs={devs_added} | "
+            f"skipped={skipped_count} | failed={failed_count} | stopped={stopped_count} | "
+            f"status={status} | tokens: in={total_input_tokens} out={total_output_tokens}"
+        )
         await broadcast_progress("analyze_complete", {
             "channel": channel_username,
             "channel_id": channel_id,
@@ -1527,19 +1542,13 @@ async def analyze_website_posts(
         total_input_tokens = 0
         total_output_tokens = 0
 
-        # Circuit breaker: stop after too many consecutive batch failures
         consecutive_failures = 0
-        max_consecutive_failures = MAX_CONSECUTIVE_FAILURES
 
         prompt_type = "custom" if custom_prompt else (site_type or "generic")
 
         for batch_num in range(total_batches):
             # Check for stop signal
             if is_website_operation_stopped(source_id):
-                stopped_count = total_messages - (batch_num * batch_size)
-                break
-
-            if consecutive_failures >= max_consecutive_failures:
                 stopped_count = total_messages - (batch_num * batch_size)
                 break
 
@@ -1555,7 +1564,7 @@ async def analyze_website_posts(
                 try:
                     msg_preview = (message.text or '')[:120].replace('\n', ' ')
                 except Exception as e:
-                    logger.error(f"[ANALYZE WEBSITE] Failed to load message {message_id}: {e}")
+                    logger.error(f"[ANALYZE WEBSITE] [{source_name}] [{batch_num+1}/{total_batches}] FAILED (load) | msg_id={message_id} | error={e}")
                     await db.rollback()
                     batch_message_results.append({"status": "failed", "error": str(e)})
                     continue
@@ -1675,10 +1684,12 @@ async def analyze_website_posts(
                     # If no job or developer was extracted for this message, delete it
                     if msg_job_added == 0 and msg_dev_added == 0:
                         await db.delete(message)
+                        logger.info(f"[ANALYZE WEBSITE] [{source_name}] [{batch_num+1}/{total_batches}] SKIPPED (no extract) | msg_id={message_id} | preview={msg_preview[:80]}")
                     else:
                         message.analysis_status = "analyzed"
                         analyzed_count += 1
                         batch_message_results.append({"status": "success"})
+                        logger.info(f"[ANALYZE WEBSITE] [{source_name}] [{batch_num+1}/{total_batches}] ✓ ANALYZED | msg_id={message_id} | jobs={msg_job_added} | devs={msg_dev_added}")
 
                     # Broadcast per-message progress for real-time UI updates
                     await broadcast_progress("analyze_progress", {
@@ -1695,19 +1706,12 @@ async def analyze_website_posts(
                     })
 
                 except Exception as e:
-                    logger.error(f"[ANALYZE WEBSITE] Error analyzing message {message_id}: {e}", exc_info=True)
+                    logger.error(f"[ANALYZE WEBSITE] [{source_name}] [{batch_num+1}/{total_batches}] FAILED | msg_id={message_id} | error={str(e)[:120]}")
                     await db.rollback()
                     # Mark message as failed on errors
                     message.analysis_status = "failed"
                     batch_message_results.append({"status": "failed", "error": str(e)})
                     continue
-
-            # Determine if this batch succeeded
-            batch_has_errors = any(r.get("status") in ["failed", "db_error"] for r in batch_message_results)
-            if batch_has_errors:
-                consecutive_failures += 1
-            else:
-                consecutive_failures = 0
 
             # Broadcast progress
             await broadcast_progress("analyze_progress", {
