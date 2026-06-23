@@ -80,6 +80,7 @@ const Jobs = () => {
     strengths: string[]; improvements: string[];
   }>(null);
   const [scoreLoading, setScoreLoading] = useState(false);
+  const [resumeProvider, setResumeProvider] = useState<{ provider: string; model: string; nvidia_configured: boolean } | null>(null);
   const appliedFilter = searchParams.get('is_applied');
   const sourceFilter = searchParams.get('source_type');
   const limit = 10;
@@ -288,6 +289,7 @@ const Jobs = () => {
     setResumeJobTitle(job.title || job.company || 'Job');
     setResumeTab(tab);
     setResumeDialogOpen(true);
+    api.getResumeProvider().then(setResumeProvider).catch(() => {});
   };
 
   const handleGenerateResume = async (job: Job) => {
@@ -832,6 +834,11 @@ const Jobs = () => {
             <DialogTitle className="flex items-center gap-2">
               <ScrollText className="w-4 h-4 text-purple-600" />
               AI Resume Tools
+              {resumeProvider && (
+                <span className={`ml-1 text-xs font-medium px-2 py-0.5 rounded-full ${resumeProvider.provider === 'nvidia' ? 'bg-green-100 text-green-700' : 'bg-blue-100 text-blue-700'}`}>
+                  {resumeProvider.provider === 'nvidia' ? '⚡ NVIDIA' : '🦙 Ollama'} · {resumeProvider.model}
+                </span>
+              )}
             </DialogTitle>
             <DialogDescription>
               For: <span className="font-medium">{resumeJobTitle}</span>

@@ -1,18 +1,24 @@
-"""Async Ollama service with semaphore-based concurrent processing."""
+"""Async Ollama/NVIDIA service with semaphore-based concurrent processing."""
 
 import json
 import asyncio
 import logging
+import os
 import re
 import time
 from typing import Any
 from enum import Enum
 
+import httpx
 from ollama import AsyncClient
 
 from telegram_processor.config import OLLAMA_BASE_URL, OLLAMA_MODEL
 
 logger = logging.getLogger(__name__)
+
+NVIDIA_API_KEY = os.environ.get("NVIDIA_API_KEY", "")
+NVIDIA_INVOKE_URL = "https://integrate.api.nvidia.com/v1/chat/completions"
+NVIDIA_ANALYZE_MODEL = os.environ.get("NVIDIA_MODEL", "qwen/qwen3.5-397b-a17b")
 
 
 class Language(Enum):
@@ -58,6 +64,13 @@ def detect_language(text: str) -> Language:
 
 
 async def is_ollama_available() -> bool:
+    """Returns True if the configured analyze provider is reachable."""
+    from app.routes.settings import get_analyze_provider
+    if get_analyze_provider() == "nvidia":
+        if not NVIDIA_API_KEY:
+            logger.error("[PROVIDER] ANALYZE_PROVIDER=nvidia but NVIDIA_API_KEY is not set")
+            return False
+        return True
     try:
         client = AsyncClient(host=OLLAMA_BASE_URL)
         await asyncio.wait_for(client.list(), timeout=5)
@@ -281,9 +294,91 @@ class AsyncOllamaAnalyzer:
         raise json.JSONDecodeError("No valid JSON found", text, 0)
 
 
-analyzer = AsyncOllamaAnalyzer()
+class AsyncNvidiaAnalyzer:
+    """Drop-in replacement for AsyncOllamaAnalyzer that uses the NVIDIA NIM API."""
+
+    def __init__(self):
+        self.model_name = NVIDIA_ANALYZE_MODEL
+
+    async def analyze_message(self, message_text: str) -> dict[str, Any]:
+        if not should_analyze_message(message_text):
+            return {
+                "category": "other",
+                "usage": {"input_tokens": 0, "output_tokens": 0, "total_tokens": 0},
+            }
+
+        language = detect_language(message_text)
+
+        clean_text = " ".join(message_text.split())[:2000]
+        msg_preview = clean_text[:50]
+
+        total_input_length = len(clean_text) + len(SYSTEM_PROMPT)
+        max_tokens = 512 if total_input_length < 2048 else 1024
+
+        logger.info(
+            "[NVIDIA] Message: %d chars | System prompt: %d chars | Total: %d chars | max_tokens: %d | lang: %s",
+            len(clean_text), len(SYSTEM_PROMPT), total_input_length, max_tokens, language.value,
+        )
+
+        payload = {
+            "model": self.model_name,
+            "messages": [
+                {"role": "system", "content": SYSTEM_PROMPT},
+                {"role": "user", "content": clean_text},
+            ],
+            "max_tokens": max_tokens,
+            "temperature": 0.0,
+            "top_p": 0.9,
+            "stream": False,
+        }
+        headers = {
+            "Authorization": f"Bearer {NVIDIA_API_KEY}",
+            "Accept": "application/json",
+            "Content-Type": "application/json",
+        }
+
+        start = time.monotonic()
+        try:
+            async with httpx.AsyncClient(timeout=120.0) as client:
+                response = await client.post(NVIDIA_INVOKE_URL, headers=headers, json=payload)
+                response.raise_for_status()
+                data = response.json()
+
+            raw = data["choices"][0]["message"]["content"].strip()
+            usage_data = data.get("usage", {})
+            usage = {
+                "input_tokens": usage_data.get("prompt_tokens", 0),
+                "output_tokens": usage_data.get("completion_tokens", 0),
+                "total_tokens": usage_data.get("total_tokens", 0),
+            }
+
+            result = AsyncOllamaAnalyzer._parse_json(raw)
+            result["usage"] = usage
+
+            elapsed = time.monotonic() - start
+            logger.info(
+                "[NVIDIA] Success | msg: %.50s... | category: %s | time: %.1fs | tokens in/out: %d/%d",
+                clean_text, result.get("category", "unknown"), elapsed,
+                usage["input_tokens"], usage["output_tokens"],
+            )
+            return result
+
+        except json.JSONDecodeError as e:
+            logger.error("[NVIDIA] JSON ERROR | msg: %.50s... | error: %s", msg_preview, e)
+            raise ValueError(f"JSON parse failed: {e}")
+        except Exception as e:
+            elapsed = time.monotonic() - start
+            logger.error("[NVIDIA] ERROR | msg: %.50s... | time: %.1fs | error: %s", msg_preview, elapsed, e)
+            raise
 
 
-def get_analyzer() -> AsyncOllamaAnalyzer:
-    """Kept for backward compatibility."""
-    return analyzer
+_ollama_analyzer = AsyncOllamaAnalyzer()
+_nvidia_analyzer = AsyncNvidiaAnalyzer()
+
+
+def get_analyzer():
+    """Return the analyzer instance based on runtime ANALYZE_PROVIDER config."""
+    from app.routes.settings import get_analyze_provider
+    if get_analyze_provider() == "nvidia":
+        return _nvidia_analyzer
+    return _ollama_analyzer

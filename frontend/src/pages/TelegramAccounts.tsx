@@ -1,11 +1,16 @@
 import { useState, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
-import { Plus, Trash2, RefreshCw, CheckCircle, XCircle, Key } from 'lucide-react';
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
+import { Separator } from '@/components/ui/separator';
+import { Skeleton } from '@/components/ui/skeleton';
+import { Avatar, AvatarFallback } from '@/components/ui/avatar';
+import { Plus, Trash2, RefreshCw, CheckCircle, XCircle, Key, Radio, ShieldCheck, ShieldOff } from 'lucide-react';
 import api from '@/services/api';
 import type { TelegramAccount } from '@/services/api';
 import { useToast } from '@/components/Layout';
@@ -159,59 +164,84 @@ const TelegramAccounts = () => {
     }
   };
 
+  const getInitials = (account: TelegramAccount) => {
+    const name = account.username || account.phone_number || '?';
+    return name.replace('@', '').slice(0, 2).toUpperCase();
+  };
+
   return (
-    <div className="max-w-4xl mx-auto">
-      <div className="flex items-center justify-between mb-6">
+    <TooltipProvider>
+    <div className="space-y-6">
+      {/* Header */}
+      <div className="flex items-center gap-3">
+        <div className="bg-primary text-primary-foreground w-9 h-9 rounded-lg flex items-center justify-center shadow-sm shrink-0">
+          <Radio size={18} />
+        </div>
         <div>
           <h1 className="text-2xl font-bold">{t('telegramAccounts.title')}</h1>
-          <p className="text-muted-foreground">{t('telegramAccounts.manageAccountsHint')}</p>
+          <p className="text-sm text-muted-foreground">{t('telegramAccounts.manageAccountsHint')}</p>
         </div>
-        <Button onClick={() => setShowAddForm(!showAddForm)}>
-          <Plus className="w-4 h-4 mr-2" />
-          {t('telegramAccounts.addAccount')}
-        </Button>
+        <div className="ml-auto flex items-center gap-2">
+          <Button variant="outline" size="sm" onClick={loadAccounts} disabled={loading} className="gap-1.5">
+            <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} />
+            {t('common.refresh') || 'Refresh'}
+          </Button>
+          <Button size="sm" onClick={() => setShowAddForm(!showAddForm)} className="gap-1.5">
+            <Plus className="w-4 h-4" />
+            {t('telegramAccounts.addAccount')}
+          </Button>
+        </div>
       </div>
 
+      <Separator />
+
+      {/* Add Account Form */}
       {showAddForm && (
-        <Card className="mb-6">
-          <CardHeader>
-            <CardTitle>{t('telegramAccounts.addAccount')}</CardTitle>
+        <Card className="border-primary/30 shadow-sm">
+          <CardHeader className="pb-3">
+            <CardTitle className="text-base">{t('telegramAccounts.addAccount')}</CardTitle>
+            <CardDescription className="text-xs">
+              Get your API ID and Hash from{' '}
+              <a href="https://my.telegram.org/apps" target="_blank" rel="noreferrer" className="underline">my.telegram.org/apps</a>
+            </CardDescription>
           </CardHeader>
           <CardContent>
-            <form onSubmit={handleAddAccount} className="space-y-4">
-              <div>
-                <label className="text-sm font-medium mb-1 block">{t('telegramAccounts.apiId')}</label>
-                <Input
-                  type="number"
-                  placeholder="Enter API ID from my.telegram.org"
-                  value={newAccount.api_id}
-                  onChange={(e) => setNewAccount({ ...newAccount, api_id: e.target.value })}
-                  required
-                />
-              </div>
-              <div>
-                <label className="text-sm font-medium mb-1 block">{t('telegramAccounts.apiHash')}</label>
-                <Input
-                  type="password"
-                  placeholder="Enter API Hash from my.telegram.org"
-                  value={newAccount.api_hash}
-                  onChange={(e) => setNewAccount({ ...newAccount, api_hash: e.target.value })}
-                  required
-                />
-              </div>
-              <div>
-                <label className="text-sm font-medium mb-1 block">{t('telegramAccounts.phone')}</label>
-                <Input
-                  type="tel"
-                  placeholder="+1234567890"
-                  value={newAccount.phone_number}
-                  onChange={(e) => setNewAccount({ ...newAccount, phone_number: e.target.value })}
-                  required
-                />
+            <form onSubmit={handleAddAccount}>
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
+                <div>
+                  <label className="text-sm font-medium mb-1.5 block">{t('telegramAccounts.apiId')}</label>
+                  <Input
+                    type="number"
+                    placeholder="12345678"
+                    value={newAccount.api_id}
+                    onChange={(e) => setNewAccount({ ...newAccount, api_id: e.target.value })}
+                    required
+                  />
+                </div>
+                <div>
+                  <label className="text-sm font-medium mb-1.5 block">{t('telegramAccounts.apiHash')}</label>
+                  <Input
+                    type="password"
+                    placeholder="abcdef1234567890..."
+                    value={newAccount.api_hash}
+                    onChange={(e) => setNewAccount({ ...newAccount, api_hash: e.target.value })}
+                    required
+                  />
+                </div>
+                <div>
+                  <label className="text-sm font-medium mb-1.5 block">{t('telegramAccounts.phone')}</label>
+                  <Input
+                    type="tel"
+                    placeholder="+1234567890"
+                    value={newAccount.phone_number}
+                    onChange={(e) => setNewAccount({ ...newAccount, phone_number: e.target.value })}
+                    required
+                  />
+                </div>
               </div>
               <div className="flex gap-2">
-                <Button type="submit">{t('telegramAccounts.addAccount')}</Button>
-                <Button type="button" variant="outline" onClick={() => setShowAddForm(false)}>
+                <Button type="submit" size="sm">{t('telegramAccounts.addAccount')}</Button>
+                <Button type="button" variant="ghost" size="sm" onClick={() => setShowAddForm(false)}>
                   {t('common.cancel')}
                 </Button>
               </div>
@@ -220,133 +250,202 @@ const TelegramAccounts = () => {
         </Card>
       )}
 
-      {loading ? (
-        <div className="flex items-center justify-center py-8">
-          <RefreshCw className="w-6 h-6 animate-spin" />
-        </div>
-      ) : accounts.length === 0 ? (
-        <Card>
-          <CardContent className="py-8 text-center text-muted-foreground">
-            {t('telegramAccounts.noAccountsHint')}
-          </CardContent>
-        </Card>
-      ) : (
-        <div className="space-y-4">
-          {accounts.map((account) => (
-            <Card key={account.id}>
-              <CardContent className="p-6">
-                <div className="flex items-start justify-between">
-                  <div className="flex-1">
-                    <div className="flex items-center gap-2 mb-2">
-                      <h3 className="font-semibold">{account.username ? `@${account.username}` : account.phone_number}</h3>
-                      <Badge variant={account.is_active ? 'default' : 'secondary'}>
-                        {account.is_active ? t('telegramAccounts.active') : t('telegramAccounts.inactive')}
-                      </Badge>
-                      {account.is_authenticated ? (
-                        <Badge variant="outline" className="border-green-500 text-green-700">
-                          <CheckCircle className="w-3 h-3 mr-1" />
-                          {t('telegramAccounts.authenticated')}
-                        </Badge>
-                      ) : (
-                        <Badge variant="outline" className="border-yellow-500 text-yellow-700">
-                          <XCircle className="w-3 h-3 mr-1" />
-                          {t('telegramAccounts.notAuthenticated')}
-                        </Badge>
-                      )}
-                    </div>
-                    <div className="text-sm text-muted-foreground space-y-1">
-                      <p>{t('telegramAccounts.apiIdLabel')}: {account.api_id}</p>
-                      <p>{t('telegramAccounts.sessionLabel')}: {account.session_name}</p>
-                      <p>{t('telegramAccounts.addedLabel')}: {new Date(account.created_at).toLocaleDateString()}</p>
-                      {account.last_used_at && (
-                        <p>{t('telegramAccounts.lastUsedLabel')}: {new Date(account.last_used_at).toLocaleString()}</p>
-                      )}
-                    </div>
+      {/* Accounts Table */}
+      <Card>
+        <CardHeader className="pb-3">
+          <div className="flex items-center justify-between">
+            <CardTitle className="text-base">
+              Accounts
+              {!loading && (
+                <span className="ml-2 text-sm font-normal text-muted-foreground">({accounts.length})</span>
+              )}
+            </CardTitle>
+          </div>
+        </CardHeader>
+        <CardContent className="p-0">
+          {loading ? (
+            <div className="p-4 space-y-3">
+              {[1,2,3].map(i => (
+                <div key={i} className="flex items-center gap-3">
+                  <Skeleton className="w-9 h-9 rounded-full" />
+                  <div className="space-y-1.5 flex-1">
+                    <Skeleton className="h-4 w-32" />
+                    <Skeleton className="h-3 w-48" />
                   </div>
-                  <div className="flex gap-2">
-                    {!account.is_authenticated && (
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={() => handleStartAuth(account.id)}
-                      >
-                        <Key className="w-4 h-4 mr-1" />
-                        {t('telegramAccounts.authenticate')}
-                      </Button>
-                    )}
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => handleToggleActive(account.id)}
-                    >
-                      {account.is_active ? t('telegramAccounts.deactivate') : t('telegramAccounts.activate')}
-                    </Button>
-                    <Button
-                      variant="destructive"
-                      size="sm"
-                      onClick={() => handleDeleteAccount(account.id)}
-                    >
-                      <Trash2 className="w-4 h-4" />
-                    </Button>
-                  </div>
+                  <Skeleton className="h-8 w-24" />
                 </div>
-              </CardContent>
-            </Card>
-          ))}
-        </div>
-      )}
+              ))}
+            </div>
+          ) : accounts.length === 0 ? (
+            <div className="py-12 text-center text-muted-foreground">
+              <Radio className="w-8 h-8 mx-auto mb-3 opacity-30" />
+              <p className="text-sm">{t('telegramAccounts.noAccountsHint')}</p>
+            </div>
+          ) : (
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead className="pl-6">Account</TableHead>
+                  <TableHead>Session</TableHead>
+                  <TableHead>Status</TableHead>
+                  <TableHead>Added</TableHead>
+                  <TableHead>Last used</TableHead>
+                  <TableHead className="text-right pr-6">Actions</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {accounts.map((account) => (
+                  <TableRow key={account.id}>
+                    <TableCell className="pl-6">
+                      <div className="flex items-center gap-3">
+                        <Avatar className="w-8 h-8">
+                          <AvatarFallback className="text-xs font-semibold bg-primary/10 text-primary">
+                            {getInitials(account)}
+                          </AvatarFallback>
+                        </Avatar>
+                        <div>
+                          <p className="font-medium text-sm">{account.username ? `@${account.username}` : account.phone_number}</p>
+                          <p className="text-xs text-muted-foreground">API ID: {account.api_id}</p>
+                        </div>
+                      </div>
+                    </TableCell>
+                    <TableCell>
+                      <code className="text-xs bg-muted px-1.5 py-0.5 rounded">{account.session_name}</code>
+                    </TableCell>
+                    <TableCell>
+                      <div className="flex flex-col gap-1">
+                        <Badge variant={account.is_active ? 'default' : 'secondary'} className="text-xs w-fit">
+                          {account.is_active ? t('telegramAccounts.active') : t('telegramAccounts.inactive')}
+                        </Badge>
+                        {account.is_authenticated ? (
+                          <span className="flex items-center gap-1 text-xs text-green-700">
+                            <ShieldCheck className="w-3 h-3" /> {t('telegramAccounts.authenticated')}
+                          </span>
+                        ) : (
+                          <span className="flex items-center gap-1 text-xs text-yellow-600">
+                            <ShieldOff className="w-3 h-3" /> {t('telegramAccounts.notAuthenticated')}
+                          </span>
+                        )}
+                      </div>
+                    </TableCell>
+                    <TableCell className="text-sm text-muted-foreground">
+                      {new Date(account.created_at).toLocaleDateString()}
+                    </TableCell>
+                    <TableCell className="text-sm text-muted-foreground">
+                      {account.last_used_at ? new Date(account.last_used_at).toLocaleString() : '—'}
+                    </TableCell>
+                    <TableCell className="text-right pr-6">
+                      <div className="flex items-center justify-end gap-1">
+                        {!account.is_authenticated && (
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <Button variant="outline" size="sm" className="h-8 gap-1" onClick={() => handleStartAuth(account.id)}>
+                                <Key className="w-3.5 h-3.5" />
+                                {t('telegramAccounts.authenticate')}
+                              </Button>
+                            </TooltipTrigger>
+                            <TooltipContent>Authenticate this account with Telegram</TooltipContent>
+                          </Tooltip>
+                        )}
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <Button variant="outline" size="sm" className="h-8" onClick={() => handleToggleActive(account.id)}>
+                              {account.is_active
+                                ? <XCircle className="w-3.5 h-3.5 text-yellow-600" />
+                                : <CheckCircle className="w-3.5 h-3.5 text-green-600" />}
+                            </Button>
+                          </TooltipTrigger>
+                          <TooltipContent>{account.is_active ? t('telegramAccounts.deactivate') : t('telegramAccounts.activate')}</TooltipContent>
+                        </Tooltip>
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <Button variant="ghost" size="sm" className="h-8 text-destructive hover:text-destructive hover:bg-destructive/10" onClick={() => handleDeleteAccount(account.id)}>
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </Button>
+                          </TooltipTrigger>
+                          <TooltipContent>Delete account</TooltipContent>
+                        </Tooltip>
+                      </div>
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          )}
+        </CardContent>
+      </Card>
 
       <Dialog open={authDialogOpen} onOpenChange={setAuthDialogOpen}>
-        <DialogContent>
+        <DialogContent className="sm:max-w-md">
           <DialogHeader>
-            <DialogTitle>
+            <DialogTitle className="flex items-center gap-2">
+              <Key className="w-4 h-4" />
               {authStep === 'code' ? t('telegramAccounts.enterVerificationCode') : t('telegramAccounts.enter2faPassword')}
             </DialogTitle>
           </DialogHeader>
-          <div className="space-y-4 py-4">
+
+          {/* Step indicator */}
+          <div className="flex items-center gap-2 text-xs text-muted-foreground">
+            <span className={`flex items-center gap-1 ${authStep === 'code' ? 'text-primary font-medium' : 'line-through opacity-50'}`}>
+              <span className="w-5 h-5 rounded-full border-2 flex items-center justify-center text-[10px] font-bold border-primary text-primary">1</span>
+              Verification code
+            </span>
+            <Separator className="flex-1" />
+            <span className={`flex items-center gap-1 ${authStep === 'password' ? 'text-primary font-medium' : 'opacity-40'}`}>
+              <span className={`w-5 h-5 rounded-full border-2 flex items-center justify-center text-[10px] font-bold ${authStep === 'password' ? 'border-primary text-primary' : 'border-muted-foreground text-muted-foreground'}`}>2</span>
+              2FA password
+            </span>
+          </div>
+
+          <div className="space-y-3 pt-1">
             {authStep === 'code' ? (
               <>
-                <p className="text-sm text-muted-foreground">
-                  {t('telegramAccounts.verificationCodeHint')}
-                </p>
+                <p className="text-sm text-muted-foreground">{t('telegramAccounts.verificationCodeHint')}</p>
                 <div className="flex gap-2">
                   <Input
                     placeholder={t('telegramAccounts.enterCodePlaceholder')}
                     value={authCode}
                     onChange={(e) => setAuthCode(e.target.value)}
                     onKeyDown={(e) => e.key === 'Enter' && handleVerifyCode()}
+                    autoFocus
                   />
-                  <Button onClick={handleSendCode} disabled={authLoading}>
+                  <Button variant="outline" onClick={handleSendCode} disabled={authLoading}>
                     {t('telegramAccounts.resendCode')}
                   </Button>
                 </div>
               </>
             ) : (
               <>
-                <p className="text-sm text-muted-foreground">
-                  {t('telegramAccounts.twoFaHint')}
-                </p>
+                <p className="text-sm text-muted-foreground">{t('telegramAccounts.twoFaHint')}</p>
                 <Input
                   type="password"
                   placeholder={t('telegramAccounts.enter2faPlaceholder')}
                   value={authPassword}
                   onChange={(e) => setAuthPassword(e.target.value)}
                   onKeyDown={(e) => e.key === 'Enter' && handleVerifyPassword()}
+                  autoFocus
                 />
               </>
             )}
           </div>
+
           <DialogFooter>
-            <Button variant="outline" onClick={() => setAuthDialogOpen(false)}>
+            <Button variant="ghost" onClick={() => setAuthDialogOpen(false)}>
               {t('common.cancel')}
             </Button>
-            <Button onClick={authStep === 'code' ? handleVerifyCode : handleVerifyPassword} disabled={authLoading}>
-              {authLoading ? t('telegramAccounts.authenticating') : authStep === 'code' ? t('telegramAccounts.submit') : t('telegramAccounts.submit')}
+            <Button
+              onClick={authStep === 'code' ? handleVerifyCode : handleVerifyPassword}
+              disabled={authLoading || (authStep === 'code' ? !authCode : !authPassword)}
+              className="gap-1.5"
+            >
+              {authLoading && <RefreshCw className="w-3.5 h-3.5 animate-spin" />}
+              {authLoading ? t('telegramAccounts.authenticating') : t('telegramAccounts.submit')}
             </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
     </div>
+    </TooltipProvider>
   );
 };
 

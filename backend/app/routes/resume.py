@@ -1,9 +1,8 @@
-"""Resume generation API route using NVIDIA API."""
+"""Resume generation API route — supports NVIDIA and Ollama providers."""
 
 import json
 import logging
 import os
-from typing import Optional
 
 import httpx
 
@@ -15,6 +14,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.connection import get_db, manager
 from app.models import Job
+from services.ollama_service import NVIDIA_ANALYZE_MODEL
+from telegram_processor.config import OLLAMA_BASE_URL, OLLAMA_MODEL
+from app.routes.settings import get_analyze_provider, get_resume_provider
 
 logger = logging.getLogger(__name__)
 
@@ -141,17 +143,86 @@ class ResumeScoreRequest(BaseModel):
     resume_text: str
 
 
+async def _ollama_stream(system_prompt: str, user_prompt: str, temperature: float = 0.4):
+    """Stream tokens from Ollama /api/chat and yield SSE data lines."""
+    payload = {
+        "model": OLLAMA_MODEL,
+        "messages": [
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": user_prompt},
+        ],
+        "stream": True,
+        "options": {"temperature": temperature},
+    }
+    async with httpx.AsyncClient(timeout=180.0) as client:
+        async with client.stream("POST", f"{OLLAMA_BASE_URL}/api/chat", json=payload) as response:
+            if response.status_code != 200:
+                body = await response.aread()
+                raise RuntimeError(f"Ollama error {response.status_code}: {body[:200]}")
+            async for line in response.aiter_lines():
+                if not line:
+                    continue
+                try:
+                    chunk = json.loads(line)
+                    content = chunk.get("message", {}).get("content", "")
+                    if content:
+                        yield f"data: {json.dumps({'content': content})}\n\n"
+                    if chunk.get("done"):
+                        yield "data: [DONE]\n\n"
+                        return
+                except json.JSONDecodeError:
+                    continue
+
+
+async def _ollama_complete(system_prompt: str, user_prompt: str, temperature: float = 0.1) -> str:
+    """Call Ollama non-streaming and return the full response text."""
+    payload = {
+        "model": OLLAMA_MODEL,
+        "messages": [
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": user_prompt},
+        ],
+        "stream": False,
+        "options": {"temperature": temperature},
+    }
+    async with httpx.AsyncClient(timeout=120.0) as client:
+        response = await client.post(f"{OLLAMA_BASE_URL}/api/chat", json=payload)
+        response.raise_for_status()
+        data = response.json()
+        return data["message"]["content"].strip()
+
+
 def register_resume_routes(app):
     """Register resume generation routes."""
+
+    @app.get("/api/resume/provider")
+    async def api_resume_provider():
+        """Return the currently configured resume AI provider."""
+        rp = get_resume_provider()
+        return {
+            "provider": rp,
+            "model": NVIDIA_MODEL if rp == "nvidia" else OLLAMA_MODEL,
+            "nvidia_configured": bool(NVIDIA_API_KEY),
+        }
+
+    @app.get("/api/analyze/provider")
+    async def api_analyze_provider():
+        """Return the currently configured message analysis AI provider."""
+        ap = get_analyze_provider()
+        return {
+            "provider": ap,
+            "model": NVIDIA_ANALYZE_MODEL if ap == "nvidia" else OLLAMA_MODEL,
+            "nvidia_configured": bool(NVIDIA_API_KEY),
+        }
 
     @app.post("/api/resume/generate")
     async def api_generate_resume(
         request: ResumeGenerateRequest,
         db: AsyncSession = Depends(get_db),
     ):
-        """Generate a tailored resume for a job posting using NVIDIA API (streaming)."""
-        if not NVIDIA_API_KEY:
-            raise HTTPException(status_code=500, detail="NVIDIA_API_KEY not configured")
+        """Generate a tailored resume for a job posting (streaming). Provider: NVIDIA or Ollama."""
+        if get_resume_provider() == "nvidia" and not NVIDIA_API_KEY:
+            raise HTTPException(status_code=500, detail="NVIDIA_API_KEY not configured. Set RESUME_PROVIDER=ollama to use local Ollama instead.")
 
         result = await db.execute(select(Job).filter(Job.id == request.job_id))
         job = result.scalar_one_or_none()
@@ -163,62 +234,62 @@ def register_resume_routes(app):
             raise HTTPException(status_code=400, detail="Job has no description to generate resume from")
 
         prompt = _build_prompt(job_description)
-
-        payload = {
-            "model": NVIDIA_MODEL,
-            "messages": [
-                {"role": "system", "content": SYSTEM_PROMPT},
-                {"role": "user", "content": prompt},
-            ],
-            "max_tokens": 8192,
-            "temperature": 0.4,
-            "top_p": 0.95,
-            "top_k": 20,
-            "presence_penalty": 0,
-            "repetition_penalty": 1,
-            "stream": True,
-        }
-
-        headers = {
-            "Authorization": f"Bearer {NVIDIA_API_KEY}",
-            "Accept": "text/event-stream",
-            "Content-Type": "application/json",
-        }
-
         job_title = job.title or job.company or f"Job #{request.job_id}"
         _job_id = request.job_id
 
         async def stream_resume():
             await manager.broadcast({"type": "resume_generating", "job_id": _job_id, "job_title": job_title})
             try:
-                async with httpx.AsyncClient(timeout=120.0) as client:
-                    async with client.stream("POST", NVIDIA_INVOKE_URL, headers=headers, json=payload) as response:
-                        if response.status_code != 200:
-                            body = await response.aread()
-                            logger.error(f"[RESUME] NVIDIA API error {response.status_code}: {body[:200]}")
-                            await manager.broadcast({"type": "resume_complete", "job_id": _job_id})
-                            yield f"data: {json.dumps({'error': f'NVIDIA API error: {response.status_code}'})}\n\n"
-                            return
-                        async for line in response.aiter_lines():
-                            if not line:
-                                continue
-                            if line.startswith("data:"):
-                                data = line[5:].strip()
-                                if data == "[DONE]":
-                                    await manager.broadcast({"type": "resume_complete", "job_id": _job_id})
-                                    yield "data: [DONE]\n\n"
-                                    return
-                                try:
-                                    chunk = json.loads(data)
-                                    content = chunk.get("choices", [{}])[0].get("delta", {}).get("content", "")
-                                    if content:
-                                        yield f"data: {json.dumps({'content': content})}\n\n"
-                                except json.JSONDecodeError:
+                if get_resume_provider() == "ollama":
+                    async for sse in _ollama_stream(SYSTEM_PROMPT, prompt, temperature=0.4):
+                        yield sse
+                else:
+                    payload = {
+                        "model": NVIDIA_MODEL,
+                        "messages": [
+                            {"role": "system", "content": SYSTEM_PROMPT},
+                            {"role": "user", "content": prompt},
+                        ],
+                        "max_tokens": 8192,
+                        "temperature": 0.4,
+                        "top_p": 0.95,
+                        "top_k": 20,
+                        "presence_penalty": 0,
+                        "repetition_penalty": 1,
+                        "stream": True,
+                    }
+                    headers = {
+                        "Authorization": f"Bearer {NVIDIA_API_KEY}",
+                        "Accept": "text/event-stream",
+                        "Content-Type": "application/json",
+                    }
+                    async with httpx.AsyncClient(timeout=120.0) as client:
+                        async with client.stream("POST", NVIDIA_INVOKE_URL, headers=headers, json=payload) as response:
+                            if response.status_code != 200:
+                                body = await response.aread()
+                                logger.error(f"[RESUME] NVIDIA API error {response.status_code}: {body[:200]}")
+                                yield f"data: {json.dumps({'error': f'NVIDIA API error: {response.status_code}'})}\n\n"
+                                return
+                            async for line in response.aiter_lines():
+                                if not line:
                                     continue
+                                if line.startswith("data:"):
+                                    data = line[5:].strip()
+                                    if data == "[DONE]":
+                                        yield "data: [DONE]\n\n"
+                                        return
+                                    try:
+                                        chunk = json.loads(data)
+                                        content = chunk.get("choices", [{}])[0].get("delta", {}).get("content", "")
+                                        if content:
+                                            yield f"data: {json.dumps({'content': content})}\n\n"
+                                    except json.JSONDecodeError:
+                                        continue
             except Exception as e:
                 logger.error(f"[RESUME] Stream error: {e}")
-                await manager.broadcast({"type": "resume_complete", "job_id": _job_id})
                 yield f"data: {json.dumps({'error': str(e)})}\n\n"
+            finally:
+                await manager.broadcast({"type": "resume_complete", "job_id": _job_id})
 
         return StreamingResponse(
             stream_resume(),
@@ -231,9 +302,9 @@ def register_resume_routes(app):
         request: ResumeEnhanceRequest,
         db: AsyncSession = Depends(get_db),
     ):
-        """Enhance user's existing resume tailored to a specific job (streaming)."""
-        if not NVIDIA_API_KEY:
-            raise HTTPException(status_code=500, detail="NVIDIA_API_KEY not configured")
+        """Enhance user's existing resume tailored to a specific job (streaming). Provider: NVIDIA or Ollama."""
+        if get_resume_provider() == "nvidia" and not NVIDIA_API_KEY:
+            raise HTTPException(status_code=500, detail="NVIDIA_API_KEY not configured. Set RESUME_PROVIDER=ollama to use local Ollama instead.")
 
         if not request.resume_text.strip():
             raise HTTPException(status_code=400, detail="Resume text is required")
@@ -258,49 +329,51 @@ def register_resume_routes(app):
 
 请输出优化后的完整简历文本。"""
 
-        payload = {
-            "model": NVIDIA_MODEL,
-            "messages": [
-                {"role": "system", "content": ENHANCE_SYSTEM_PROMPT},
-                {"role": "user", "content": prompt},
-            ],
-            "max_tokens": 8192,
-            "temperature": 0.3,
-            "top_p": 0.95,
-            "top_k": 20,
-            "stream": True,
-        }
-
-        headers = {
-            "Authorization": f"Bearer {NVIDIA_API_KEY}",
-            "Accept": "text/event-stream",
-            "Content-Type": "application/json",
-        }
-
         async def stream_enhance():
             try:
-                async with httpx.AsyncClient(timeout=120.0) as client:
-                    async with client.stream("POST", NVIDIA_INVOKE_URL, headers=headers, json=payload) as response:
-                        if response.status_code != 200:
-                            body = await response.aread()
-                            logger.error(f"[RESUME ENHANCE] NVIDIA API error {response.status_code}: {body[:200]}")
-                            yield f"data: {json.dumps({'error': f'NVIDIA API error: {response.status_code}'})}\n\n"
-                            return
-                        async for line in response.aiter_lines():
-                            if not line:
-                                continue
-                            if line.startswith("data:"):
-                                data = line[5:].strip()
-                                if data == "[DONE]":
-                                    yield "data: [DONE]\n\n"
-                                    return
-                                try:
-                                    chunk = json.loads(data)
-                                    content = chunk.get("choices", [{}])[0].get("delta", {}).get("content", "")
-                                    if content:
-                                        yield f"data: {json.dumps({'content': content})}\n\n"
-                                except json.JSONDecodeError:
+                if get_resume_provider() == "ollama":
+                    async for sse in _ollama_stream(ENHANCE_SYSTEM_PROMPT, prompt, temperature=0.3):
+                        yield sse
+                else:
+                    payload = {
+                        "model": NVIDIA_MODEL,
+                        "messages": [
+                            {"role": "system", "content": ENHANCE_SYSTEM_PROMPT},
+                            {"role": "user", "content": prompt},
+                        ],
+                        "max_tokens": 8192,
+                        "temperature": 0.3,
+                        "top_p": 0.95,
+                        "top_k": 20,
+                        "stream": True,
+                    }
+                    headers = {
+                        "Authorization": f"Bearer {NVIDIA_API_KEY}",
+                        "Accept": "text/event-stream",
+                        "Content-Type": "application/json",
+                    }
+                    async with httpx.AsyncClient(timeout=120.0) as client:
+                        async with client.stream("POST", NVIDIA_INVOKE_URL, headers=headers, json=payload) as response:
+                            if response.status_code != 200:
+                                body = await response.aread()
+                                logger.error(f"[RESUME ENHANCE] NVIDIA API error {response.status_code}: {body[:200]}")
+                                yield f"data: {json.dumps({'error': f'NVIDIA API error: {response.status_code}'})}\n\n"
+                                return
+                            async for line in response.aiter_lines():
+                                if not line:
                                     continue
+                                if line.startswith("data:"):
+                                    data = line[5:].strip()
+                                    if data == "[DONE]":
+                                        yield "data: [DONE]\n\n"
+                                        return
+                                    try:
+                                        chunk = json.loads(data)
+                                        content = chunk.get("choices", [{}])[0].get("delta", {}).get("content", "")
+                                        if content:
+                                            yield f"data: {json.dumps({'content': content})}\n\n"
+                                    except json.JSONDecodeError:
+                                        continue
             except Exception as e:
                 logger.error(f"[RESUME ENHANCE] Stream error: {e}")
                 yield f"data: {json.dumps({'error': str(e)})}\n\n"
@@ -317,8 +390,8 @@ def register_resume_routes(app):
         db: AsyncSession = Depends(get_db),
     ):
         """Score how well a resume matches a job description. Returns JSON with score breakdown."""
-        if not NVIDIA_API_KEY:
-            raise HTTPException(status_code=500, detail="NVIDIA_API_KEY not configured")
+        if get_resume_provider() == "nvidia" and not NVIDIA_API_KEY:
+            raise HTTPException(status_code=500, detail="NVIDIA_API_KEY not configured. Set RESUME_PROVIDER=ollama to use local Ollama instead.")
 
         if not request.resume_text.strip():
             raise HTTPException(status_code=400, detail="Resume text is required")
@@ -343,33 +416,36 @@ def register_resume_routes(app):
 
 请输出严格的JSON格式评估结果。"""
 
-        payload = {
-            "model": NVIDIA_MODEL,
-            "messages": [
-                {"role": "system", "content": SCORE_SYSTEM_PROMPT},
-                {"role": "user", "content": prompt},
-            ],
-            "max_tokens": 1024,
-            "temperature": 0.1,
-            "top_p": 0.9,
-            "stream": False,
-        }
-
-        headers = {
-            "Authorization": f"Bearer {NVIDIA_API_KEY}",
-            "Accept": "application/json",
-            "Content-Type": "application/json",
-        }
-
+        raw = ""
         try:
-            async with httpx.AsyncClient(timeout=60.0) as client:
-                response = await client.post(NVIDIA_INVOKE_URL, headers=headers, json=payload)
-                response.raise_for_status()
-                data = response.json()
-                raw = data["choices"][0]["message"]["content"].strip()
-                raw = raw.strip("```json").strip("```").strip()
-                score_data = json.loads(raw)
-                return {"success": True, "result": score_data}
+            if get_resume_provider() == "ollama":
+                raw = await _ollama_complete(SCORE_SYSTEM_PROMPT, prompt, temperature=0.1)
+            else:
+                payload = {
+                    "model": NVIDIA_MODEL,
+                    "messages": [
+                        {"role": "system", "content": SCORE_SYSTEM_PROMPT},
+                        {"role": "user", "content": prompt},
+                    ],
+                    "max_tokens": 1024,
+                    "temperature": 0.1,
+                    "top_p": 0.9,
+                    "stream": False,
+                }
+                headers = {
+                    "Authorization": f"Bearer {NVIDIA_API_KEY}",
+                    "Accept": "application/json",
+                    "Content-Type": "application/json",
+                }
+                async with httpx.AsyncClient(timeout=60.0) as client:
+                    response = await client.post(NVIDIA_INVOKE_URL, headers=headers, json=payload)
+                    response.raise_for_status()
+                    data = response.json()
+                    raw = data["choices"][0]["message"]["content"].strip()
+
+            raw = raw.strip("```json").strip("```").strip()
+            score_data = json.loads(raw)
+            return {"success": True, "result": score_data}
         except json.JSONDecodeError:
             logger.error(f"[RESUME SCORE] Failed to parse JSON from model: {raw[:300]}")
             raise HTTPException(status_code=500, detail="Model returned invalid JSON. Try again.")

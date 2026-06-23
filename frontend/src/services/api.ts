@@ -653,6 +653,41 @@ const api = {
       }
     }
   },
+
+  getResumeProvider: async (): Promise<{ provider: string; model: string; nvidia_configured: boolean }> => {
+    const response = await fetch(`${API_BASE}/api/resume/provider`);
+    if (!response.ok) throw new Error('Failed to fetch resume provider');
+    return response.json();
+  },
+
+  getProviderSettings: async (): Promise<{
+    analyze_provider: string;
+    resume_provider: string;
+    nvidia_api_key_configured: boolean;
+    ollama_base_url: string;
+    ollama_model: string;
+    nvidia_model: string;
+  }> => {
+    const response = await fetch(`${API_BASE}/api/settings/providers`);
+    if (!response.ok) throw new Error('Failed to fetch provider settings');
+    return response.json();
+  },
+
+  updateProviderSettings: async (settings: {
+    analyze_provider?: string;
+    resume_provider?: string;
+  }): Promise<{ analyze_provider: string; resume_provider: string }> => {
+    const response = await fetch(`${API_BASE}/api/settings/providers`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(settings),
+    });
+    if (!response.ok) {
+      const err = await response.json().catch(() => ({}));
+      throw new Error(err.detail || 'Failed to update provider settings');
+    }
+    return response.json();
+  },
 };
 
 export default api;

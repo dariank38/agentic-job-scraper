@@ -1,10 +1,11 @@
-"""RSS Ollama extractor with structured JSON output and chunking."""
+"""RSS extractor with structured JSON output and chunking. Supports Ollama and NVIDIA providers."""
 
 import json
 import logging
 import os
 from typing import Optional, List
 from ollama import AsyncClient
+import httpx
 
 from web_crawler.models import ExtractedData, JobPosting, DeveloperInfo, ContactInfo
 from web_crawler.prompts import get_prompt_for_site
@@ -15,16 +16,28 @@ logger = logging.getLogger(__name__)
 OLLAMA_BASE_URL = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
 OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "qwen2.5:7b")
 
-MAX_CHARS = 3000  # Safe chunk size for Ollama (~1000-1500 tokens)
+# NVIDIA configuration
+NVIDIA_API_KEY = os.environ.get("NVIDIA_API_KEY", "")
+NVIDIA_INVOKE_URL = "https://integrate.api.nvidia.com/v1/chat/completions"
+NVIDIA_MODEL = os.environ.get("NVIDIA_MODEL", "qwen/qwen3.5-397b-a17b")
+
+MAX_CHARS = 3000  # Safe chunk size (~1000-1500 tokens)
 
 
 class Extractor:
-    """RSS extractor using Ollama with structured JSON output."""
+    """RSS extractor using Ollama or NVIDIA with structured JSON output."""
 
     def __init__(self, model: str = None, base_url: str = None):
         self.model = model or OLLAMA_MODEL
         self.base_url = base_url or OLLAMA_BASE_URL
         self.client = AsyncClient(host=self.base_url)
+
+    def _get_provider(self) -> str:
+        try:
+            from app.routes.settings import get_analyze_provider
+            return get_analyze_provider()
+        except Exception:
+            return "ollama"
 
     async def extract(self, content: str, source_url: str, custom_prompt: str = None, site_type: str = None) -> tuple[ExtractedData, dict]:
         """Extract structured data from RSS content using Ollama.
@@ -48,9 +61,13 @@ class Extractor:
 
         all_results = []
         total_usage = {"input_tokens": 0, "output_tokens": 0, "total_tokens": 0}
+        provider = self._get_provider()
         for i, chunk in enumerate(chunks):
-            logger.info(f"[EXTRACTOR] Chunk {i + 1}/{len(chunks)} — sending {len(chunk)} chars to Ollama")
-            result, usage = await self._call_llm(chunk, prompt_template)
+            logger.info(f"[EXTRACTOR] Chunk {i + 1}/{len(chunks)} — sending {len(chunk)} chars to {provider.upper()}")
+            if provider == "nvidia":
+                result, usage = await self._call_llm_nvidia(chunk, prompt_template)
+            else:
+                result, usage = await self._call_llm(chunk, prompt_template)
             if result:
                 all_results.append(result)
             if usage:
@@ -61,6 +78,58 @@ class Extractor:
         merged = self._merge_results(all_results, source_url)
         logger.info(f"[EXTRACTOR] ✓ DONE | jobs={len(merged.job_postings)} | devs={1 if merged.developer_info else 0} | emails={len(merged.contact_info.emails) if merged.contact_info else 0} | tokens: in={total_usage['input_tokens']} out={total_usage['output_tokens']} total={total_usage['total_tokens']}")
         return merged, total_usage
+
+    async def _call_llm_nvidia(self, content: str, prompt_template: str) -> tuple[Optional[dict], dict]:
+        """Call NVIDIA NIM API for extraction."""
+        prompt = prompt_template.format(content=content)
+        # Scale output budget with input size: extraction JSON can be large for multi-job content
+        content_len = len(content)
+        if content_len < 1000:
+            max_tokens = 1024
+        elif content_len < 2000:
+            max_tokens = 2048
+        else:
+            max_tokens = 4096
+        payload = {
+            "model": NVIDIA_MODEL,
+            "messages": [{"role": "user", "content": prompt}],
+            "max_tokens": max_tokens,
+            "temperature": 0.1,
+            "stream": False,
+        }
+        headers = {
+            "Authorization": f"Bearer {NVIDIA_API_KEY}",
+            "Accept": "application/json",
+            "Content-Type": "application/json",
+        }
+        try:
+            async with httpx.AsyncClient(timeout=120.0) as client:
+                response = await client.post(NVIDIA_INVOKE_URL, headers=headers, json=payload)
+                response.raise_for_status()
+                data = response.json()
+            raw = data["choices"][0]["message"]["content"].strip()
+            usage_data = data.get("usage", {})
+            usage = {
+                "input_tokens": usage_data.get("prompt_tokens", 0),
+                "output_tokens": usage_data.get("completion_tokens", 0),
+                "total_tokens": usage_data.get("total_tokens", 0),
+            }
+            logger.info(f"[EXTRACTOR] NVIDIA response ({len(raw)} chars) | max_tokens={max_tokens} | tokens: in={usage['input_tokens']} out={usage['output_tokens']}")
+            logger.info(f"[EXTRACTOR] Raw preview: {raw[:300]!r}{'...' if len(raw) > 300 else ''}")
+            if raw.startswith("```"):
+                raw = raw.split("```")[1]
+                if raw.startswith("json"):
+                    raw = raw[4:]
+            parsed = json.loads(raw)
+            jobs_count = len(parsed.get("job_postings", []))
+            logger.info(f"[EXTRACTOR] Parsed OK — job_postings={jobs_count}")
+            return parsed, usage
+        except json.JSONDecodeError as e:
+            logger.error(f"[EXTRACTOR] NVIDIA JSON parse error: {e} | raw={raw[:200]!r}")
+            return None, {}
+        except Exception as e:
+            logger.error(f"[EXTRACTOR] NVIDIA LLM error: {e}")
+            return None, {}
 
     async def _call_llm(self, content: str, prompt_template: str) -> tuple[Optional[dict], dict]:
         """Call Ollama LLM for extraction.

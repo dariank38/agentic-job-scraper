@@ -17,6 +17,7 @@ import {
   Zap,
   Globe,
   Bot,
+  Settings2,
 } from 'lucide-react';
 
 type ToastType = 'success' | 'error' | 'info' | 'warning';
@@ -464,12 +465,13 @@ const Layout = ({ children }: { children: React.ReactNode }) => {
 
   const navLinks = [
     { path: '/', label: t('nav.dashboard'), icon: LayoutDashboard },
-    { path: '/messages', label: t('nav.messages'), icon: MessageSquare },
     { path: '/jobs', label: t('nav.jobs'), icon: Briefcase },
     { path: '/developers', label: t('nav.developers'), icon: Code2 },
-    { path: '/websites', label: t('nav.websites'), icon: Globe },
+    { path: '/messages', label: t('nav.messages'), icon: MessageSquare },
     { path: '/channels', label: t('nav.channels'), icon: Radio },
+    { path: '/websites', label: t('nav.websites'), icon: Globe },
     { path: '/telegram-accounts', label: t('nav.telegramAccounts'), icon: Radio },
+    { path: '/settings', label: 'Settings', icon: Settings2 },
     { path: '/autonomous', label: 'Autonomous', icon: Bot },
   ];
 

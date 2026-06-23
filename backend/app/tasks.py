@@ -803,7 +803,7 @@ async def analyze_messages(
     channel_name = channel.name
 
     if not await is_ollama_available():
-        return {"success": False, "error": "Ollama not available"}
+        return {"success": False, "error": "AI provider not available (check ANALYZE_PROVIDER and related API keys)"}
 
     try:
         await reset_stop_event(channel_id)
@@ -1494,7 +1494,7 @@ async def analyze_website_posts(
     site_type = website_source.site_type
 
     if not await is_ollama_available():
-        return {"success": False, "error": "Ollama not available"}
+        return {"success": False, "error": "AI provider not available (check ANALYZE_PROVIDER and related API keys)"}
 
     try:
         from sqlalchemy.orm import selectinload
@@ -1999,7 +1999,7 @@ async def start_telegram_listener(
                                     message.analysis_status = "skipped"
                                 await db.commit()
                         else:
-                            logger.warning(f"Auto-analyze skipped: Ollama not available")
+                            logger.warning(f"Auto-analyze skipped: AI provider not available")
                     
             except Exception as e:
                 logger.error(f"Error handling new message: {e}", exc_info=True)
