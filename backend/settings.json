@@ -1,4 +1,5 @@
 {
-  "analyze_provider": "nvidia",
-  "resume_provider": "nvidia"
+  "analyze_provider": "ollama",
+  "resume_provider": "ollama",
+  "nvidia_model": "qwen/qwen3.5-397b-a17b"
 }

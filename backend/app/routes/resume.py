@@ -1,5 +1,6 @@
 """Resume generation API route — supports NVIDIA and Ollama providers."""
 
+import datetime
 import json
 import logging
 import os
@@ -24,7 +25,11 @@ NVIDIA_API_KEY = os.environ.get("NVIDIA_API_KEY", "")
 NVIDIA_INVOKE_URL = "https://integrate.api.nvidia.com/v1/chat/completions"
 NVIDIA_MODEL = os.environ.get("NVIDIA_MODEL", "qwen/qwen3.5-397b-a17b")
 
-SYSTEM_PROMPT = """你是一位资深的简历撰写专家和职业规划师。你的任务是根据职位描述生成专业、ATS友好的中文简历。
+def _get_system_prompt() -> str:
+    current_year = datetime.datetime.now().year
+    return f"""你是一位资深的简历撰写专家和职业规划师。你的任务是根据职位描述生成专业、ATS友好的中文简历。
+
+当前年份：{current_year}年。所有工作经历和项目的时间线必须基于此年份，最近的工作/项目截止时间应为{current_year}年（如"2022年3月 — {current_year}年6月"）。
 
 候选人画像：
 - 拥有8年以上相关工作经验
@@ -241,13 +246,13 @@ def register_resume_routes(app):
             await manager.broadcast({"type": "resume_generating", "job_id": _job_id, "job_title": job_title})
             try:
                 if get_resume_provider() == "ollama":
-                    async for sse in _ollama_stream(SYSTEM_PROMPT, prompt, temperature=0.4):
+                    async for sse in _ollama_stream(_get_system_prompt(), prompt, temperature=0.4):
                         yield sse
                 else:
                     payload = {
                         "model": NVIDIA_MODEL,
                         "messages": [
-                            {"role": "system", "content": SYSTEM_PROMPT},
+                            {"role": "system", "content": _get_system_prompt()},
                             {"role": "user", "content": prompt},
                         ],
                         "max_tokens": 8192,
@@ -427,7 +432,7 @@ def register_resume_routes(app):
                         {"role": "system", "content": SCORE_SYSTEM_PROMPT},
                         {"role": "user", "content": prompt},
                     ],
-                    "max_tokens": 1024,
+                    "max_tokens": 4096,
                     "temperature": 0.1,
                     "top_p": 0.9,
                     "stream": False,
@@ -437,11 +442,17 @@ def register_resume_routes(app):
                     "Accept": "application/json",
                     "Content-Type": "application/json",
                 }
-                async with httpx.AsyncClient(timeout=60.0) as client:
+                async with httpx.AsyncClient(timeout=httpx.Timeout(connect=10.0, read=120.0, write=10.0, pool=5.0)) as client:
                     response = await client.post(NVIDIA_INVOKE_URL, headers=headers, json=payload)
                     response.raise_for_status()
                     data = response.json()
-                    raw = data["choices"][0]["message"]["content"].strip()
+                    choice = data["choices"][0]
+                    content = (choice.get("message") or {}).get("content") or ""
+                    finish_reason = choice.get("finish_reason")
+                    if not content.strip() and finish_reason == "stop":
+                        logger.warning("[RESUME SCORE] NVIDIA returned empty content (content filter), returning low-score fallback")
+                        return {"success": True, "result": {"score": 0, "level": "poor", "summary": "Model could not evaluate this resume.", "matched_skills": [], "missing_skills": [], "strengths": [], "improvements": []}}
+                    raw = content.strip()
 
             raw = raw.strip("```json").strip("```").strip()
             score_data = json.loads(raw)
@@ -449,6 +460,9 @@ def register_resume_routes(app):
         except json.JSONDecodeError:
             logger.error(f"[RESUME SCORE] Failed to parse JSON from model: {raw[:300]}")
             raise HTTPException(status_code=500, detail="Model returned invalid JSON. Try again.")
+        except (httpx.ReadTimeout, httpx.TimeoutException) as e:
+            logger.error(f"[RESUME SCORE] Timeout calling NVIDIA API: {e}")
+            raise HTTPException(status_code=504, detail="AI model timed out. Please try again.")
         except Exception as e:
-            logger.error(f"[RESUME SCORE] Error: {e}")
+            logger.error(f"[RESUME SCORE] Error: {e}", exc_info=True)
             raise HTTPException(status_code=500, detail=str(e))

@@ -251,12 +251,13 @@ const Autonomous = () => {
         </CardHeader>
         <CardContent className="p-0">
           {sources.length === 0 ? (
-            <div className="py-12 text-center">
+            <div className="py-12 text-center px-6">
               <Clock size={40} className="text-gray-200 mx-auto mb-3" />
               <p className="text-sm text-muted-foreground">{t('autonomous.noSourcesScored')}</p>
               <p className="text-xs text-muted-foreground mt-1">{t('autonomous.noSourcesHint')}</p>
             </div>
           ) : (
+            <div className="overflow-x-auto">
             <Table>
               <TableHeader>
                 <TableRow>
@@ -301,6 +302,7 @@ const Autonomous = () => {
                 ))}
               </TableBody>
             </Table>
+            </div>
           )}
         </CardContent>
       </Card>
@@ -318,11 +320,12 @@ const Autonomous = () => {
         </CardHeader>
         <CardContent className="p-0">
           {outcomes.length === 0 ? (
-            <div className="py-12 text-center">
+            <div className="py-12 text-center px-6">
               <Activity size={40} className="text-gray-200 mx-auto mb-3" />
               <p className="text-sm text-muted-foreground">{t('autonomous.noOutcomes')}</p>
             </div>
           ) : (
+            <div className="overflow-x-auto">
             <Table>
               <TableHeader>
                 <TableRow>
@@ -365,6 +368,7 @@ const Autonomous = () => {
                 ))}
               </TableBody>
             </Table>
+            </div>
           )}
         </CardContent>
       </Card>
@@ -392,6 +396,7 @@ const Autonomous = () => {
             {!discovered?.channels.length ? (
               <p className="text-sm text-muted-foreground pl-5">{t('autonomous.noDiscoveredChannels')}</p>
             ) : (
+              <div className="overflow-x-auto">
               <Table>
                 <TableHeader>
                   <TableRow>
@@ -414,6 +419,7 @@ const Autonomous = () => {
                   ))}
                 </TableBody>
               </Table>
+              </div>
             )}
           </div>
 
@@ -429,6 +435,7 @@ const Autonomous = () => {
             {!discovered?.websites.length ? (
               <p className="text-sm text-muted-foreground pl-5">{t('autonomous.noDiscoveredWebsites')}</p>
             ) : (
+              <div className="overflow-x-auto">
               <Table>
                 <TableHeader>
                   <TableRow>
@@ -451,6 +458,7 @@ const Autonomous = () => {
                   ))}
                 </TableBody>
               </Table>
+              </div>
             )}
           </div>
         </CardContent>

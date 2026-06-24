@@ -103,7 +103,7 @@ async def analyze_messages(
                 selectinload(Message.channel),
             ).filter(
                 Message.channel_id == channel_id,
-                Message.analysis_status == "pending",
+                Message.analysis_status.in_(["pending", "failed"]),
             ).order_by(Message.date.desc())
         )
         messages = messages_result.scalars().all()

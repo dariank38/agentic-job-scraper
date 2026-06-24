@@ -290,7 +290,7 @@ def register_analyze_action_routes(app):
             message, result_data, error = await _analyze_single(analyzer, message, channel_username)
 
             if error:
-                message.analysis_status = "skipped"
+                message.analysis_status = "failed"
                 await db.commit()
                 raise HTTPException(status_code=500, detail=f"Analysis failed: {str(error)}")
 

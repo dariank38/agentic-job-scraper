@@ -307,7 +307,7 @@ const Dashboard = () => {
           if (!channelsByAccount[channel.telegram_account_id]) {
             channelsByAccount[channel.telegram_account_id] = [];
           }
-          channelsByAccount[channel.telegram_account_id].push(channel.username);
+          if (channel.username) channelsByAccount[channel.telegram_account_id].push(channel.username);
         }
       });
 
