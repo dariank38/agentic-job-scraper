@@ -96,8 +96,9 @@ function ProviderCard({
 export default function Settings() {
   const [settings, setSettings] = useState<ProviderSettings | null>(null);
   const [loading, setLoading] = useState(true);
-  const [saving, setSaving] = useState<'analyze' | 'resume' | 'nvidia_model' | null>(null);
+  const [saving, setSaving] = useState<'analyze' | 'resume' | 'nvidia_model' | 'ollama_model' | null>(null);
   const [editingModel, setEditingModel] = useState<string | null>(null);
+  const [editingOllamaModel, setEditingOllamaModel] = useState<string | null>(null);
   const { showToast } = useToast();
   const { t } = useTranslation();
 
@@ -139,6 +140,23 @@ export default function Settings() {
       setSettings(prev => prev ? { ...prev, nvidia_model: updated.nvidia_model } : prev);
       setEditingModel(null);
       showToast('success', t('settings.updatedModel', { model: updated.nvidia_model }));
+    } catch (e: any) {
+      showToast('error', e.message || t('settings.failedModel'));
+    } finally {
+      setSaving(null);
+    }
+  };
+
+  const handleSaveOllamaModel = async () => {
+    if (!settings || editingOllamaModel === null) return;
+    const trimmed = editingOllamaModel.trim();
+    if (!trimmed) { showToast('error', t('settings.modelEmpty')); return; }
+    setSaving('ollama_model');
+    try {
+      const updated = await api.updateProviderSettings({ ollama_model: trimmed });
+      setSettings(prev => prev ? { ...prev, ollama_model: updated.ollama_model } : prev);
+      setEditingOllamaModel(null);
+      showToast('success', t('settings.updatedOllamaModel', { model: updated.ollama_model }));
     } catch (e: any) {
       showToast('error', e.message || t('settings.failedModel'));
     } finally {
@@ -304,9 +322,33 @@ export default function Settings() {
               <span className="text-muted-foreground">{t('settings.baseUrl')}</span>
               <code className="font-mono text-xs bg-muted px-1.5 py-0.5 rounded">{settings.ollama_base_url}</code>
             </div>
-            <div className="flex items-center justify-between text-sm">
-              <span className="text-muted-foreground">{t('settings.model')}</span>
-              <code className="font-mono text-xs bg-muted px-1.5 py-0.5 rounded">{settings.ollama_model}</code>
+            <div className="space-y-1.5">
+              <span className="text-sm text-muted-foreground">{t('settings.model')}</span>
+              {editingOllamaModel !== null ? (
+                <div className="flex items-center gap-2">
+                  <Input
+                    value={editingOllamaModel}
+                    onChange={e => setEditingOllamaModel(e.target.value)}
+                    onKeyDown={e => { if (e.key === 'Enter') handleSaveOllamaModel(); if (e.key === 'Escape') setEditingOllamaModel(null); }}
+                    className="h-7 text-xs font-mono"
+                    autoFocus
+                    disabled={saving === 'ollama_model'}
+                  />
+                  <Button size="icon" variant="ghost" className="h-7 w-7" onClick={handleSaveOllamaModel} disabled={saving === 'ollama_model'}>
+                    {saving === 'ollama_model' ? <RefreshCw className="w-3 h-3 animate-spin" /> : <Check className="w-3 h-3 text-green-600" />}
+                  </Button>
+                  <Button size="icon" variant="ghost" className="h-7 w-7" onClick={() => setEditingOllamaModel(null)} disabled={saving === 'ollama_model'}>
+                    <X className="w-3 h-3" />
+                  </Button>
+                </div>
+              ) : (
+                <div className="flex items-center gap-2">
+                  <code className="font-mono text-xs bg-muted px-1.5 py-0.5 rounded flex-1">{settings.ollama_model}</code>
+                  <Button size="icon" variant="ghost" className="h-6 w-6" onClick={() => setEditingOllamaModel(settings.ollama_model)}>
+                    <Pencil className="w-3 h-3" />
+                  </Button>
+                </div>
+              )}
             </div>
             <p className="text-xs text-muted-foreground pt-1">
               {t('settings.ollamaEnvHint', { url: 'OLLAMA_BASE_URL', model: 'OLLAMA_MODEL', file: 'backend/.env' })}

@@ -9,14 +9,14 @@ from typing import Any
 
 from ollama import AsyncClient
 
-from telegram_processor.config import OLLAMA_BASE_URL, OLLAMA_MODEL
+from telegram_processor.config import OLLAMA_BASE_URL
+from app.routes.settings import get_ollama_model
 from services.language import detect_language
 from services.message_filter import SYSTEM_PROMPT, should_analyze_message
 
 logger = logging.getLogger(__name__)
 
 RECOMMENDED_MODEL = "qwen2.5:14b"
-_DEFAULT_MODEL = OLLAMA_MODEL or RECOMMENDED_MODEL
 
 
 class AsyncOllamaAnalyzer:
@@ -27,7 +27,7 @@ class AsyncOllamaAnalyzer:
         max_concurrent: int = 1,
     ):
         self.client = AsyncClient(host=base_url or OLLAMA_BASE_URL)
-        self.model_name = model_name or _DEFAULT_MODEL
+        self.model_name = model_name
         self.semaphore = asyncio.Semaphore(max_concurrent)
         self._pending: int = 0
 
@@ -73,9 +73,10 @@ class AsyncOllamaAnalyzer:
             logger.info("[OLLAMA] Semaphore acquired | wait: %.1fs | msg: %.50s...", wait_elapsed, clean_text)
 
             try:
+                model_name = self.model_name or get_ollama_model() or RECOMMENDED_MODEL
                 response = await asyncio.wait_for(
                     self.client.generate(
-                        model=self.model_name,
+                        model=model_name,
                         system=SYSTEM_PROMPT,
                         prompt=clean_text,
                         format="json",

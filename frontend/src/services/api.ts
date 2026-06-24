@@ -678,7 +678,8 @@ const api = {
     analyze_provider?: string;
     resume_provider?: string;
     nvidia_model?: string;
-  }): Promise<{ analyze_provider: string; resume_provider: string; nvidia_model: string }> => {
+    ollama_model?: string;
+  }): Promise<{ analyze_provider: string; resume_provider: string; nvidia_model: string; ollama_model: string }> => {
     const response = await fetch(`${API_BASE}/api/settings/providers`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },

@@ -30,6 +30,7 @@ def _load_from_disk() -> dict:
         "analyze_provider": _DEFAULT_ANALYZE,
         "resume_provider": _DEFAULT_RESUME,
         "nvidia_model": NVIDIA_MODEL,
+        "ollama_model": OLLAMA_MODEL,
     }
     try:
         if _SETTINGS_FILE.exists():
@@ -41,6 +42,8 @@ def _load_from_disk() -> dict:
                     defaults[key] = val
             if data.get("nvidia_model"):
                 defaults["nvidia_model"] = data["nvidia_model"]
+            if data.get("ollama_model"):
+                defaults["ollama_model"] = data["ollama_model"]
             logger.info("[SETTINGS] Loaded from %s: %s", _SETTINGS_FILE, defaults)
     except Exception as e:
         logger.warning("[SETTINGS] Could not read %s, using defaults: %s", _SETTINGS_FILE, e)
@@ -72,10 +75,15 @@ def get_nvidia_model() -> str:
     return _runtime["nvidia_model"]
 
 
+def get_ollama_model() -> str:
+    return _runtime["ollama_model"]
+
+
 class ProvidersUpdate(BaseModel):
     analyze_provider: str | None = None
     resume_provider: str | None = None
     nvidia_model: str | None = None
+    ollama_model: str | None = None
 
 
 def register_settings_routes(app):
@@ -89,7 +97,7 @@ def register_settings_routes(app):
             "resume_provider": _runtime["resume_provider"],
             "nvidia_api_key_configured": bool(NVIDIA_API_KEY),
             "ollama_base_url": OLLAMA_BASE_URL,
-            "ollama_model": OLLAMA_MODEL,
+            "ollama_model": _runtime["ollama_model"],
             "nvidia_model": _runtime["nvidia_model"],
         }
 
@@ -118,14 +126,21 @@ def register_settings_routes(app):
                 raise HTTPException(status_code=400, detail="nvidia_model cannot be empty.")
             _runtime["nvidia_model"] = val
 
+        if body.ollama_model is not None:
+            val = body.ollama_model.strip()
+            if not val:
+                raise HTTPException(status_code=400, detail="ollama_model cannot be empty.")
+            _runtime["ollama_model"] = val
+
         _save_to_disk(_runtime)
         logger.info(
-            "[SETTINGS] Saved: analyze=%s resume=%s nvidia_model=%s",
-            _runtime["analyze_provider"], _runtime["resume_provider"], _runtime["nvidia_model"],
+            "[SETTINGS] Saved: analyze=%s resume=%s nvidia_model=%s ollama_model=%s",
+            _runtime["analyze_provider"], _runtime["resume_provider"], _runtime["nvidia_model"], _runtime["ollama_model"],
         )
 
         return {
             "analyze_provider": _runtime["analyze_provider"],
             "resume_provider": _runtime["resume_provider"],
             "nvidia_model": _runtime["nvidia_model"],
+            "ollama_model": _runtime["ollama_model"],
         }

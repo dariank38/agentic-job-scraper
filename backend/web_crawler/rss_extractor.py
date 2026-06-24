@@ -28,7 +28,14 @@ class Extractor:
     """RSS extractor using Ollama or NVIDIA with structured JSON output."""
 
     def __init__(self, model: str = None, base_url: str = None):
-        self.model = model or OLLAMA_MODEL
+        if model:
+            self.model = model
+        else:
+            try:
+                from app.routes.settings import get_ollama_model
+                self.model = get_ollama_model()
+            except Exception:
+                self.model = OLLAMA_MODEL
         self.base_url = base_url or OLLAMA_BASE_URL
         self.client = AsyncClient(host=self.base_url)
 

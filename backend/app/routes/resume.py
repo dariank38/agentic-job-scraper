@@ -16,8 +16,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.connection import get_db, manager
 from app.models import Job
 from services.ollama_service import NVIDIA_ANALYZE_MODEL
-from telegram_processor.config import OLLAMA_BASE_URL, OLLAMA_MODEL
-from app.routes.settings import get_analyze_provider, get_resume_provider
+from telegram_processor.config import OLLAMA_BASE_URL
+from app.routes.settings import get_analyze_provider, get_resume_provider, get_ollama_model
 
 logger = logging.getLogger(__name__)
 
@@ -151,7 +151,7 @@ class ResumeScoreRequest(BaseModel):
 async def _ollama_stream(system_prompt: str, user_prompt: str, temperature: float = 0.4):
     """Stream tokens from Ollama /api/chat and yield SSE data lines."""
     payload = {
-        "model": OLLAMA_MODEL,
+        "model": get_ollama_model(),
         "messages": [
             {"role": "system", "content": system_prompt},
             {"role": "user", "content": user_prompt},
@@ -182,7 +182,7 @@ async def _ollama_stream(system_prompt: str, user_prompt: str, temperature: floa
 async def _ollama_complete(system_prompt: str, user_prompt: str, temperature: float = 0.1) -> str:
     """Call Ollama non-streaming and return the full response text."""
     payload = {
-        "model": OLLAMA_MODEL,
+        "model": get_ollama_model(),
         "messages": [
             {"role": "system", "content": system_prompt},
             {"role": "user", "content": user_prompt},
@@ -206,7 +206,7 @@ def register_resume_routes(app):
         rp = get_resume_provider()
         return {
             "provider": rp,
-            "model": NVIDIA_MODEL if rp == "nvidia" else OLLAMA_MODEL,
+            "model": NVIDIA_MODEL if rp == "nvidia" else get_ollama_model(),
             "nvidia_configured": bool(NVIDIA_API_KEY),
         }
 
@@ -216,7 +216,7 @@ def register_resume_routes(app):
         ap = get_analyze_provider()
         return {
             "provider": ap,
-            "model": NVIDIA_ANALYZE_MODEL if ap == "nvidia" else OLLAMA_MODEL,
+            "model": NVIDIA_ANALYZE_MODEL if ap == "nvidia" else get_ollama_model(),
             "nvidia_configured": bool(NVIDIA_API_KEY),
         }
 
@@ -421,9 +421,11 @@ def register_resume_routes(app):
 
 请输出严格的JSON格式评估结果。"""
 
+        provider = get_resume_provider()
+        logger.info(f"[RESUME SCORE] Using provider: {provider}")
         raw = ""
         try:
-            if get_resume_provider() == "ollama":
+            if provider == "ollama":
                 raw = await _ollama_complete(SCORE_SYSTEM_PROMPT, prompt, temperature=0.1)
             else:
                 payload = {
@@ -461,8 +463,8 @@ def register_resume_routes(app):
             logger.error(f"[RESUME SCORE] Failed to parse JSON from model: {raw[:300]}")
             raise HTTPException(status_code=500, detail="Model returned invalid JSON. Try again.")
         except (httpx.ReadTimeout, httpx.TimeoutException) as e:
-            logger.error(f"[RESUME SCORE] Timeout calling NVIDIA API: {e}")
-            raise HTTPException(status_code=504, detail="AI model timed out. Please try again.")
+            logger.error(f"[RESUME SCORE] Timeout calling {provider} API: {e}")
+            raise HTTPException(status_code=504, detail=f"AI model ({provider}) timed out. Please try again.")
         except Exception as e:
             logger.error(f"[RESUME SCORE] Error: {e}", exc_info=True)
             raise HTTPException(status_code=500, detail=str(e))
