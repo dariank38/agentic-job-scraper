@@ -60,8 +60,13 @@ def _to_bool(value) -> Optional[bool]:
         return None
     if isinstance(value, bool):
         return value
+    if isinstance(value, str):
+        if value.lower() in ('true', 'yes', '1', 'on'):
+            return True
+        if value.lower() in ('false', 'no', '0', 'off'):
+            return False
     if isinstance(value, list):
-        return any(v if isinstance(v, bool) else bool(v) for v in value)
+        return any(_to_bool(v) for v in value)
     return bool(value)
 
 

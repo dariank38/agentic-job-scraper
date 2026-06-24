@@ -289,7 +289,7 @@ async def analyze_messages(
                         linkedin=linkedin,
                         contact=contact,
                         contact_type=contact_type,
-                        looking_for_work=pi_data.get("looking_for_work"),
+                        looking_for_work=_to_bool(pi_data.get("looking_for_work")),
                         summary=_to_str(pi_data.get("summary")),
                     )
                     db.add(developer)

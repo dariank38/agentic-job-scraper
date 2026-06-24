@@ -12,6 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.connection import get_db, AsyncSessionLocal
 from app.models import Channel, Developer, Job, Message, Operation
+from app.tasks.helpers import _to_bool
 from app.tasks import (
     analyze_messages,
     broadcast_progress,
@@ -185,7 +186,7 @@ def register_analyze_action_routes(app):
                             dev.skills = dev_data.get("skills")
                             dev.experience = dev_data.get("experience")
                             dev.contact = dev_data.get("contact")
-                            dev.looking_for_work = dev_data.get("looking_for_work")
+                            dev.looking_for_work = _to_bool(dev_data.get("looking_for_work"))
                             dev.summary = dev_data.get("summary")
                             dev.translated_text = analysis.get("translated_text")
                             dev.confidence = analysis.get("confidence")
@@ -199,7 +200,7 @@ def register_analyze_action_routes(app):
                                 skills=dev_data.get("skills"),
                                 experience=dev_data.get("experience"),
                                 contact=dev_data.get("contact"),
-                                looking_for_work=dev_data.get("looking_for_work"),
+                                looking_for_work=_to_bool(dev_data.get("looking_for_work")),
                                 summary=dev_data.get("summary"),
                                 translated_text=analysis.get("translated_text"),
                                 confidence=analysis.get("confidence"),
@@ -394,7 +395,7 @@ def register_analyze_action_routes(app):
                     linkedin=linkedin,
                     contact=contact,
                     contact_type=contact_type,
-                    looking_for_work=pi_data.get("looking_for_work"),
+                    looking_for_work=_to_bool(pi_data.get("looking_for_work")),
                     summary=pi_data.get("summary"),
                 ))
                 message.analysis_status = "analyzed"
