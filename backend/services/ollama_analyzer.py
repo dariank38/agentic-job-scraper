@@ -3,6 +3,7 @@
 import asyncio
 import json
 import logging
+import os
 import re
 import time
 from typing import Any
@@ -24,11 +25,12 @@ class AsyncOllamaAnalyzer:
         self,
         base_url: str = None,
         model_name: str = None,
-        max_concurrent: int = 1,
+        max_concurrent: int = None,
     ):
         self.client = AsyncClient(host=base_url or OLLAMA_BASE_URL)
         self.model_name = model_name
-        self.semaphore = asyncio.Semaphore(max_concurrent)
+        self.max_concurrent = max_concurrent or int(os.getenv("OLLAMA_MAX_CONCURRENT", "3"))
+        self.semaphore = asyncio.Semaphore(self.max_concurrent)
         self._pending: int = 0
 
     def _get_model_options(self, message_length: int) -> dict:

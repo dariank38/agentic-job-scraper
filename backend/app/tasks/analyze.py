@@ -1,6 +1,8 @@
 """Analyze Telegram messages and website posts with AI."""
 
+import asyncio
 import logging
+import os
 from datetime import datetime
 from typing import Optional
 
@@ -119,7 +121,6 @@ async def analyze_messages(
             await update_operation(db, operation_id, status="completed")
             return {"success": True, "analyzed": 0, "jobs_found": 0, "developers_found": 0, "skipped": 0}
 
-        import asyncio as _asyncio
         from app.routes.settings import get_analyze_provider
         _is_nvidia = get_analyze_provider() == "nvidia"
         _NVIDIA_INTER_REQUEST_DELAY = 2.0
@@ -131,39 +132,22 @@ async def analyze_messages(
         message_results: list[dict] = []
         consecutive_failures = 0
 
-        for msg_index, msg in enumerate(messages):
-            if is_analysis_stopped(channel_id):
-                stopped_count = total_messages - msg_index
-                break
-            if bulk_operation_id and is_bulk_operation_stopped(bulk_operation_id):
-                stopped_count = total_messages - msg_index
-                break
-
-            if not msg.text or not should_analyze_message(msg.text):
-                await db.delete(msg)
-                skipped_count += 1
-                logger.info(f"[ANALYZE] [{channel_username}] [{msg_index+1}/{total_messages}] SKIPPED (pre-filter) | msg_id={msg.id}")
-                continue
-
-            message, result, error = await _analyze_single(analyzer, msg, channel_username, msg_index, total_messages)
+        async def _process_message_result(message, result, error, msg_index):
+            nonlocal jobs_added, devs_added, skipped_count, analyzed_count, consecutive_failures, total_input_tokens, total_output_tokens
 
             if error:
                 message.analysis_status = "failed"
                 message_results.append({"message_id": message.id, "status": "failed", "error": str(error)})
                 logger.warning(f"[ANALYZE] [{channel_username}] [{msg_index+1}/{total_messages}] FAILED | msg_id={message.id} | error={str(error)[:120]}")
                 consecutive_failures += 1
-                try:
-                    await db.commit()
-                except Exception:
-                    await db.rollback()
-                continue
+                return
 
             if not result or result.get("category") == "other":
                 await db.delete(message)
                 skipped_count += 1
                 message_results.append({"message_id": message.id, "status": "other"})
                 logger.info(f"[ANALYZE] [{channel_username}] [{msg_index+1}/{total_messages}] SKIPPED (other) | msg_id={message.id}")
-                continue
+                return
 
             usage = result.get("usage", {})
             total_input_tokens += usage.get("input_tokens", 0)
@@ -187,7 +171,7 @@ async def analyze_messages(
                     await db.delete(message)
                     skipped_count += 1
                     logger.info(f"[ANALYZE] [{channel_username}] [{msg_index+1}/{total_messages}] SKIPPED (on-site) | msg_id={message.id}")
-                    continue
+                    return
 
                 summary_text = _to_str(job_data.get("summary"))
                 title = _to_str(job_data.get("title"))
@@ -216,7 +200,7 @@ async def analyze_messages(
                         await db.delete(message)
                         skipped_count += 1
                         logger.info(f"[ANALYZE] [{channel_username}] [{msg_index+1}/{total_messages}] SKIPPED (duplicate job) | msg_id={message.id}")
-                        continue
+                        return
 
                 role_str = _to_str(job_data.get("role_type"))
                 try:
@@ -286,7 +270,7 @@ async def analyze_messages(
                             await db.delete(message)
                             skipped_count += 1
                             logger.info(f"[ANALYZE] [{channel_username}] [{msg_index+1}/{total_messages}] SKIPPED (duplicate dev) | msg_id={message.id}")
-                            continue
+                            return
 
                 exp_val = pi_data.get("experience")
                 exp_str = "\n".join(str(i) for i in exp_val) if isinstance(exp_val, list) else (str(exp_val) if exp_val else None)
@@ -350,12 +334,78 @@ async def analyze_messages(
                 pass
 
             if _is_nvidia:
-                await _asyncio.sleep(_NVIDIA_INTER_REQUEST_DELAY)
+                await asyncio.sleep(_NVIDIA_INTER_REQUEST_DELAY)
 
-            try:
-                await db.commit()
-            except Exception:
-                await db.rollback()
+        OLLAMA_CONCURRENCY = int(os.getenv("OLLAMA_MAX_CONCURRENT", "3"))
+        if OLLAMA_CONCURRENCY < 1:
+            OLLAMA_CONCURRENCY = 1
+
+        if _is_nvidia:
+            for msg_index, msg in enumerate(messages):
+                if is_analysis_stopped(channel_id):
+                    stopped_count = total_messages - msg_index
+                    break
+                if bulk_operation_id and is_bulk_operation_stopped(bulk_operation_id):
+                    stopped_count = total_messages - msg_index
+                    break
+
+                if not msg.text or not should_analyze_message(msg.text):
+                    await db.delete(msg)
+                    skipped_count += 1
+                    logger.info(f"[ANALYZE] [{channel_username}] [{msg_index+1}/{total_messages}] SKIPPED (pre-filter) | msg_id={msg.id}")
+                    continue
+
+                message, result, error = await _analyze_single(analyzer, msg, channel_username, msg_index, total_messages)
+                await _process_message_result(message, result, error, msg_index)
+
+                try:
+                    await db.commit()
+                except Exception:
+                    await db.rollback()
+        else:
+            for chunk_start in range(0, total_messages, OLLAMA_CONCURRENCY):
+                chunk = messages[chunk_start:chunk_start + OLLAMA_CONCURRENCY]
+                to_analyze = []
+
+                for idx, msg in enumerate(chunk):
+                    msg_index = chunk_start + idx
+
+                    if is_analysis_stopped(channel_id):
+                        stopped_count = total_messages - msg_index
+                        break
+                    if bulk_operation_id and is_bulk_operation_stopped(bulk_operation_id):
+                        stopped_count = total_messages - msg_index
+                        break
+
+                    if not msg.text or not should_analyze_message(msg.text):
+                        await db.delete(msg)
+                        skipped_count += 1
+                        logger.info(f"[ANALYZE] [{channel_username}] [{msg_index+1}/{total_messages}] SKIPPED (pre-filter) | msg_id={msg.id}")
+                        continue
+
+                    to_analyze.append((msg_index, msg))
+
+                if stopped_count > 0:
+                    break
+
+                if to_analyze:
+                    tasks = [
+                        _analyze_single(analyzer, msg, channel_username, msg_index, total_messages)
+                        for msg_index, msg in to_analyze
+                    ]
+                    results = await asyncio.gather(*tasks, return_exceptions=True)
+
+                    for (msg_index, msg), item in zip(to_analyze, results):
+                        if isinstance(item, Exception):
+                            message, result, error = msg, None, item
+                        else:
+                            message, result, error = item
+                        await _process_message_result(message, result, error, msg_index)
+
+                try:
+                    await db.commit()
+                except Exception:
+                    await db.rollback()
 
         try:
             await db.commit()
