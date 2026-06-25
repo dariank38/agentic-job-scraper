@@ -20,6 +20,7 @@ const TelegramAccounts = () => {
   const [accounts, setAccounts] = useState<TelegramAccount[]>([]);
   const [loading, setLoading] = useState(false);
   const [showAddForm, setShowAddForm] = useState(false);
+  const [adding, setAdding] = useState(false);
   const [newAccount, setNewAccount] = useState({ api_id: '', api_hash: '', phone_number: '' });
   const [authDialogOpen, setAuthDialogOpen] = useState(false);
   const [authAccountId, setAuthAccountId] = useState<number | null>(null);
@@ -47,6 +48,7 @@ const TelegramAccounts = () => {
 
   const handleAddAccount = async (e: React.FormEvent) => {
     e.preventDefault();
+    setAdding(true);
     try {
       await api.createTelegramAccount({
         api_id: parseInt(newAccount.api_id),
@@ -58,7 +60,10 @@ const TelegramAccounts = () => {
       setShowAddForm(false);
       loadAccounts();
     } catch (error) {
-      showToast('error', `${t('common.failedToAdd')} ${t('telegramAccounts.title')}`);
+      const message = error instanceof Error ? error.message : `${t('common.failedToAdd')} ${t('telegramAccounts.title')}`;
+      showToast('error', message);
+    } finally {
+      setAdding(false);
     }
   };
 
@@ -174,7 +179,7 @@ const TelegramAccounts = () => {
     <div className="space-y-5">
       {/* Hero Header */}
       <div className="relative overflow-hidden rounded-xl bg-gradient-to-br from-sky-600 via-blue-600 to-indigo-600 p-5 text-white shadow-lg">
-        <div className="absolute inset-0 opacity-10" style={{ backgroundImage: 'radial-gradient(circle at 20% 50%, white 1px, transparent 1px), radial-gradient(circle at 80% 20%, white 1px, transparent 1px)', backgroundSize: '40px 40px' }} />
+        <div className="absolute inset-0 opacity-10 pointer-events-none" style={{ backgroundImage: 'radial-gradient(circle at 20% 50%, white 1px, transparent 1px), radial-gradient(circle at 80% 20%, white 1px, transparent 1px)', backgroundSize: '40px 40px' }} />
         <div className="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-3">
           <div>
             <div className="flex items-center gap-2 mb-1">
@@ -247,8 +252,11 @@ const TelegramAccounts = () => {
                 </div>
               </div>
               <div className="flex gap-2">
-                <Button type="submit" size="sm">{t('telegramAccounts.addAccount')}</Button>
-                <Button type="button" variant="ghost" size="sm" onClick={() => setShowAddForm(false)}>
+                <Button type="submit" size="sm" disabled={adding}>
+                  {adding && <RefreshCw className="w-3.5 h-3.5 mr-1.5 animate-spin" />}
+                  {t('telegramAccounts.addAccount')}
+                </Button>
+                <Button type="button" variant="ghost" size="sm" onClick={() => setShowAddForm(false)} disabled={adding}>
                   {t('common.cancel')}
                 </Button>
               </div>

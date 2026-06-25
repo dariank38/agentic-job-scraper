@@ -20,6 +20,7 @@ const Websites = () => {
   const { showToast } = useToast();
   const { channelProgress, operations, tokenUsage, stoppingChannels, requestStop } = useWebSocketProgress();
   const [addWebsiteDialogOpen, setAddWebsiteDialogOpen] = useState(false);
+  const [addingWebsite, setAddingWebsite] = useState(false);
   const [newWebsiteName, setNewWebsiteName] = useState('');
   const [newWebsiteUrl, setNewWebsiteUrl] = useState('');
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
@@ -46,6 +47,7 @@ const Websites = () => {
   };
 
   const addWebsiteSource = async () => {
+    setAddingWebsite(true);
     try {
       const formData = new FormData();
       formData.append('name', newWebsiteName);
@@ -62,6 +64,8 @@ const Websites = () => {
       }
     } catch (e: any) {
       showToast('error', `${t('common.error')}: ${e.message}`);
+    } finally {
+      setAddingWebsite(false);
     }
   };
 
@@ -222,7 +226,7 @@ const Websites = () => {
     <div className="space-y-5">
       {/* Hero Header */}
       <div className="relative overflow-hidden rounded-xl bg-gradient-to-br from-emerald-600 via-teal-600 to-cyan-600 p-5 text-white shadow-lg">
-        <div className="absolute inset-0 opacity-10" style={{ backgroundImage: 'radial-gradient(circle at 20% 50%, white 1px, transparent 1px), radial-gradient(circle at 80% 20%, white 1px, transparent 1px)', backgroundSize: '40px 40px' }} />
+        <div className="absolute inset-0 opacity-10 pointer-events-none" style={{ backgroundImage: 'radial-gradient(circle at 20% 50%, white 1px, transparent 1px), radial-gradient(circle at 80% 20%, white 1px, transparent 1px)', backgroundSize: '40px 40px' }} />
         <div className="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-3">
           <div>
             <div className="flex items-center gap-2 mb-1">
@@ -441,10 +445,11 @@ const Websites = () => {
             </p>
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setAddWebsiteDialogOpen(false)}>
+            <Button variant="outline" onClick={() => setAddWebsiteDialogOpen(false)} disabled={addingWebsite}>
               {t('common.cancel')}
             </Button>
-            <Button onClick={addWebsiteSource}>
+            <Button onClick={addWebsiteSource} disabled={addingWebsite}>
+              {addingWebsite && <Loader2 className="w-3.5 h-3.5 mr-1.5 animate-spin" />}
               {t('websites.addWebsite')}
             </Button>
           </DialogFooter>

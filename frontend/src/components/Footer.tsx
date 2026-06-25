@@ -18,7 +18,7 @@ const Footer = () => {
             <span className="hidden sm:inline">{t('footer.copyright')}</span>
           </div>
           <a
-            href="https://github.com"
+            href="https://github.com/dariank38"
             target="_blank"
             rel="noopener noreferrer"
             className="flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground transition-colors"

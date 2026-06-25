@@ -169,6 +169,10 @@ const api = {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(data),
     });
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({}));
+      throw new Error(errorData.detail || `Failed to create account (${response.status})`);
+    }
     return response.json();
   },
 
@@ -523,11 +527,19 @@ const api = {
       method: 'POST',
       body: formData,
     });
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({}));
+      throw new Error(errorData.detail || `Failed to add website source (${response.status})`);
+    }
     return response.json();
   },
 
   deleteWebsiteSource: async (id: number): Promise<any> => {
     const response = await fetch(`${API_BASE}/api/website-sources/${id}`, { method: 'DELETE' });
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({}));
+      throw new Error(errorData.detail || `Failed to delete website source (${response.status})`);
+    }
     return response.json();
   },
 
@@ -538,6 +550,10 @@ const api = {
       method: 'POST',
       body: formData,
     });
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({}));
+      throw new Error(errorData.detail || `Failed to fetch website source (${response.status})`);
+    }
     return response.json();
   },
 
@@ -548,16 +564,28 @@ const api = {
       method: 'POST',
       body: formData,
     });
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({}));
+      throw new Error(errorData.detail || `Failed to fetch all website sources (${response.status})`);
+    }
     return response.json();
   },
 
   analyzeWebsiteSource: async (id: number): Promise<any> => {
     const response = await fetch(`${API_BASE}/api/website-sources/${id}/analyze`, { method: 'POST' });
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({}));
+      throw new Error(errorData.detail || `Failed to analyze website source (${response.status})`);
+    }
     return response.json();
   },
 
   analyzeAllWebsiteSources: async (): Promise<any> => {
     const response = await fetch(`${API_BASE}/api/website-sources/analyze-all`, { method: 'POST' });
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({}));
+      throw new Error(errorData.detail || `Failed to analyze all website sources (${response.status})`);
+    }
     return response.json();
   },
 
@@ -566,6 +594,10 @@ const api = {
       method: 'PUT',
       body: formData,
     });
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({}));
+      throw new Error(errorData.detail || `Failed to update website source (${response.status})`);
+    }
     return response.json();
   },
 

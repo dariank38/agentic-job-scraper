@@ -533,7 +533,7 @@ const Dashboard = () => {
     <div className="space-y-5">
     {/* Hero Header */}
     <div className="relative overflow-hidden rounded-xl bg-gradient-to-br from-slate-800 via-slate-700 to-slate-600 p-5 text-white shadow-lg">
-      <div className="absolute inset-0 opacity-10" style={{ backgroundImage: 'radial-gradient(circle at 20% 50%, white 1px, transparent 1px), radial-gradient(circle at 80% 20%, white 1px, transparent 1px)', backgroundSize: '40px 40px' }} />
+      <div className="absolute inset-0 opacity-10 pointer-events-none" style={{ backgroundImage: 'radial-gradient(circle at 20% 50%, white 1px, transparent 1px), radial-gradient(circle at 80% 20%, white 1px, transparent 1px)', backgroundSize: '40px 40px' }} />
       <div className="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-3">
         <div>
           <div className="flex items-center gap-2 mb-1">
@@ -720,7 +720,7 @@ const Dashboard = () => {
                   id="autoAnalyze"
                   checked={autoAnalyze}
                   onCheckedChange={handleAutoAnalyzeChange}
-                  className="scale-75"
+                  size="sm"
                 />
               </div>
             </div>
