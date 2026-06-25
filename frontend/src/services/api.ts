@@ -774,6 +774,30 @@ const api = {
     }
     return response.json();
   },
+
+  listResumes: async (params?: { resume_type?: string; limit?: number; offset?: number }): Promise<{ resumes: any[] }> => {
+    const queryParams = new URLSearchParams();
+    if (params?.resume_type) queryParams.append('resume_type', params.resume_type);
+    if (params?.limit) queryParams.append('limit', params.limit.toString());
+    if (params?.offset) queryParams.append('offset', params.offset.toString());
+    const response = await fetch(`${API_BASE}/api/resumes?${queryParams.toString()}`);
+    if (!response.ok) throw new Error('Failed to fetch resumes');
+    return response.json();
+  },
+
+  getResume: async (resumeId: number): Promise<any> => {
+    const response = await fetch(`${API_BASE}/api/resumes/${resumeId}`);
+    if (!response.ok) throw new Error('Failed to fetch resume');
+    return response.json();
+  },
+
+  deleteResume: async (resumeId: number): Promise<{ success: boolean; message: string }> => {
+    const response = await fetch(`${API_BASE}/api/resumes/${resumeId}`, {
+      method: 'DELETE',
+    });
+    if (!response.ok) throw new Error('Failed to delete resume');
+    return response.json();
+  },
 };
 
 export default api;

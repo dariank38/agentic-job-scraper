@@ -468,3 +468,37 @@ class SourceScoring(Base):
 
     def __repr__(self) -> str:
         return f"<SourceScoring source={self.source_id} interval={self.recommended_interval_minutes}m>"
+
+
+class Resume(Base):
+    """Generated resume for job applications."""
+
+    __tablename__ = "resumes"
+
+    id = Column(Integer, primary_key=True)
+    job_id = Column(Integer, ForeignKey("jobs.id", ondelete="SET NULL"), nullable=True)
+    job_title = Column(String, nullable=True)  # Store job title for reference
+    job_company = Column(String, nullable=True)  # Store company name for reference
+    resume_type = Column(String, nullable=False)  # 'generate', 'enhance', 'score'
+    content = Column(Text, nullable=False)  # Generated resume text
+    score_result = Column(JSON, nullable=True)  # For score type: {score, level, summary, matched_skills, missing_skills, strengths, improvements}
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    # Relationships
+    job = relationship("Job", lazy="noload")
+
+    def __repr__(self) -> str:
+        return f"<Resume {self.id} type={self.resume_type} job={self.job_title}>"
+
+    def to_dict(self) -> dict:
+        """Convert to dictionary."""
+        return {
+            "id": self.id,
+            "job_id": self.job_id,
+            "job_title": self.job_title,
+            "job_company": self.job_company,
+            "resume_type": self.resume_type,
+            "content": self.content,
+            "score_result": self.score_result,
+            "created_at": self.created_at.isoformat() if self.created_at else None,
+        }

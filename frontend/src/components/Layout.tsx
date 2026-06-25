@@ -22,6 +22,7 @@ import {
   AlertCircle,
   Info,
   AlertTriangle,
+  ScrollText,
 } from 'lucide-react';
 
 type ToastType = 'success' | 'error' | 'info' | 'warning';
@@ -503,6 +504,7 @@ const Layout = ({ children }: { children: React.ReactNode }) => {
     { path: '/channels', label: t('nav.channels'), icon: Radio },
     { path: '/websites', label: t('nav.websites'), icon: Globe },
     { path: '/telegram-accounts', label: t('nav.telegramAccounts'), icon: Radio },
+    { path: '/resume-history', label: 'Resume History', icon: ScrollText },
     { path: '/settings', label: t('nav.settings'), icon: Settings2 },
     { path: '/autonomous', label: t('nav.autonomous'), icon: Bot },
   ];
