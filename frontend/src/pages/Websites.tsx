@@ -311,7 +311,7 @@ const Websites = () => {
                           {source.is_active ? t('websites.active') : t('websites.inactive')}
                         </Badge>
                         <Badge variant="outline" className="text-xs">
-                          RSS
+                          {t('common.rss')}
                         </Badge>
                       </div>
                       <p className="text-sm text-gray-600 mb-2">{source.url}</p>
@@ -430,7 +430,7 @@ const Websites = () => {
               <Input
                 value={newWebsiteName}
                 onChange={(e) => setNewWebsiteName(e.target.value)}
-                placeholder="e.g., V2EX"
+                placeholder={t('websites.namePlaceholder')}
                 className="mt-1"
               />
             </div>
@@ -439,7 +439,7 @@ const Websites = () => {
               <Input
                 value={newWebsiteUrl}
                 onChange={(e) => setNewWebsiteUrl(e.target.value)}
-                placeholder="e.g., https://example.com/feed.xml"
+                placeholder={t('websites.urlPlaceholder')}
                 className="mt-1"
               />
             </div>
@@ -493,7 +493,7 @@ const Websites = () => {
               <Textarea
                 value={editPrompt}
                 onChange={(e) => setEditPrompt(e.target.value)}
-                placeholder={t('websites.customPrompt') + '...'}
+                placeholder={t('websites.promptPlaceholder')}
                 className="mt-1 min-h-[150px] font-mono text-sm whitespace-pre-wrap break-all"
               />
             </div>
@@ -505,7 +505,7 @@ const Websites = () => {
               <Textarea
                 value={editCookies}
                 onChange={(e) => setEditCookies(e.target.value)}
-                placeholder='[{"name":"sessionid","value":"xxx","domain":"bossjob.com","path":"/"}]'
+                placeholder={t('websites.cookiesPlaceholder')}
                 className="mt-1 min-h-[100px] font-mono text-xs whitespace-pre-wrap break-all"
               />
             </div>

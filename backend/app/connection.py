@@ -90,6 +90,21 @@ async def init_db() -> None:
         raise
 
 
+async def run_migrations() -> None:
+    """Run lightweight schema migrations for additive changes.
+
+    PostgreSQL-specific: add columns that may be missing in existing databases.
+    """
+    from sqlalchemy import text
+
+    try:
+        async with engine.begin() as conn:
+            await conn.execute(text("ALTER TABLE jobs ADD COLUMN IF NOT EXISTS is_favorite BOOLEAN DEFAULT FALSE"))
+    except Exception as e:
+        logger.error(f"Error running migrations: {e}")
+        raise
+
+
 async def get_db() -> AsyncSession:
     """Get async database session."""
     async with AsyncSessionLocal() as session:

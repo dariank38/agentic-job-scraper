@@ -32,6 +32,7 @@ export interface Job {
   confidence?: string;
   is_applied: boolean;
   applied_at?: string;
+  is_favorite: boolean;
   notes?: string;
   channel_id?: number;
   channel_name?: string;
@@ -209,7 +210,7 @@ const api = {
   },
 
   // Jobs
-  getJobs: async (params?: { is_applied?: string; search?: string; limit?: number; offset?: number }): Promise<{ jobs: Job[]; total: number; limit: number; offset: number }> => {
+  getJobs: async (params?: { is_applied?: string; is_favorite?: string; search?: string; limit?: number; offset?: number }): Promise<{ jobs: Job[]; total: number; limit: number; offset: number }> => {
     const query = new URLSearchParams(params as any).toString();
     const response = await fetch(`${API_BASE}/api/jobs${query ? `?${query}` : ''}`);
     return response.json();
@@ -230,6 +231,13 @@ const api = {
     return response.json();
   },
 
+  toggleJobFavorite: async (id: number): Promise<{ success: boolean; is_favorite: boolean }> => {
+    const response = await fetch(`${API_BASE}/api/jobs/${id}/toggle-favorite`, {
+      method: 'POST',
+    });
+    return response.json();
+  },
+
   reviewJob: async (id: number, formData: FormData): Promise<void> => {
     await fetch(`${API_BASE}/api/jobs/${id}/review`, {
       method: 'POST',
@@ -240,6 +248,15 @@ const api = {
   deleteJob: async (id: number): Promise<{ success: boolean }> => {
     const response = await fetch(`${API_BASE}/api/jobs/${id}`, {
       method: 'DELETE',
+    });
+    return response.json();
+  },
+
+  bulkDeleteJobs: async (ids: number[]): Promise<{ success: boolean; deleted: number }> => {
+    const response = await fetch(`${API_BASE}/api/jobs/bulk-delete`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ids }),
     });
     return response.json();
   },
@@ -269,6 +286,15 @@ const api = {
   deleteDeveloper: async (id: number): Promise<{ success: boolean }> => {
     const response = await fetch(`${API_BASE}/api/developers/${id}`, {
       method: 'DELETE',
+    });
+    return response.json();
+  },
+
+  bulkDeleteDevelopers: async (ids: number[]): Promise<{ success: boolean; deleted: number }> => {
+    const response = await fetch(`${API_BASE}/api/developers/bulk-delete`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ids }),
     });
     return response.json();
   },
@@ -331,6 +357,15 @@ const api = {
 
   deleteMessage: async (messageId: number): Promise<any> => {
     const response = await fetch(`${API_BASE}/api/messages/${messageId}`, { method: 'DELETE' });
+    return response.json();
+  },
+
+  bulkDeleteMessages: async (ids: number[]): Promise<{ success: boolean; deleted: number }> => {
+    const response = await fetch(`${API_BASE}/api/messages/bulk-delete`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ids }),
+    });
     return response.json();
   },
 

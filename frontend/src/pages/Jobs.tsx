@@ -62,6 +62,8 @@ const Jobs = () => {
   const [copiedMsg, setCopiedMsg] = useState(false);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [jobToDelete, setJobToDelete] = useState<number | null>(null);
+  const [bulkDeleteDialogOpen, setBulkDeleteDialogOpen] = useState(false);
+  const [selectedJobIds, setSelectedJobIds] = useState<Set<number>>(new Set());
   const [resumeDialogOpen, setResumeDialogOpen] = useState(false);
   const [resumeTab, setResumeTab] = useState<'generate' | 'enhance' | 'score'>('generate');
   const [resumeJobTitle, setResumeJobTitle] = useState('');
@@ -82,6 +84,7 @@ const Jobs = () => {
   const [scoreLoading, setScoreLoading] = useState(false);
   const [resumeProvider, setResumeProvider] = useState<{ provider: string; model: string; nvidia_configured: boolean } | null>(null);
   const appliedFilter = searchParams.get('is_applied');
+  const favoriteFilter = searchParams.get('is_favorite');
   const sourceFilter = searchParams.get('source_type');
   const limit = 10;
   const offset = parseInt(searchParams.get('offset') || '0');
@@ -91,7 +94,7 @@ const Jobs = () => {
 
   useEffect(() => {
     loadJobs();
-  }, [offset, searchQuery, appliedFilter, sourceFilter]);
+  }, [offset, searchQuery, appliedFilter, favoriteFilter, sourceFilter]);
 
   useEffect(() => {
     if (jobIdParam && jobs.length > 0) {
@@ -109,6 +112,7 @@ const Jobs = () => {
       const params: any = { limit, offset };
       if (searchQuery) params.search = searchQuery;
       if (appliedFilter) params.is_applied = appliedFilter;
+      if (favoriteFilter) params.is_favorite = favoriteFilter;
       if (sourceFilter) params.source_type = sourceFilter;
       const data = await api.getJobs(params);
       setJobs(data.jobs);
@@ -191,6 +195,38 @@ const Jobs = () => {
     setSearchParams(params);
   };
 
+  const applyFavoriteFilter = (value: string) => {
+    const params = new URLSearchParams(searchParams);
+    params.delete('offset');
+    if (value) params.set('is_favorite', value);
+    else params.delete('is_favorite');
+    setSearchParams(params);
+  };
+
+  const toggleFavorite = async (id: number) => {
+    const job = jobs.find(j => j.id === id);
+    const nextFavorite = !job?.is_favorite;
+    // Optimistic update
+    setJobs(prevJobs => prevJobs.map(j => j.id === id ? { ...j, is_favorite: nextFavorite } : j));
+    if (selectedJob?.id === id) {
+      setSelectedJob(prev => prev ? { ...prev, is_favorite: nextFavorite } : null);
+    }
+    try {
+      await withLoading(`favorite-${id}`, () => api.toggleJobFavorite(id));
+      showToast('success', nextFavorite ? t('jobs.addedToFavorites') : t('jobs.removedFromFavorites'));
+    } catch (e: any) {
+      let errorMessage = `${t('common.failedToToggle')} ${t('jobs.favoriteStatus')}`;
+      if (e.response) {
+        const errorData = await e.response.json().catch(() => ({}));
+        errorMessage = errorData.detail || errorMessage;
+      } else if (e.message) {
+        errorMessage = e.message;
+      }
+      showToast('error', errorMessage);
+      loadJobs();
+    }
+  };
+
   const toggleApplied = async (id: number) => {
     const job = jobs.find(j => j.id === id);
     if (job?.is_applied) {
@@ -249,8 +285,61 @@ const Jobs = () => {
     }
   };
 
+  const toggleJobSelection = (id: number) => {
+    setSelectedJobIds(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
+  const selectAllJobs = () => {
+    setSelectedJobIds(new Set(jobs.map(j => j.id)));
+  };
+
+  const clearJobSelection = () => {
+    setSelectedJobIds(new Set());
+  };
+
+  const handleBulkDeleteJobs = async () => {
+    if (selectedJobIds.size === 0) return;
+    try {
+      const data = await api.bulkDeleteJobs(Array.from(selectedJobIds));
+      if (data.success) {
+        showToast('success', t('jobs.bulkDeletedSuccessfully', { count: data.deleted }));
+        setSelectedJobIds(new Set());
+        setBulkDeleteDialogOpen(false);
+        if (selectedJob && selectedJobIds.has(selectedJob.id)) {
+          setSelectedJob(null);
+        }
+        loadJobs();
+      }
+    } catch (e: any) {
+      let errorMessage = `${t('common.failedToDelete')} ${t('jobs.title')}`;
+      if (e.response) {
+        const errorData = await e.response.json().catch(() => ({}));
+        errorMessage = errorData.detail || errorMessage;
+      } else if (e.message) {
+        errorMessage = e.message;
+      }
+      showToast('error', errorMessage);
+    }
+  };
+
   const exportJobs = () => {
-    const headers = ['Title', 'Company', 'Location', 'Role Type', 'Skills', 'Contact', 'Remote', 'Applied', 'Channel', 'Posted Date'];
+    const headers = [
+      t('jobs.jobTitle'),
+      t('jobs.company'),
+      t('jobs.location'),
+      t('jobs.roleType'),
+      t('jobs.skills'),
+      t('jobs.contact'),
+      t('jobs.remote'),
+      t('jobs.applied'),
+      t('common.channels'),
+      t('jobs.postedDate'),
+    ];
     const rows = jobs.map(job => {
       const skillsStr = Array.isArray(job.skills) ? job.skills.join(', ') : '';
       return [
@@ -422,7 +511,16 @@ const Jobs = () => {
                     <option value="telegram">{t('jobs.sourceTelegram')}</option>
                     <option value="website">{t('jobs.sourceWebsite')}</option>
                   </select>
-                  {(appliedFilter || sourceFilter || searchQuery) && (
+                  <select
+                    value={favoriteFilter || ''}
+                    onChange={(e) => applyFavoriteFilter(e.target.value)}
+                    className="flex-1 px-3 py-2 rounded-md border border-gray-200 text-sm bg-white"
+                  >
+                    <option value="">{t('jobs.allFavorites')}</option>
+                    <option value="true">{t('jobs.favorites')}</option>
+                    <option value="false">{t('jobs.notFavorites')}</option>
+                  </select>
+                  {(appliedFilter || favoriteFilter || sourceFilter || searchQuery) && (
                     <Button variant="ghost" size="sm" onClick={clearFilters}>
                       {t('common.clear')}
                     </Button>
@@ -431,6 +529,31 @@ const Jobs = () => {
               </div>
             </CardHeader>
             <CardContent className="p-0">
+              {/* Bulk Actions */}
+              {jobs.length > 0 && (
+                <div className="flex flex-wrap items-center gap-2 px-4 pt-3 pb-2 border-b">
+                  <Button variant="outline" size="sm" onClick={selectAllJobs}>
+                    {t('common.selectAll')}
+                  </Button>
+                  <Button variant="outline" size="sm" onClick={clearJobSelection}>
+                    {t('common.clearSelection')}
+                  </Button>
+                  {selectedJobIds.size > 0 && (
+                    <>
+                      <span className="text-sm text-muted-foreground">
+                        {t('common.selectedCount', { count: selectedJobIds.size })}
+                      </span>
+                      <Button
+                        variant="destructive"
+                        size="sm"
+                        onClick={() => setBulkDeleteDialogOpen(true)}
+                      >
+                        {t('common.bulkDelete')}
+                      </Button>
+                    </>
+                  )}
+                </div>
+              )}
               <div className="px-4 pb-4 space-y-1">
                 {jobs.length === 0 ? (
                   <p className="text-sm text-gray-500 text-center py-8">{t('jobs.noJobsMatch')}</p>
@@ -448,13 +571,19 @@ const Jobs = () => {
                             : 'hover:bg-gray-50 border border-transparent'
                         }`}
                       >
+                        <input
+                          type="checkbox"
+                          checked={selectedJobIds.has(job.id)}
+                          onChange={(e) => { e.stopPropagation(); toggleJobSelection(job.id); }}
+                          className="mt-2.5 w-4 h-4 accent-primary shrink-0"
+                        />
                         {/* Avatar */}
                         <div className={`w-10 h-10 rounded-lg flex items-center justify-center text-sm font-semibold shrink-0 ${
                           isSelected
                             ? 'bg-primary text-primary-foreground'
                             : 'bg-gray-200 text-gray-700'
                         }`}>
-                          {getInitials(job.company || job.title || 'Job')}
+                          {getInitials(job.company || job.title || t('jobs.untitledJob'))}
                         </div>
                         {/* Info */}
                         <div className="flex-1 min-w-0">
@@ -462,6 +591,9 @@ const Jobs = () => {
                             <span className={`font-medium text-base truncate ${isSelected ? 'text-primary' : ''}`}>
                               {job.title || (job.message?.text?.substring(0, 60) + (job.message?.text && job.message.text.length > 60 ? '...' : '')) || t('jobs.untitledJob')}
                             </span>
+                            {job.is_favorite && (
+                              <Star className="w-4 h-4 text-amber-500 fill-amber-500 shrink-0" />
+                            )}
                             {job.is_applied && (
                               <Badge variant="default" className="text-xs h-5 px-1.5">{t('jobs.applied')}</Badge>
                             )}
@@ -636,6 +768,16 @@ const Jobs = () => {
                       disabled={loadingActions.has(`toggle-${selectedJob.id}`)}
                     >
                       {selectedJob.is_applied ? t('jobs.applied') + ' ✓' : t('jobs.markApplied')}
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant={selectedJob.is_favorite ? 'default' : 'outline'}
+                      className={selectedJob.is_favorite ? 'bg-amber-500 hover:bg-amber-600 text-white' : 'border-amber-300 text-amber-600 hover:bg-amber-50'}
+                      onClick={() => toggleFavorite(selectedJob.id)}
+                      disabled={loadingActions.has(`favorite-${selectedJob.id}`)}
+                    >
+                      <Star className={`w-3.5 h-3.5 mr-1.5 ${selectedJob.is_favorite ? 'fill-white' : ''}`} />
+                      {selectedJob.is_favorite ? t('jobs.favorited') : t('jobs.addToFavorites')}
                     </Button>
                     <Button
                       size="sm"
@@ -1022,6 +1164,26 @@ const Jobs = () => {
               {t('common.cancel')}
             </Button>
             <Button variant="destructive" onClick={confirmDeleteJob}>
+              {t('common.delete')}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Bulk Delete Confirmation Dialog */}
+      <Dialog open={bulkDeleteDialogOpen} onOpenChange={setBulkDeleteDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>{t('jobs.bulkDeleteConfirm')}</DialogTitle>
+            <DialogDescription>
+              {t('jobs.bulkDeleteWarning', { count: selectedJobIds.size })}
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setBulkDeleteDialogOpen(false)}>
+              {t('common.cancel')}
+            </Button>
+            <Button variant="destructive" onClick={handleBulkDeleteJobs}>
               {t('common.delete')}
             </Button>
           </DialogFooter>

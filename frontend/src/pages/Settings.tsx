@@ -24,16 +24,16 @@ type ProviderSettings = {
 const PROVIDERS = [
   {
     value: 'ollama',
-    label: 'Ollama',
-    description: 'Local model — no API key required',
+    label: 'ollama',
+    description: 'ollamaDesc',
     icon: '🦙',
     color: 'border-blue-200 bg-blue-50 text-blue-700',
     activeColor: 'border-blue-500 bg-blue-100 ring-2 ring-blue-400',
   },
   {
     value: 'nvidia',
-    label: 'NVIDIA NIM',
-    description: 'Cloud API — requires NVIDIA_API_KEY',
+    label: 'nvidia',
+    description: 'nvidiaDesc',
     icon: '⚡',
     color: 'border-green-200 bg-green-50 text-green-700',
     activeColor: 'border-green-500 bg-green-100 ring-2 ring-green-400',
@@ -68,10 +68,10 @@ function ProviderCard({
         <span className="text-2xl">{p.icon}</span>
         <div className="flex-1 min-w-0">
           <div className="font-semibold text-sm flex items-center gap-1.5">
-            {p.label}
+            {t(`settings.provider${p.value === 'ollama' ? 'Ollama' : 'Nvidia'}`)}
             {isActive && <Badge variant="secondary" className="text-xs px-1.5 py-0">{t('settings.active')}</Badge>}
           </div>
-          <div className="text-xs text-muted-foreground mt-0.5">{p.description}</div>
+          <div className="text-xs text-muted-foreground mt-0.5">{t(`settings.provider${p.value === 'ollama' ? 'Ollama' : 'Nvidia'}Desc`)}</div>
         </div>
         {isActive && (
           <CheckCircle className="w-4 h-4 text-green-600 shrink-0" />
@@ -216,10 +216,11 @@ export default function Settings() {
           {settings.nvidia_api_key_configured ? (
             <span>{t('settings.nvidiaActiveModel')} <code className="font-mono bg-green-100 px-1 rounded">{settings.nvidia_model}</code></span>
           ) : (
-            <span>Set <code className="font-mono bg-yellow-100 px-1 rounded">NVIDIA_API_KEY</code> in <code className="font-mono bg-yellow-100 px-1 rounded">backend/.env</code> to enable NVIDIA.
-              {' '}Get a free key at{' '}
+            <span>
+              {t('settings.nvidiaEnvHint', { key: 'NVIDIA_API_KEY', file: 'backend/.env' })}{' '}
+              {t('settings.nvidiaKeyLink')}{' '}
               <a href="https://build.nvidia.com" target="_blank" rel="noreferrer" className="underline inline-flex items-center gap-0.5">
-                build.nvidia.com <ExternalLink className="w-3 h-3" />
+                {t('settings.nvidiaKeyLinkUrl')} <ExternalLink className="w-3 h-3" />
               </a>
             </span>
           )}

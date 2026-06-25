@@ -37,7 +37,7 @@ import api from '@/services/api';
 import type { Developer } from '@/services/api';
 import { useToast } from '@/components/Layout';
 
-const getSenderName = (dev: Developer, fallback = 'Unknown') => {
+const getSenderName = (dev: Developer, fallback = '') => {
   return dev.message?.sender_username || dev.message?.sender_first_name || fallback;
 };
 
@@ -57,6 +57,8 @@ const Developers = () => {
   const [copiedMsg, setCopiedMsg] = useState(false);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [developerToDelete, setDeveloperToDelete] = useState<number | null>(null);
+  const [bulkDeleteDialogOpen, setBulkDeleteDialogOpen] = useState(false);
+  const [selectedDeveloperIds, setSelectedDeveloperIds] = useState<Set<number>>(new Set());
   const lookingFilter = searchParams.get('looking_for_work');
   const contactedFilter = searchParams.get('is_contacted');
   const limit = 10;
@@ -213,8 +215,61 @@ const Developers = () => {
     }
   };
 
+  const toggleDeveloperSelection = (id: number) => {
+    setSelectedDeveloperIds(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
+  const selectAllDevelopers = () => {
+    setSelectedDeveloperIds(new Set(developers.map(d => d.id)));
+  };
+
+  const clearDeveloperSelection = () => {
+    setSelectedDeveloperIds(new Set());
+  };
+
+  const handleBulkDeleteDevelopers = async () => {
+    if (selectedDeveloperIds.size === 0) return;
+    try {
+      const data = await api.bulkDeleteDevelopers(Array.from(selectedDeveloperIds));
+      if (data.success) {
+        showToast('success', t('developers.bulkDeletedSuccessfully', { count: data.deleted }));
+        setSelectedDeveloperIds(new Set());
+        setBulkDeleteDialogOpen(false);
+        if (selectedDeveloper && selectedDeveloperIds.has(selectedDeveloper.id)) {
+          setSelectedDeveloper(null);
+        }
+        loadDevelopers();
+      }
+    } catch (e: any) {
+      let errorMessage = `${t('common.failedToDelete')} ${t('developers.title')}`;
+      if (e.response) {
+        const errorData = await e.response.json().catch(() => ({}));
+        errorMessage = errorData.detail || errorMessage;
+      } else if (e.message) {
+        errorMessage = e.message;
+      }
+      showToast('error', errorMessage);
+    }
+  };
+
   const exportDevelopers = () => {
-    const headers = ['Name', 'Skills', 'Experience', 'GitHub', 'LinkedIn', 'Portfolio', 'Contact', 'Looking for Work', 'Channel', 'Posted Date'];
+    const headers = [
+      t('developers.name'),
+      t('developers.skills'),
+      t('developers.experience'),
+      t('common.github'),
+      t('common.linkedin'),
+      t('common.portfolio'),
+      t('developers.contact'),
+      t('developers.lookingForWork'),
+      t('common.channels'),
+      t('developers.postedDate'),
+    ];
     const rows = developers.map(dev => {
       return [
         dev.name || '',
@@ -318,6 +373,31 @@ const Developers = () => {
               </div>
             </CardHeader>
             <CardContent className="p-0">
+              {/* Bulk Actions */}
+              {developers.length > 0 && (
+                <div className="flex flex-wrap items-center gap-2 px-4 pt-3 pb-2 border-b">
+                  <Button variant="outline" size="sm" onClick={selectAllDevelopers}>
+                    {t('common.selectAll')}
+                  </Button>
+                  <Button variant="outline" size="sm" onClick={clearDeveloperSelection}>
+                    {t('common.clearSelection')}
+                  </Button>
+                  {selectedDeveloperIds.size > 0 && (
+                    <>
+                      <span className="text-sm text-muted-foreground">
+                        {t('common.selectedCount', { count: selectedDeveloperIds.size })}
+                      </span>
+                      <Button
+                        variant="destructive"
+                        size="sm"
+                        onClick={() => setBulkDeleteDialogOpen(true)}
+                      >
+                        {t('common.bulkDelete')}
+                      </Button>
+                    </>
+                  )}
+                </div>
+              )}
               <div className="px-4 pb-4 space-y-1">
                 {developers.length === 0 ? (
                   <p className="text-sm text-gray-500 text-center py-8">{t('developers.noDevsMatch')}</p>
@@ -336,6 +416,12 @@ const Developers = () => {
                             : 'hover:bg-gray-50 border border-transparent'
                         }`}
                       >
+                        <input
+                          type="checkbox"
+                          checked={selectedDeveloperIds.has(dev.id)}
+                          onChange={(e) => { e.stopPropagation(); toggleDeveloperSelection(dev.id); }}
+                          className="mt-2.5 w-4 h-4 accent-primary shrink-0"
+                        />
                         {/* Avatar */}
                         <div className={`w-10 h-10 rounded-full flex items-center justify-center text-sm font-semibold shrink-0 ${
                           isSelected
@@ -516,7 +602,7 @@ const Developers = () => {
                               <ExternalLink className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-white" />
                             </div>
                             <div className="min-w-0">
-                              <p className="text-[10px] sm:text-xs text-gray-500 font-medium">GitHub</p>
+                              <p className="text-[10px] sm:text-xs text-gray-500 font-medium">{t('common.github')}</p>
                               <p className="text-xs sm:text-sm text-gray-900 truncate group-hover:text-primary transition-colors">{selectedDeveloper.github}</p>
                             </div>
                           </a>
@@ -528,14 +614,14 @@ const Developers = () => {
                               <ExternalLink className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-white" />
                             </div>
                             <div className="min-w-0">
-                              <p className="text-[10px] sm:text-xs text-blue-600 font-medium">LinkedIn</p>
+                              <p className="text-[10px] sm:text-xs text-blue-600 font-medium">{t('common.linkedin')}</p>
                               <p className="text-xs sm:text-sm text-gray-900 truncate group-hover:text-blue-700 transition-colors">{selectedDeveloper.linkedin}</p>
                             </div>
                           </a>
                         )}
                         {Array.isArray(selectedDeveloper.portfolio)
                           ? selectedDeveloper.portfolio.map((item: any, idx: number) => {
-                              const type = item?.type || 'Portfolio';
+                              const type = item?.type || t('common.portfolio');
                               const value = item?.value;
                               if (!value) return null;
                               const getStyle = (t: string) => {
@@ -734,6 +820,26 @@ const Developers = () => {
               {t('common.cancel')}
             </Button>
             <Button variant="destructive" onClick={confirmDeleteDeveloper}>
+              {t('common.delete')}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Bulk Delete Confirmation Dialog */}
+      <Dialog open={bulkDeleteDialogOpen} onOpenChange={setBulkDeleteDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>{t('developers.bulkDeleteConfirm')}</DialogTitle>
+            <DialogDescription>
+              {t('developers.bulkDeleteWarning', { count: selectedDeveloperIds.size })}
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setBulkDeleteDialogOpen(false)}>
+              {t('common.cancel')}
+            </Button>
+            <Button variant="destructive" onClick={handleBulkDeleteDevelopers}>
               {t('common.delete')}
             </Button>
           </DialogFooter>

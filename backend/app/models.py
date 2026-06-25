@@ -166,6 +166,7 @@ class Job(Base):
     is_applied = Column(Boolean, default=False)
     applied_at = Column(DateTime, nullable=True)
     is_hidden = Column(Boolean, default=False)
+    is_favorite = Column(Boolean, default=False)
     notes = Column(Text, nullable=True)
 
     created_at = Column(DateTime, default=datetime.utcnow)
@@ -202,6 +203,7 @@ class Job(Base):
             "summary": self.summary,
             "is_applied": self.is_applied,
             "applied_at": self.applied_at.isoformat() if self.applied_at else None,
+            "is_favorite": self.is_favorite,
             "notes": self.notes,
             "message": self.message.to_dict() if self.message else None,
         }

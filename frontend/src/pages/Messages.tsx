@@ -84,6 +84,8 @@ const Messages = () => {
   const [reanalyzingId, setReanalyzingId] = useState<number | null>(null);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [messageToDelete, setMessageToDelete] = useState<number | null>(null);
+  const [bulkDeleteDialogOpen, setBulkDeleteDialogOpen] = useState(false);
+  const [selectedMessageIds, setSelectedMessageIds] = useState<Set<number>>(new Set());
   const [expandedMessageId, setExpandedMessageId] = useState<number | null>(null);
   const [copiedId, setCopiedId] = useState<number | null>(null);
   const limit = 8;
@@ -214,6 +216,46 @@ const Messages = () => {
     }
   };
 
+  const toggleMessageSelection = (id: number) => {
+    setSelectedMessageIds(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
+  const selectAllMessages = () => {
+    const allIds = new Set(messages.map(m => m.id));
+    setSelectedMessageIds(allIds);
+  };
+
+  const clearMessageSelection = () => {
+    setSelectedMessageIds(new Set());
+  };
+
+  const handleBulkDeleteMessages = async () => {
+    if (selectedMessageIds.size === 0) return;
+    try {
+      const data = await api.bulkDeleteMessages(Array.from(selectedMessageIds));
+      if (data.success) {
+        showToast('success', t('messages.bulkDeletedSuccessfully', { count: data.deleted }));
+        setSelectedMessageIds(new Set());
+        setBulkDeleteDialogOpen(false);
+        loadMessages();
+      }
+    } catch (e: any) {
+      let errorMessage = `${t('common.failedToDelete')} ${t('messages.title')}`;
+      if (e.response) {
+        const errorData = await e.response.json().catch(() => ({}));
+        errorMessage = errorData.detail || errorMessage;
+      } else if (e.message) {
+        errorMessage = e.message;
+      }
+      showToast('error', errorMessage);
+    }
+  };
+
   const getStatusInfo = (status: string) => {
     switch (status) {
       case 'analyzed':
@@ -230,7 +272,7 @@ const Messages = () => {
         };
       case 'failed':
         return {
-          label: t('messages.failed') || 'Failed',
+          label: t('messages.failed'),
           variant: 'destructive' as const,
           icon: Clock,
         };
@@ -248,17 +290,17 @@ const Messages = () => {
       case 'telegram':
         return {
           icon: MessageSquare,
-          label: 'Telegram',
+          label: t('common.telegram'),
         };
       case 'website':
         return {
           icon: MessageSquare,
-          label: 'Website',
+          label: t('common.website'),
         };
       default:
         return {
           icon: MessageSquare,
-          label: 'Unknown',
+          label: t('common.unknown'),
         };
     }
   };
@@ -332,15 +374,15 @@ const Messages = () => {
               onChange={(e) => setSourceFilter(e.target.value)}
               className="px-3 py-2 rounded-md border text-sm bg-background focus:outline-none focus:ring-2 focus:ring-ring w-full sm:w-auto"
             >
-              <option value="all">{t('messages.allSources') || 'All Sources'}</option>
-              <optgroup label={t('common.channels') || 'Channels'}>
+              <option value="all">{t('messages.allSources')}</option>
+              <optgroup label={t('common.channels')}>
                 {channels.map((ch: any) => (
                   <option key={`channel-${ch.id}`} value={`channel-${ch.id}`}>
                     {ch.username || ch.name}
                   </option>
                 ))}
               </optgroup>
-              <optgroup label={t('common.websiteSources') || 'Website Sources'}>
+              <optgroup label={t('common.websiteSources')}>
                 {websiteSources.map((ws: any) => (
                   <option key={`website-${ws.id}`} value={`website-${ws.id}`}>
                     {ws.name}
@@ -357,11 +399,37 @@ const Messages = () => {
               <option value="analyzed">{t('messages.analyzed')}</option>
               <option value="pending">{t('messages.pending')}</option>
               <option value="skipped">{t('messages.skipped')}</option>
-              <option value="failed">{t('messages.failed') || 'Failed'}</option>
+              <option value="failed">{t('messages.failed')}</option>
             </select>
           </div>
         </CardContent>
       </Card>
+
+      {/* Bulk Actions */}
+      {messages.length > 0 && (
+        <div className="flex flex-wrap items-center gap-2 mb-4">
+          <Button variant="outline" size="sm" onClick={selectAllMessages}>
+            {t('common.selectAll')}
+          </Button>
+          <Button variant="outline" size="sm" onClick={clearMessageSelection}>
+            {t('common.clearSelection')}
+          </Button>
+          {selectedMessageIds.size > 0 && (
+            <>
+              <span className="text-sm text-muted-foreground">
+                {t('common.selectedCount', { count: selectedMessageIds.size })}
+              </span>
+              <Button
+                variant="destructive"
+                size="sm"
+                onClick={() => setBulkDeleteDialogOpen(true)}
+              >
+                {t('common.bulkDelete')}
+              </Button>
+            </>
+          )}
+        </div>
+      )}
 
       {/* Messages List */}
       {loading ? (
@@ -390,6 +458,12 @@ const Messages = () => {
                 >
                   <CardContent className="py-4">
                     <div className="flex items-start gap-4">
+                      <input
+                        type="checkbox"
+                        checked={selectedMessageIds.has(msg.id)}
+                        onChange={(e) => { e.stopPropagation(); toggleMessageSelection(msg.id); }}
+                        className="mt-2.5 w-4 h-4 accent-primary shrink-0"
+                      />
                       {/* Icon */}
                       <div className="w-10 h-10 rounded-lg bg-muted flex items-center justify-center shrink-0">
                         <SourceIcon className="w-5 h-5 text-muted-foreground" />
@@ -503,12 +577,12 @@ const Messages = () => {
                         {expandedMessageId === msg.id ? (
                           <div
                             className="text-sm text-muted-foreground leading-relaxed"
-                            dangerouslySetInnerHTML={{ __html: msg.text || '<No text content>' }}
+                            dangerouslySetInnerHTML={{ __html: msg.text || t('messages.noTextContent') }}
                           />
                         ) : (
                           <div
                             className="text-sm text-muted-foreground line-clamp-2 leading-relaxed"
-                            dangerouslySetInnerHTML={{ __html: msg.text || '<No text content>' }}
+                            dangerouslySetInnerHTML={{ __html: msg.text || t('messages.noTextContent') }}
                           />
                         )}
                       </div>
@@ -571,6 +645,26 @@ const Messages = () => {
               {t('common.cancel')}
             </Button>
             <Button variant="destructive" onClick={handleDeleteMessage}>
+              {t('common.delete')}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Bulk Delete Confirmation Dialog */}
+      <Dialog open={bulkDeleteDialogOpen} onOpenChange={setBulkDeleteDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>{t('messages.bulkDeleteConfirm')}</DialogTitle>
+            <DialogDescription>
+              {t('messages.bulkDeleteWarning', { count: selectedMessageIds.size })}
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setBulkDeleteDialogOpen(false)}>
+              {t('common.cancel')}
+            </Button>
+            <Button variant="destructive" onClick={handleBulkDeleteMessages}>
               {t('common.delete')}
             </Button>
           </DialogFooter>

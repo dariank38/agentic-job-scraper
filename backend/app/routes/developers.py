@@ -2,12 +2,17 @@
 
 from typing import Optional
 from fastapi import Depends, Form, HTTPException
+from pydantic import BaseModel
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.connection import get_db
 from app.models import Developer, Message
+
+
+class BulkDeleteRequest(BaseModel):
+    ids: list[int]
 
 
 def register_developer_routes(app):
@@ -80,6 +85,26 @@ def register_developer_routes(app):
             "limit": limit,
             "offset": offset,
         }
+
+    @app.post("/api/developers/bulk-delete")
+    async def api_bulk_delete_developers(
+        request: BulkDeleteRequest,
+        db: AsyncSession = Depends(get_db),
+    ):
+        """Hide multiple developers (soft-delete). Messages are kept to prevent duplicate re-fetching."""
+        if not request.ids:
+            return {"success": True, "deleted": 0}
+        try:
+            result = await db.execute(select(Developer).filter(Developer.id.in_(request.ids)))
+            developers = result.scalars().all()
+            for developer in developers:
+                developer.is_hidden = True
+            await db.commit()
+
+            return {"success": True, "deleted": len(developers)}
+        except Exception as e:
+            await db.rollback()
+            raise HTTPException(status_code=500, detail=f"Failed to bulk hide developers: {str(e)}")
 
     @app.get("/api/developers/{developer_id}")
     async def api_developer_detail(developer_id: int, db: AsyncSession = Depends(get_db)):

@@ -2,12 +2,17 @@
 
 from typing import Optional
 from fastapi import Depends, Form, HTTPException
+from pydantic import BaseModel
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.connection import get_db
 from app.models import Job, Message
+
+
+class BulkDeleteRequest(BaseModel):
+    ids: list[int]
 
 
 def register_job_routes(app):
@@ -17,6 +22,7 @@ def register_job_routes(app):
     async def api_jobs(
         search: Optional[str] = None,
         is_applied: Optional[bool] = None,
+        is_favorite: Optional[bool] = None,
         source_type: Optional[str] = None,  # 'telegram' or 'website'
         limit: int = 10,
         offset: int = 0,
@@ -32,6 +38,9 @@ def register_job_routes(app):
 
         if is_applied is not None:
             query = query.filter(Job.is_applied == is_applied)
+
+        if is_favorite is not None:
+            query = query.filter(Job.is_favorite == is_favorite)
 
         # Apply search filter — searches all text fields
         if search:
@@ -74,6 +83,26 @@ def register_job_routes(app):
             "limit": limit,
             "offset": offset,
         }
+
+    @app.post("/api/jobs/bulk-delete")
+    async def api_bulk_delete_jobs(
+        request: BulkDeleteRequest,
+        db: AsyncSession = Depends(get_db),
+    ):
+        """Hide multiple jobs (soft-delete). Messages are kept to prevent duplicate re-fetching."""
+        if not request.ids:
+            return {"success": True, "deleted": 0}
+        try:
+            result = await db.execute(select(Job).filter(Job.id.in_(request.ids)))
+            jobs = result.scalars().all()
+            for job in jobs:
+                job.is_hidden = True
+            await db.commit()
+
+            return {"success": True, "deleted": len(jobs)}
+        except Exception as e:
+            await db.rollback()
+            raise HTTPException(status_code=500, detail=f"Failed to bulk hide jobs: {str(e)}")
 
     @app.get("/api/jobs/{job_id}")
     async def api_job_detail(job_id: int, db: AsyncSession = Depends(get_db)):
@@ -148,6 +177,29 @@ def register_job_routes(app):
         except Exception as e:
             await db.rollback()
             raise HTTPException(status_code=500, detail=f"Failed to toggle applied status: {str(e)}")
+
+    @app.post("/api/jobs/{job_id}/toggle-favorite")
+    async def api_toggle_job_favorite(
+        job_id: int,
+        db: AsyncSession = Depends(get_db),
+    ):
+        """Toggle job favorite status."""
+        try:
+            result = await db.execute(select(Job).filter(Job.id == job_id))
+            job = result.scalar_one_or_none()
+            if not job:
+                raise HTTPException(status_code=404, detail="Job not found")
+
+            job.is_favorite = not job.is_favorite
+            await db.commit()
+
+            return {"success": True, "is_favorite": job.is_favorite}
+        except HTTPException:
+            await db.rollback()
+            raise
+        except Exception as e:
+            await db.rollback()
+            raise HTTPException(status_code=500, detail=f"Failed to toggle favorite status: {str(e)}")
 
     @app.delete("/api/jobs/{job_id}")
     async def api_delete_job(job_id: int, db: AsyncSession = Depends(get_db)):

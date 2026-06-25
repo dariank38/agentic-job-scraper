@@ -316,6 +316,12 @@ async def lifespan(app):
     except Exception:
         pass
 
+    try:
+        from app.connection import run_migrations
+        await run_migrations()
+    except Exception:
+        pass
+
     autonomous_orchestrator = None
     try:
         from app.autonomous.orchestrator import AutonomousOrchestrator

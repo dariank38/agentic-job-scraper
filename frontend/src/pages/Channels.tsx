@@ -364,13 +364,13 @@ const Channels = () => {
         // Stop listening to this channel
         const data = await api.removeListenerChannels([channel.username], channel.telegram_account_id || undefined);
         if (data.success) {
-          showToast('success', 'Channel removed from listener');
+          showToast('success', t('channels.channelRemovedFromListener'));
           // Reload channels to get updated is_listened state from database
           await loadChannels();
           // Refresh all listened channels to ensure UI sync
           await checkListenerStatus();
         } else {
-          showToast('error', data.error || 'Failed to remove channel from listener');
+          showToast('error', data.error || t('channels.failedToRemoveChannelFromListener'));
         }
       } else {
         // Determine which account to use
@@ -383,10 +383,10 @@ const Channels = () => {
           } else if (authenticatedAccounts.length === 1) {
             accountId = authenticatedAccounts[0].id;
           } else if (authenticatedAccounts.length === 0) {
-            showToast('error', 'No authenticated Telegram account available');
+            showToast('error', t('channels.noAuthenticatedAccount'));
             return;
           } else {
-            showToast('error', 'Please select a Telegram account first');
+            showToast('error', t('channels.selectAccountFirst'));
             return;
           }
         }
@@ -398,30 +398,30 @@ const Channels = () => {
           // Start listener with just this channel
           const startData = await api.startListener([channel.username], false, accountId);
           if (startData.success) {
-            showToast('success', `Listener started for ${channel.username}`);
+            showToast('success', t('channels.listenerStartedFor', { channel: channel.username }));
             // Reload channels to get updated is_listened state from database
             await loadChannels();
             // Refresh all listened channels to ensure UI sync
             await checkListenerStatus();
           } else {
-            showToast('error', startData.error || 'Failed to start listener');
+            showToast('error', startData.error || t('channels.failedToStartListener'));
           }
         } else {
           // Add channel to existing listener
           const data = await api.addListenerChannels([channel.username], accountId);
           if (data.success) {
-            showToast('success', 'Channel added to listener');
+            showToast('success', t('channels.channelAddedToListener'));
             // Reload channels to get updated is_listened state from database
             await loadChannels();
             // Refresh all listened channels to ensure UI sync
             await checkListenerStatus();
           } else {
-            showToast('error', data.error || 'Failed to add channel to listener');
+            showToast('error', data.error || t('channels.failedToAddChannelToListener'));
           }
         }
       }
     } catch (e: any) {
-      showToast('error', `Failed to toggle listener: ${e.message}`);
+      showToast('error', `${t('channels.failedToToggleListener')}: ${e.message}`);
     } finally {
       setLoadingActions(prev => {
         const next = new Set(prev);
@@ -489,14 +489,14 @@ const Channels = () => {
                         </Badge>
                         {(channel.is_listened === 1 || channel.is_listened === true || listenedChannels.includes(channel.username)) && (
                           <Badge variant="outline" className="bg-green-50 text-green-700 border-green-200">
-                            Listening
+                            {t('dashboard.listening')}
                           </Badge>
                         )}
                       </h3>
                       {channel.name && <p className="font-bold">{channel.name}</p>}
                       {channel.description && <p>{channel.description}</p>}
                       <p className="text-sm text-gray-500">
-                        {channel.message_count || 0} messages | {channel.job_count || 0} jobs
+                        {channel.message_count || 0} {t('dashboard.messages')} | {channel.job_count || 0} {t('dashboard.jobs')}
                         {(channel.last_fetch_new_count || 0) > 0 && (
                           <span className="ml-2 inline-flex items-center px-1.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
                             +{channel.last_fetch_new_count} {t('channels.fetched')}

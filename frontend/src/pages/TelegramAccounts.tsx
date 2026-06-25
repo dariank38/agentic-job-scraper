@@ -184,7 +184,7 @@ const TelegramAccounts = () => {
         <div className="ml-auto flex items-center gap-2">
           <Button variant="outline" size="sm" onClick={loadAccounts} disabled={loading} className="gap-1.5">
             <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} />
-            {t('common.refresh') || 'Refresh'}
+            {t('common.refresh')}
           </Button>
           <Button size="sm" onClick={() => setShowAddForm(!showAddForm)} className="gap-1.5">
             <Plus className="w-4 h-4" />
@@ -201,8 +201,8 @@ const TelegramAccounts = () => {
           <CardHeader className="pb-3">
             <CardTitle className="text-base">{t('telegramAccounts.addAccount')}</CardTitle>
             <CardDescription className="text-xs">
-              Get your API ID and Hash from{' '}
-              <a href="https://my.telegram.org/apps" target="_blank" rel="noreferrer" className="underline">my.telegram.org/apps</a>
+              {t('telegramAccounts.apiDocsHint')}{' '}
+              <a href="https://my.telegram.org/apps" target="_blank" rel="noreferrer" className="underline">{t('telegramAccounts.apiDocsLink')}</a>
             </CardDescription>
           </CardHeader>
           <CardContent>
@@ -212,7 +212,7 @@ const TelegramAccounts = () => {
                   <label className="text-sm font-medium mb-1.5 block">{t('telegramAccounts.apiId')}</label>
                   <Input
                     type="number"
-                    placeholder="12345678"
+                    placeholder={t('telegramAccounts.apiIdPlaceholder')}
                     value={newAccount.api_id}
                     onChange={(e) => setNewAccount({ ...newAccount, api_id: e.target.value })}
                     required
@@ -222,7 +222,7 @@ const TelegramAccounts = () => {
                   <label className="text-sm font-medium mb-1.5 block">{t('telegramAccounts.apiHash')}</label>
                   <Input
                     type="password"
-                    placeholder="abcdef1234567890..."
+                    placeholder={t('telegramAccounts.apiHashPlaceholder')}
                     value={newAccount.api_hash}
                     onChange={(e) => setNewAccount({ ...newAccount, api_hash: e.target.value })}
                     required
@@ -232,7 +232,7 @@ const TelegramAccounts = () => {
                   <label className="text-sm font-medium mb-1.5 block">{t('telegramAccounts.phone')}</label>
                   <Input
                     type="tel"
-                    placeholder="+1234567890"
+                    placeholder={t('telegramAccounts.phonePlaceholder')}
                     value={newAccount.phone_number}
                     onChange={(e) => setNewAccount({ ...newAccount, phone_number: e.target.value })}
                     required
@@ -285,12 +285,12 @@ const TelegramAccounts = () => {
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead className="pl-6">Account</TableHead>
-                  <TableHead>Session</TableHead>
-                  <TableHead>Status</TableHead>
-                  <TableHead>Added</TableHead>
-                  <TableHead>Last used</TableHead>
-                  <TableHead className="text-right pr-6">Actions</TableHead>
+                  <TableHead className="pl-6">{t('common.account')}</TableHead>
+                  <TableHead>{t('common.session')}</TableHead>
+                  <TableHead>{t('common.status')}</TableHead>
+                  <TableHead>{t('common.added')}</TableHead>
+                  <TableHead>{t('common.lastUsed')}</TableHead>
+                  <TableHead className="text-right pr-6">{t('common.actions')}</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -344,7 +344,7 @@ const TelegramAccounts = () => {
                                 {t('telegramAccounts.authenticate')}
                               </Button>
                             </TooltipTrigger>
-                            <TooltipContent>Authenticate this account with Telegram</TooltipContent>
+                            <TooltipContent>{t('telegramAccounts.authenticateTooltip')}</TooltipContent>
                           </Tooltip>
                         )}
                         <Tooltip>
@@ -363,7 +363,7 @@ const TelegramAccounts = () => {
                               <Trash2 className="w-3.5 h-3.5" />
                             </Button>
                           </TooltipTrigger>
-                          <TooltipContent>Delete account</TooltipContent>
+                          <TooltipContent>{t('common.deleteAccount')}</TooltipContent>
                         </Tooltip>
                       </div>
                     </TableCell>
@@ -388,12 +388,12 @@ const TelegramAccounts = () => {
           <div className="flex items-center gap-2 text-xs text-muted-foreground">
             <span className={`flex items-center gap-1 ${authStep === 'code' ? 'text-primary font-medium' : 'line-through opacity-50'}`}>
               <span className="w-5 h-5 rounded-full border-2 flex items-center justify-center text-[10px] font-bold border-primary text-primary">1</span>
-              Verification code
+              {t('common.verificationCode')}
             </span>
             <Separator className="flex-1" />
             <span className={`flex items-center gap-1 ${authStep === 'password' ? 'text-primary font-medium' : 'opacity-40'}`}>
               <span className={`w-5 h-5 rounded-full border-2 flex items-center justify-center text-[10px] font-bold ${authStep === 'password' ? 'border-primary text-primary' : 'border-muted-foreground text-muted-foreground'}`}>2</span>
-              2FA password
+              {t('common.twoFactorPassword')}
             </span>
           </div>
 

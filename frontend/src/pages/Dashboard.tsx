@@ -680,7 +680,7 @@ const Dashboard = () => {
                   className="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
                 />
                 <label htmlFor="autoAnalyze" className="text-xs text-muted-foreground cursor-pointer">
-                  Auto-analyze new messages
+                  {t('common.autoAnalyze')}
                 </label>
               </div>
             </div>

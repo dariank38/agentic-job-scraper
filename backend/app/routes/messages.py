@@ -2,12 +2,17 @@
 
 from typing import Optional
 from fastapi import Depends, HTTPException
+from pydantic import BaseModel
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.connection import get_db
 from app.models import Message
+
+
+class BulkDeleteRequest(BaseModel):
+    ids: list[int]
 
 
 def register_message_routes(app):
@@ -66,6 +71,26 @@ def register_message_routes(app):
             "limit": limit,
             "offset": offset,
         }
+
+    @app.post("/api/messages/bulk-delete")
+    async def api_bulk_delete_messages(
+        request: BulkDeleteRequest,
+        db: AsyncSession = Depends(get_db),
+    ):
+        """Delete multiple messages and their associated jobs/developers."""
+        if not request.ids:
+            return {"success": True, "deleted": 0}
+        try:
+            result = await db.execute(select(Message).filter(Message.id.in_(request.ids)))
+            messages = result.scalars().all()
+            for message in messages:
+                await db.delete(message)
+            await db.commit()
+
+            return {"success": True, "deleted": len(messages)}
+        except Exception as e:
+            await db.rollback()
+            raise HTTPException(status_code=500, detail=f"Failed to bulk delete messages: {str(e)}")
 
     @app.delete("/api/messages/{message_id}")
     async def api_delete_message(message_id: int, db: AsyncSession = Depends(get_db)):
