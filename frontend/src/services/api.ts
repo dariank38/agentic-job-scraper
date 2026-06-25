@@ -307,6 +307,11 @@ const api = {
   },
 
   // Messages
+  getMessage: async (id: number): Promise<any> => {
+    const response = await fetch(`${API_BASE}/api/messages/${id}`);
+    return response.json();
+  },
+
   getMessages: async (params?: { channel_id?: number; website_source_id?: number; search?: string; analysis_status?: string; limit?: number; offset?: number }): Promise<any> => {
     const queryParams = new URLSearchParams();
     if (params?.channel_id) queryParams.append('channel_id', params.channel_id.toString());
@@ -366,6 +371,11 @@ const api = {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ ids }),
     });
+    return response.json();
+  },
+
+  toggleSkipMessage: async (messageId: number): Promise<{ success: boolean; is_manual_skip: boolean; analysis_status: string }> => {
+    const response = await fetch(`${API_BASE}/api/messages/${messageId}/toggle-skip`, { method: 'POST' });
     return response.json();
   },
 
@@ -600,11 +610,14 @@ const api = {
     return response.json();
   },
 
-  enhanceResume: async (jobId: number, resumeText: string, onChunk: (text: string) => void): Promise<void> => {
+  enhanceResume: async (jobId: number | null, resumeText: string, onChunk: (text: string) => void, messageText?: string): Promise<void> => {
+    const body: any = { resume_text: resumeText };
+    if (jobId) body.job_id = jobId;
+    if (messageText) body.message_text = messageText;
     const response = await fetch(`${API_BASE}/api/resume/enhance`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ job_id: jobId, resume_text: resumeText }),
+      body: JSON.stringify(body),
     });
     if (!response.ok) {
       const err = await response.json().catch(() => ({}));
@@ -634,7 +647,7 @@ const api = {
     }
   },
 
-  scoreResume: async (jobId: number, resumeText: string): Promise<{
+  scoreResume: async (jobId: number | null, resumeText: string, messageText?: string): Promise<{
     score: number;
     level: string;
     summary: string;
@@ -646,7 +659,7 @@ const api = {
     const response = await fetch(`${API_BASE}/api/resume/score`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ job_id: jobId, resume_text: resumeText }),
+      body: JSON.stringify(jobId ? { job_id: jobId, resume_text: resumeText } : { message_text: messageText, resume_text: resumeText }),
     });
     if (!response.ok) {
       const err = await response.json().catch(() => ({}));
@@ -656,11 +669,14 @@ const api = {
     return data.result;
   },
 
-  generateResume: async (jobId: number, onChunk: (text: string) => void): Promise<void> => {
+  generateResume: async (jobId: number | null, onChunk: (text: string) => void, messageText?: string): Promise<void> => {
+    const body: any = {};
+    if (jobId) body.job_id = jobId;
+    if (messageText) body.message_text = messageText;
     const response = await fetch(`${API_BASE}/api/resume/generate`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ job_id: jobId }),
+      body: JSON.stringify(body),
     });
     if (!response.ok) {
       const err = await response.json().catch(() => ({}));

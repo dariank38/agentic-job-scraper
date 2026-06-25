@@ -171,29 +171,36 @@ const TelegramAccounts = () => {
 
   return (
     <TooltipProvider>
-    <div className="space-y-6">
-      {/* Header */}
-      <div className="flex items-center gap-3">
-        <div className="bg-primary text-primary-foreground w-9 h-9 rounded-lg flex items-center justify-center shadow-sm shrink-0">
-          <Radio size={18} />
-        </div>
-        <div>
-          <h1 className="text-2xl font-bold">{t('telegramAccounts.title')}</h1>
-          <p className="text-sm text-muted-foreground">{t('telegramAccounts.manageAccountsHint')}</p>
-        </div>
-        <div className="ml-auto flex items-center gap-2">
-          <Button variant="outline" size="sm" onClick={loadAccounts} disabled={loading} className="gap-1.5">
-            <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} />
-            {t('common.refresh')}
-          </Button>
-          <Button size="sm" onClick={() => setShowAddForm(!showAddForm)} className="gap-1.5">
-            <Plus className="w-4 h-4" />
-            {t('telegramAccounts.addAccount')}
-          </Button>
+    <div className="space-y-5">
+      {/* Hero Header */}
+      <div className="relative overflow-hidden rounded-xl bg-gradient-to-br from-sky-600 via-blue-600 to-indigo-600 p-5 text-white shadow-lg">
+        <div className="absolute inset-0 opacity-10" style={{ backgroundImage: 'radial-gradient(circle at 20% 50%, white 1px, transparent 1px), radial-gradient(circle at 80% 20%, white 1px, transparent 1px)', backgroundSize: '40px 40px' }} />
+        <div className="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-3">
+          <div>
+            <div className="flex items-center gap-2 mb-1">
+              <Radio className="w-5 h-5" />
+              <h1 className="text-xl font-bold tracking-tight">{t('telegramAccounts.title')}</h1>
+            </div>
+            <p className="text-white/70 text-sm">{t('telegramAccounts.manageAccountsHint')}</p>
+          </div>
+          <div className="flex gap-2">
+            <Button
+              className="bg-white/20 hover:bg-white/30 text-white border border-white/30 backdrop-blur-sm h-9"
+              size="sm" onClick={loadAccounts} disabled={loading}
+            >
+              <RefreshCw className={`w-3.5 h-3.5 mr-1.5 ${loading ? 'animate-spin' : ''}`} />
+              {t('common.refresh')}
+            </Button>
+            <Button
+              className="bg-white text-sky-700 hover:bg-white/90 border-0 h-9"
+              size="sm" onClick={() => setShowAddForm(!showAddForm)}
+            >
+              <Plus className="w-4 h-4 mr-1.5" />
+              {t('telegramAccounts.addAccount')}
+            </Button>
+          </div>
         </div>
       </div>
-
-      <Separator />
 
       {/* Add Account Form */}
       {showAddForm && (

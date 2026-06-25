@@ -1,12 +1,14 @@
 import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Badge } from '@/components/ui/badge';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
-import { Globe, Plus, RefreshCw, Bot, Trash2, Loader2, Edit, Square } from 'lucide-react';
+import { Globe, Plus, RefreshCw, Bot, Trash2, Loader2, Edit, Square, Zap, ExternalLink, Calendar } from 'lucide-react';
+import { Progress } from '@/components/ui/progress';
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import api from '@/services/api';
 import type { WebsiteSource } from '@/services/api';
 import { useToast, useWebSocketProgress } from '@/components/Layout';
@@ -216,199 +218,190 @@ const Websites = () => {
   };
 
   return (
-    <div className="space-y-6">
-      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
-        <h1 className="text-2xl font-bold">{t('websites.title')}</h1>
-        <Button onClick={() => setAddWebsiteDialogOpen(true)} className="w-full sm:w-auto">
-          <Plus size={16} className="mr-2" />
-          {t('websites.addWebsite')}
-        </Button>
-      </div>
-
-      {/* Bulk Actions */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-sm">{t('websites.bulkActions')}</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <div className="flex flex-col sm:flex-row gap-2">
-            <Button
-              variant="outline"
-              onClick={fetchAllWebsiteSources}
-              disabled={loadingActions.has('fetch-all')}
-              className="w-full sm:w-auto"
-            >
-              {loadingActions.has('fetch-all') ? <Loader2 size={14} className="mr-2 animate-spin" /> : <RefreshCw size={14} className="mr-2" />}
+    <TooltipProvider delayDuration={400}>
+    <div className="space-y-5">
+      {/* Hero Header */}
+      <div className="relative overflow-hidden rounded-xl bg-gradient-to-br from-emerald-600 via-teal-600 to-cyan-600 p-5 text-white shadow-lg">
+        <div className="absolute inset-0 opacity-10" style={{ backgroundImage: 'radial-gradient(circle at 20% 50%, white 1px, transparent 1px), radial-gradient(circle at 80% 20%, white 1px, transparent 1px)', backgroundSize: '40px 40px' }} />
+        <div className="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-3">
+          <div>
+            <div className="flex items-center gap-2 mb-1">
+              <Globe className="w-5 h-5" />
+              <h1 className="text-xl font-bold tracking-tight">{t('websites.title')}</h1>
+            </div>
+            <p className="text-white/70 text-sm">{websiteSources.length} {t('websites.title').toLowerCase()} · {websiteSources.filter(s => s.is_active).length} {t('websites.active').toLowerCase()}</p>
+          </div>
+          <div className="flex gap-2">
+            <Button variant="ghost" className="bg-white/20 hover:bg-white/30 text-white border border-white/30 backdrop-blur-sm h-9"
+              onClick={fetchAllWebsiteSources} disabled={loadingActions.has('fetch-all')}>
+              {loadingActions.has('fetch-all') ? <Loader2 size={14} className="mr-1.5 animate-spin" /> : <RefreshCw size={14} className="mr-1.5" />}
               {t('websites.fetchAll')}
             </Button>
-            <Button
-              onClick={analyzeAllWebsiteSources}
-              className="w-full sm:w-auto"
-            >
-              <Bot size={14} className="mr-2" />
+            <Button className="bg-white/20 hover:bg-white/30 text-white border border-white/30 backdrop-blur-sm h-9"
+              onClick={analyzeAllWebsiteSources}>
+              <Bot size={14} className="mr-1.5" />
               {t('websites.analyzeAll')}
             </Button>
+            <Button className="bg-white text-emerald-700 hover:bg-white/90 border-0 h-9"
+              onClick={() => setAddWebsiteDialogOpen(true)}>
+              <Plus size={14} className="mr-1.5" />
+              {t('websites.addWebsite')}
+            </Button>
           </div>
-        </CardContent>
-      </Card>
+        </div>
+      </div>
 
-      {/* Active Operations Progress */}
+      {/* Active Operations */}
       {Object.keys(operations).length > 0 && (
-        <Card className="border-blue-200 bg-blue-50">
-          <CardHeader>
-            <CardTitle className="text-sm">{t('websites.activeOperations')}</CardTitle>
-          </CardHeader>
-          <CardContent>
-            {Object.entries(operations).map(([name, op]) => {
-              const progress = channelProgress[name];
-              return (
-                <div key={name} className="mb-3 last:mb-0">
-                  <div className="flex items-center justify-between mb-1">
-                    <span className="text-sm font-medium text-blue-900">{name}</span>
-                    <span className="text-xs text-blue-700">{op.type}</span>
-                  </div>
-                  {progress && (
-                    <div className="mt-2">
-                      <div className="flex justify-between text-xs mb-1">
-                        <span className="text-blue-700">{t('websites.processing')}</span>
-                        <span className="text-blue-700">{(progress as any).analyzed || (progress as any).processed || 0} / {progress.total || 0}</span>
-                      </div>
-                      <div className="w-full bg-blue-200 rounded-full h-2">
-                        <div
-                          className="bg-blue-600 h-2 rounded-full transition-all"
-                          style={{ width: `${(((progress as any).analyzed || (progress as any).processed || 0) / (progress.total || 1)) * 100}%` }}
-                        />
-                      </div>
+        <Card className="border-blue-200 bg-gradient-to-r from-blue-50 to-cyan-50">
+          <CardContent className="pt-4 pb-4">
+            <p className="text-xs font-semibold text-blue-700 uppercase tracking-wider mb-3">{t('websites.activeOperations')}</p>
+            <div className="space-y-3">
+              {Object.entries(operations).map(([name, op]) => {
+                const progress = channelProgress[name];
+                const pct = progress ? Math.round(((progress as any).analyzed || 0) / Math.max(progress.total || 1, 1) * 100) : 0;
+                return (
+                  <div key={name}>
+                    <div className="flex items-center justify-between mb-1">
+                      <span className="text-sm font-medium text-blue-900">{name}</span>
+                      <Badge className="bg-blue-100 text-blue-700 border-blue-200 text-xs">{op.type} — {pct}%</Badge>
                     </div>
-                  )}
-                </div>
-              );
-            })}
+                    {progress && <Progress value={pct} className="h-1.5" />}
+                  </div>
+                );
+              })}
+            </div>
           </CardContent>
         </Card>
       )}
 
       {/* Website Sources List */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-sm">{t('websites.title')} ({websiteSources.length})</CardTitle>
-        </CardHeader>
-        <CardContent>
+      <Card className="shadow-sm">
+        <CardContent className="p-0">
           {initialLoading ? (
-            <div className="py-8 text-center">
-              <Loader2 className="w-5 h-5 text-gray-400 animate-spin mx-auto mb-2" />
-              <p className="text-sm text-gray-500">{t('common.loading')}</p>
+            <div className="flex flex-col items-center justify-center py-16 gap-3 text-muted-foreground">
+              <Loader2 className="w-6 h-6 animate-spin" />
+              <p className="text-sm">{t('common.loading')}</p>
             </div>
           ) : websiteSources.length > 0 ? (
-            <div className="space-y-2">
-              {websiteSources.map((source) => (
-                <div key={source.id} className="p-4 border rounded-lg hover:bg-gray-50 transition-colors">
-                  <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2 mb-2 flex-wrap">
-                        <h3 className="font-semibold text-gray-900">{source.name}</h3>
-                        <Badge variant={source.is_active ? 'default' : 'secondary'} className="text-xs">
-                          {source.is_active ? t('websites.active') : t('websites.inactive')}
-                        </Badge>
-                        <Badge variant="outline" className="text-xs">
-                          {t('common.rss')}
-                        </Badge>
-                      </div>
-                      <p className="text-sm text-gray-600 mb-2">{source.url}</p>
-                      <div className="flex items-center gap-4 text-xs text-gray-500 flex-wrap">
-                        {(source.last_fetch_new_count || 0) > 0 && (
-                          <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
-                            +{source.last_fetch_new_count} {t('websites.fetched')}
-                          </span>
-                        )}
-                        {source.last_fetch_at && (
-                          <span>{t('websites.last')}: {new Date(source.last_fetch_at).toLocaleDateString()}</span>
-                        )}
-                      </div>
-                      {channelProgress[source.name] && (
-                        <div className="mt-2">
-                          <div className="flex justify-between text-xs mb-1">
-                            <span className={stoppingChannels[source.name] ? 'text-orange-600 font-medium' : 'text-blue-600 font-medium'}>
-                              {stoppingChannels[source.name] ? t('dashboard.stoppingProgress') : t('dashboard.analyzingProgress')}
-                            </span>
-                            <span>{channelProgress[source.name].analyzed}/{channelProgress[source.name].total}</span>
+            <div className="divide-y">
+              {websiteSources.map((source) => {
+                const prog = channelProgress[source.name];
+                const isStopping = stoppingChannels[source.id] || stoppingChannels[source.name];
+                const isActive = loadingActions.has(`fetch-${source.id}`) || loadingActions.has(`analyze-${source.id}`) || !!prog;
+                const pct = prog ? Math.round((prog.analyzed / Math.max(prog.total, 1)) * 100) : 0;
+                return (
+                  <div key={source.id} className="p-4 hover:bg-muted/30 transition-colors">
+                    <div className="flex flex-col sm:flex-row gap-4">
+                      <div className="flex gap-3 flex-1 min-w-0">
+                        <div className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 ${
+                          source.is_active ? 'bg-emerald-100 text-emerald-700' : 'bg-muted text-muted-foreground'
+                        }`}>
+                          <Globe size={18} />
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-2 flex-wrap mb-1">
+                            <span className="font-semibold text-sm">{source.name}</span>
+                            <Badge variant={source.is_active ? 'default' : 'secondary'} className="text-xs px-1.5 py-0">
+                              {source.is_active ? t('websites.active') : t('websites.inactive')}
+                            </Badge>
+                            <Badge variant="outline" className="text-xs px-1.5 py-0">{t('common.rss')}</Badge>
+                            {(source.last_fetch_new_count || 0) > 0 && (
+                              <Badge className="bg-emerald-50 text-emerald-700 border-emerald-200 text-[10px] px-1.5 py-0">+{source.last_fetch_new_count} {t('websites.fetched')}</Badge>
+                            )}
                           </div>
-                          <div className="w-full bg-gray-200 rounded-full h-2">
-                            <div
-                              className={`h-2 rounded-full transition-all ${stoppingChannels[source.name] ? 'bg-orange-500' : 'bg-blue-600'}`}
-                              style={{ width: `${channelProgress[source.name].total > 0 ? (channelProgress[source.name].analyzed / channelProgress[source.name].total) * 100 : 0}%` }}
-                            />
-                          </div>
-                          {tokenUsage[source.name] && (
-                            <div className="flex justify-between text-xs mt-1 text-gray-500">
-                              <span>🤖 {(tokenUsage[source.name].total / 1000).toFixed(1)}k tokens</span>
-                              <span>⬆{(tokenUsage[source.name].input / 1000).toFixed(1)}k ⬇{(tokenUsage[source.name].output / 1000).toFixed(1)}k</span>
+                          <p className="text-xs text-muted-foreground truncate mb-1 flex items-center gap-1">
+                            <ExternalLink size={10} className="shrink-0" />
+                            {source.url}
+                          </p>
+                          {source.last_fetch_at && (
+                            <p className="text-[10px] text-muted-foreground flex items-center gap-1">
+                              <Calendar size={9} />
+                              {t('websites.last')}: {new Date(source.last_fetch_at).toLocaleDateString()}
+                            </p>
+                          )}
+                          {prog && (
+                            <div className="mt-2.5 space-y-1">
+                              <div className="flex justify-between text-[10px]">
+                                <span className={isStopping ? 'text-orange-600 font-medium' : 'text-emerald-600 font-medium'}>
+                                  {isStopping ? t('dashboard.stoppingProgress') : t('dashboard.analyzingProgress')} — {pct}%
+                                </span>
+                                <span className="text-muted-foreground">{prog.analyzed}/{prog.total}</span>
+                              </div>
+                              <Progress value={pct} className={`h-1.5 ${isStopping ? '[&>div]:bg-orange-500' : ''}`} />
+                              {tokenUsage[source.name] && (
+                                <Badge variant="outline" className="text-[10px] px-1.5 py-0 font-mono">
+                                  <Zap className="w-2.5 h-2.5 mr-0.5" />
+                                  {(tokenUsage[source.name].total / 1000).toFixed(1)}k tok
+                                </Badge>
+                              )}
                             </div>
                           )}
                         </div>
-                      )}
-                    </div>
-                    <div className="flex flex-wrap gap-2 w-full sm:w-auto">
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        onClick={() => handleEditPrompt(source)}
-                        className="flex-1 sm:flex-none"
-                      >
-                        <Edit size={12} className="mr-1" />
-                        {t('websites.prompt')}
-                      </Button>
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        onClick={() => fetchWebsiteSource(source.id)}
-                        disabled={loadingActions.has(`fetch-${source.id}`) || loadingActions.has(`analyze-${source.id}`) || !!channelProgress[source.name]}
-                        className="flex-1 sm:flex-none"
-                      >
-                        {loadingActions.has(`fetch-${source.id}`) ? <Loader2 size={12} className="mr-1 animate-spin" /> : <RefreshCw size={12} className="mr-1" />}
-                        {t('websites.fetch')}
-                      </Button>
-                      <Button
-                        size="sm"
-                        onClick={() => analyzeWebsiteSource(source.id)}
-                        disabled={loadingActions.has(`fetch-${source.id}`) || loadingActions.has(`analyze-${source.id}`) || !!channelProgress[source.name]}
-                        className="flex-1 sm:flex-none"
-                      >
-                        <Bot size={12} className="mr-1" />
-                        {t('websites.analyze')}
-                      </Button>
-                      {(loadingActions.has(`fetch-${source.id}`) || loadingActions.has(`analyze-${source.id}`) || !!channelProgress[source.name]) && (
-                        <Button
-                          size="sm"
-                          variant="destructive"
-                          onClick={() => stopWebsiteOperation(source.id, source.name)}
-                          disabled={stoppingChannels[source.id] || stoppingChannels[source.name]}
-                          className="flex-1 sm:flex-none"
-                        >
-                          <Square size={12} className="mr-1" />
-                          {stoppingChannels[source.id] || stoppingChannels[source.name] ? t('channels.stopping') : t('common.stop')}
-                        </Button>
-                      )}
-                      <Button
-                        size="sm"
-                        variant="destructive"
-                        onClick={() => handleDeleteClick(source.id)}
-                        className="flex-1 sm:flex-none"
-                      >
-                        <Trash2 size={12} />
-                      </Button>
+                      </div>
+                      <div className="flex flex-wrap gap-1.5 sm:items-start">
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <Button size="sm" className="h-7 text-xs" variant="outline" onClick={() => handleEditPrompt(source)}>
+                              <Edit size={10} className="mr-1" />{t('websites.prompt')}
+                            </Button>
+                          </TooltipTrigger>
+                          <TooltipContent>{t('websites.customPrompt')}</TooltipContent>
+                        </Tooltip>
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <Button size="sm" className="h-7 text-xs" variant="outline"
+                              onClick={() => fetchWebsiteSource(source.id)} disabled={isActive}>
+                              {loadingActions.has(`fetch-${source.id}`) ? <Loader2 size={10} className="mr-1 animate-spin" /> : <RefreshCw size={10} className="mr-1" />}
+                              {t('websites.fetch')}
+                            </Button>
+                          </TooltipTrigger>
+                          <TooltipContent>{t('websites.fetch')}</TooltipContent>
+                        </Tooltip>
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <Button size="sm" className="h-7 text-xs"
+                              onClick={() => analyzeWebsiteSource(source.id)} disabled={isActive}>
+                              <Bot size={10} className="mr-1" />{t('websites.analyze')}
+                            </Button>
+                          </TooltipTrigger>
+                          <TooltipContent>{t('websites.analyze')}</TooltipContent>
+                        </Tooltip>
+                        {isActive && (
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <Button size="sm" className="h-7 text-xs" variant="destructive"
+                                onClick={() => stopWebsiteOperation(source.id, source.name)} disabled={isStopping}>
+                                <Square size={10} className="mr-1" />
+                                {isStopping ? t('channels.stopping') : t('common.stop')}
+                              </Button>
+                            </TooltipTrigger>
+                            <TooltipContent>{t('common.stop')}</TooltipContent>
+                          </Tooltip>
+                        )}
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <Button size="sm" className="h-7 text-xs" variant="ghost"
+                              onClick={() => handleDeleteClick(source.id)}>
+                              <Trash2 size={10} />
+                            </Button>
+                          </TooltipTrigger>
+                          <TooltipContent>{t('common.delete')}</TooltipContent>
+                        </Tooltip>
+                      </div>
                     </div>
                   </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
           ) : (
-            <div className="py-12 text-center">
-              <Globe size={48} className="text-gray-200 mx-auto mb-4" />
-              <p className="text-sm text-gray-500 mb-4">{t('websites.noWebsites')}</p>
+            <div className="flex flex-col items-center justify-center py-20 text-muted-foreground">
+              <div className="w-16 h-16 rounded-2xl bg-muted flex items-center justify-center mb-4">
+                <Globe size={28} className="opacity-40" />
+              </div>
+              <p className="text-sm mb-4">{t('websites.noWebsites')}</p>
               <Button variant="outline" onClick={() => setAddWebsiteDialogOpen(true)}>
-                <Plus size={14} className="mr-2" />
-                {t('websites.addWebsite')}
+                <Plus size={14} className="mr-1.5" />{t('websites.addWebsite')}
               </Button>
             </div>
           )}
@@ -443,7 +436,7 @@ const Websites = () => {
                 className="mt-1"
               />
             </div>
-            <p className="text-xs text-gray-500">
+            <p className="text-xs text-muted-foreground">
               {t('websites.rssFeedHint')}
             </p>
           </div>
@@ -497,7 +490,7 @@ const Websites = () => {
                 className="mt-1 min-h-[150px] font-mono text-sm whitespace-pre-wrap break-all"
               />
             </div>
-            <p className="text-xs text-gray-500">
+            <p className="text-xs text-muted-foreground">
               {t('websites.promptHint')}
             </p>
             <div>
@@ -509,7 +502,7 @@ const Websites = () => {
                 className="mt-1 min-h-[100px] font-mono text-xs whitespace-pre-wrap break-all"
               />
             </div>
-            <p className="text-xs text-gray-500">
+            <p className="text-xs text-muted-foreground">
               {t('websites.cookiesHint')}
             </p>
           </div>
@@ -524,6 +517,7 @@ const Websites = () => {
         </DialogContent>
       </Dialog>
     </div>
+    </TooltipProvider>
   );
 };
 

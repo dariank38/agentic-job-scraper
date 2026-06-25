@@ -3,7 +3,6 @@ import { Settings2, Cpu, RefreshCw, CheckCircle, AlertCircle, Zap, Bot, External
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
-import { Separator } from '@/components/ui/separator';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { Badge } from '@/components/ui/badge';
@@ -186,22 +185,26 @@ export default function Settings() {
   const nvidiaDisabledReason = t('settings.nvidiaDisabledReason');
 
   return (
-    <div className="space-y-6">
-      {/* Header */}
-      <div className="flex items-center gap-3">
-        <div className="bg-primary text-primary-foreground w-9 h-9 rounded-lg flex items-center justify-center shadow-sm shrink-0">
-          <Settings2 size={18} />
+    <div className="space-y-5">
+      {/* Hero Header */}
+      <div className="relative overflow-hidden rounded-xl bg-gradient-to-br from-zinc-700 via-slate-700 to-gray-800 p-5 text-white shadow-lg">
+        <div className="absolute inset-0 opacity-10" style={{ backgroundImage: 'radial-gradient(circle at 20% 50%, white 1px, transparent 1px), radial-gradient(circle at 80% 20%, white 1px, transparent 1px)', backgroundSize: '40px 40px' }} />
+        <div className="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-3">
+          <div>
+            <div className="flex items-center gap-2 mb-1">
+              <Settings2 className="w-5 h-5 text-slate-300" />
+              <h1 className="text-xl font-bold tracking-tight">{t('settings.title')}</h1>
+            </div>
+            <p className="text-white/70 text-sm">{t('settings.subtitle')}</p>
+          </div>
+          <Button
+            className="bg-white/20 hover:bg-white/30 text-white border border-white/30 backdrop-blur-sm w-full sm:w-auto"
+            size="sm" onClick={load}
+          >
+            <RefreshCw className="w-3.5 h-3.5 mr-1.5" /> {t('settings.refresh')}
+          </Button>
         </div>
-        <div>
-          <h1 className="text-2xl font-bold">{t('settings.title')}</h1>
-          <p className="text-sm text-muted-foreground">{t('settings.subtitle')}</p>
-        </div>
-        <Button variant="outline" size="sm" className="ml-auto gap-1.5" onClick={load}>
-          <RefreshCw className="w-3.5 h-3.5" /> {t('settings.refresh')}
-        </Button>
       </div>
-
-      <Separator />
 
       {/* NVIDIA Key Status */}
       <Alert variant={settings.nvidia_api_key_configured ? 'default' : 'destructive'}

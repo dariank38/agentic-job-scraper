@@ -277,6 +277,7 @@
     "sourceWebsite": "Website",
     "goToChannels": "Go to Channels",
     "goToChannelsHint": "Try searching some channels first to find job postings.",
+    "goBack": "Go Back",
     "selectJob": "Select a job to view details",
     "contact": "Contact",
     "companyWebsite": "Company Website",
@@ -337,7 +338,12 @@
     "resumeEnhancementFailed": "Enhancement failed",
     "resumeScoringFailed": "Scoring failed",
     "resumePasteFirst": "Please paste your resume first",
-    "resumeCopied": "Copied to clipboard"
+    "resumeCopied": "Copied to clipboard",
+    "resumeFromMessage": "Message",
+    "resumeJobDescription": "Job / Message Description",
+    "resumeCurrentResume": "Your Current Resume",
+    "resumeEnhanced": "Enhanced Resume",
+    "noDescription": "No description available."
   },
   "websiteSources": {
     "title": "Website Sources",
@@ -406,6 +412,13 @@
     "failed": "Failed",
     "image": "Image",
     "reanalyze": "Re-analyze",
+    "skip": "Mark as Skip",
+    "unskip": "Unmark Skip",
+    "manualSkip": "Manual Skip",
+    "markedSkipped": "Message marked as skip",
+    "unmarkedSkipped": "Message unmarked as skip",
+    "copyText": "Copy Text",
+    "selectMessage": "Select a message to view details",
     "fullMessage": "Full Message",
     "noMessages": "No messages found",
     "fetchHint": "Try fetching from channels first to see messages",
@@ -424,7 +437,8 @@
     "deletedSuccessfully": "Message deleted successfully",
     "bulkDeleteConfirm": "Delete Selected Messages",
     "bulkDeleteWarning": "Are you sure you want to delete {{count}} selected messages? This will also delete any associated jobs or developers.",
-    "bulkDeletedSuccessfully": "{{count}} messages deleted successfully"
+    "bulkDeletedSuccessfully": "{{count}} messages deleted successfully",
+    "resumeButton": "AI Resume"
   },
   "telegramAccounts": {
     "title": "Telegram Accounts",

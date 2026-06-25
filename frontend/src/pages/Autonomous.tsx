@@ -168,34 +168,38 @@ const Autonomous = () => {
       label: t('autonomous.failures24h'),
       value: status?.failures_24h ?? 0,
       icon: AlertTriangle,
-      iconColor: (status?.failures_24h ?? 0) > 0 ? 'text-red-500' : 'text-gray-400',
-      bg: (status?.failures_24h ?? 0) > 0 ? 'bg-red-50' : 'bg-gray-50',
+      iconColor: (status?.failures_24h ?? 0) > 0 ? 'text-red-500' : 'text-muted-foreground',
+      bg: (status?.failures_24h ?? 0) > 0 ? 'bg-red-50' : 'bg-muted',
     },
   ];
 
   return (
-    <div className="space-y-6">
-      {/* Header */}
-      <div className="flex items-center gap-3">
-        <div className="bg-primary text-primary-foreground w-9 h-9 rounded-lg flex items-center justify-center shadow-sm shrink-0">
-          <Bot size={18} />
+    <div className="space-y-5">
+      {/* Hero Header */}
+      <div className="relative overflow-hidden rounded-xl bg-gradient-to-br from-slate-700 via-blue-800 to-indigo-800 p-5 text-white shadow-lg">
+        <div className="absolute inset-0 opacity-10" style={{ backgroundImage: 'radial-gradient(circle at 20% 50%, white 1px, transparent 1px), radial-gradient(circle at 80% 20%, white 1px, transparent 1px)', backgroundSize: '40px 40px' }} />
+        <div className="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-3">
+          <div>
+            <div className="flex items-center gap-2 mb-1">
+              <Bot className="w-5 h-5 text-blue-300" />
+              <h1 className="text-xl font-bold tracking-tight">{t('autonomous.title')}</h1>
+            </div>
+            <p className="text-white/70 text-sm">{t('autonomous.subtitle')}</p>
+          </div>
+          <Button
+            className="bg-white/20 hover:bg-white/30 text-white border border-white/30 backdrop-blur-sm w-full sm:w-auto"
+            size="sm" onClick={() => loadData(true)} disabled={refreshing}
+          >
+            <RefreshCw className={`w-3.5 h-3.5 mr-1.5 ${refreshing ? 'animate-spin' : ''}`} />
+            {t('autonomous.refresh')}
+          </Button>
         </div>
-        <div>
-          <h1 className="text-2xl font-bold">{t('autonomous.title')}</h1>
-          <p className="text-sm text-muted-foreground">{t('autonomous.subtitle')}</p>
-        </div>
-        <Button variant="outline" size="sm" className="ml-auto gap-1.5" onClick={() => loadData(true)} disabled={refreshing}>
-          <RefreshCw className={`w-3.5 h-3.5 ${refreshing ? 'animate-spin' : ''}`} />
-          {t('autonomous.refresh')}
-        </Button>
       </div>
-
-      <Separator />
 
       {/* Stat Cards */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
         {statCards.map(({ label, value, icon: Icon, iconColor, bg }) => (
-          <Card key={label}>
+          <Card key={label} className="shadow-sm">
             <CardContent className="pt-5 pb-4">
               <div className="flex items-center gap-3">
                 <div className={`w-9 h-9 rounded-lg ${bg} flex items-center justify-center shrink-0`}>
@@ -252,7 +256,9 @@ const Autonomous = () => {
         <CardContent className="p-0">
           {sources.length === 0 ? (
             <div className="py-12 text-center px-6">
-              <Clock size={40} className="text-gray-200 mx-auto mb-3" />
+              <div className="w-12 h-12 rounded-2xl bg-muted flex items-center justify-center mx-auto mb-3">
+              <Clock size={20} className="text-muted-foreground opacity-50" />
+            </div>
               <p className="text-sm text-muted-foreground">{t('autonomous.noSourcesScored')}</p>
               <p className="text-xs text-muted-foreground mt-1">{t('autonomous.noSourcesHint')}</p>
             </div>
@@ -321,7 +327,9 @@ const Autonomous = () => {
         <CardContent className="p-0">
           {outcomes.length === 0 ? (
             <div className="py-12 text-center px-6">
-              <Activity size={40} className="text-gray-200 mx-auto mb-3" />
+              <div className="w-12 h-12 rounded-2xl bg-muted flex items-center justify-center mx-auto mb-3">
+              <Activity size={20} className="text-muted-foreground opacity-50" />
+            </div>
               <p className="text-sm text-muted-foreground">{t('autonomous.noOutcomes')}</p>
             </div>
           ) : (

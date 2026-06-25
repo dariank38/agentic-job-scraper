@@ -235,7 +235,7 @@ def register_analyze_action_routes(app):
                             continue
                         await channel_db.execute(
                             Message.__table__.update()
-                            .where((Message.channel_id == channel_id) & (Message.analysis_status == "skipped"))
+                            .where((Message.channel_id == channel_id) & (Message.analysis_status == "skipped") & (Message.is_manual_skip == False))
                             .values(analysis_status="pending")
                         )
                         await channel_db.commit()
@@ -256,7 +256,7 @@ def register_analyze_action_routes(app):
         try:
             result = await db.execute(
                 select(Message.channel_id, func.count(Message.id).label("count"))
-                .filter(Message.analysis_status == "skipped").group_by(Message.channel_id)
+                .filter(Message.analysis_status == "skipped", Message.is_manual_skip == False).group_by(Message.channel_id)
             )
             channel_counts = result.all()
             if not channel_counts:

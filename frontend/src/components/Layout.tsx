@@ -18,6 +18,10 @@ import {
   Globe,
   Bot,
   Settings2,
+  CheckCircle2,
+  AlertCircle,
+  Info,
+  AlertTriangle,
 } from 'lucide-react';
 
 type ToastType = 'success' | 'error' | 'info' | 'warning';
@@ -66,11 +70,11 @@ export const useWebSocketProgress = () => {
   return context;
 };
 
-const toastVariants: Record<ToastType, string> = {
-  success: 'bg-green-50 border-green-200 text-green-800',
-  error: 'bg-red-50 border-red-200 text-red-800',
-  info: 'bg-blue-50 border-blue-200 text-blue-800',
-  warning: 'bg-yellow-50 border-yellow-200 text-yellow-800',
+const toastVariants: Record<ToastType, { container: string; icon: React.ReactNode }> = {
+  success: { container: 'bg-green-50 border-green-200 text-green-800', icon: <CheckCircle2 className="w-4 h-4 text-green-600 shrink-0" /> },
+  error:   { container: 'bg-red-50 border-red-200 text-red-800',       icon: <AlertCircle   className="w-4 h-4 text-red-500 shrink-0" /> },
+  info:    { container: 'bg-blue-50 border-blue-200 text-blue-800',    icon: <Info          className="w-4 h-4 text-blue-500 shrink-0" /> },
+  warning: { container: 'bg-yellow-50 border-yellow-200 text-yellow-800', icon: <AlertTriangle className="w-4 h-4 text-yellow-600 shrink-0" /> },
 };
 
 const ToastProvider = ({ children }: { children: React.ReactNode }) => {
@@ -86,14 +90,18 @@ const ToastProvider = ({ children }: { children: React.ReactNode }) => {
     <ToastContext.Provider value={{ showToast }}>
       {children}
       <div className="fixed top-4 right-4 z-[9999] flex flex-col gap-2 pointer-events-none">
-        {toasts.map(toast => (
-          <div
-            key={toast.id}
-            className={`border rounded-lg px-4 py-3 shadow-lg min-w-[280px] text-sm font-medium animate-in slide-in-from-right-4 fade-in duration-200 pointer-events-auto ${toastVariants[toast.type]}`}
-          >
-            {toast.message}
-          </div>
-        ))}
+        {toasts.map(toast => {
+          const { container, icon } = toastVariants[toast.type];
+          return (
+            <div
+              key={toast.id}
+              className={`border rounded-xl px-4 py-3 shadow-lg min-w-[280px] text-sm font-medium animate-in slide-in-from-right-4 fade-in duration-200 pointer-events-auto flex items-center gap-3 ${container}`}
+            >
+              {icon}
+              <span className="flex-1">{toast.message}</span>
+            </div>
+          );
+        })}
       </div>
     </ToastContext.Provider>
   );
@@ -468,6 +476,20 @@ const WebSocketProgressProvider = ({ children }: { children: React.ReactNode }) 
   );
 };
 
+const WsStatusDot = () => {
+  const { isConnected } = useWebSocketProgress();
+  return (
+    <div title={isConnected ? 'Live' : 'Disconnected'} className="flex items-center gap-1.5">
+      <span className={`relative flex h-2 w-2`}>
+        {isConnected && (
+          <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75" />
+        )}
+        <span className={`relative inline-flex rounded-full h-2 w-2 ${isConnected ? 'bg-green-500' : 'bg-red-400'}`} />
+      </span>
+    </div>
+  );
+};
+
 const Layout = ({ children }: { children: React.ReactNode }) => {
   const { t } = useTranslation();
   const location = useLocation();
@@ -503,6 +525,11 @@ const Layout = ({ children }: { children: React.ReactNode }) => {
               Job Scraper
             </span>
           </Link>
+
+          {/* WS status dot */}
+          <div className="hidden md:block">
+            <WsStatusDot />
+          </div>
 
           {/* Desktop Navigation */}
           <nav className="hidden md:flex items-center gap-1">

@@ -2,10 +2,12 @@ import { useEffect, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent, CardHeader } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Separator } from '@/components/ui/separator';
 import { Input } from '@/components/ui/input';
+import { Checkbox } from '@/components/ui/checkbox';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import {
   Dialog,
   DialogContent,
@@ -20,6 +22,7 @@ import {
   MessageSquare,
   Calendar,
   User,
+  Users,
   CheckCircle2,
   Search,
   Download,
@@ -36,6 +39,7 @@ import {
 import api from '@/services/api';
 import type { Developer } from '@/services/api';
 import { useToast } from '@/components/Layout';
+import { copyToClipboard } from '@/utils/clipboard';
 
 const getSenderName = (dev: Developer, fallback = '') => {
   return dev.message?.sender_username || dev.message?.sender_first_name || fallback;
@@ -127,18 +131,6 @@ const Developers = () => {
     const params = new URLSearchParams(searchParams);
     const lastOffset = Math.floor((total - 1) / limit) * limit;
     params.set('offset', lastOffset.toString());
-    setSearchParams(params);
-  };
-
-  const applyFilters = () => {
-    const looking = (document.getElementById('looking-filter') as HTMLSelectElement)?.value;
-    const contacted = (document.getElementById('contacted-filter') as HTMLSelectElement)?.value;
-    const params = new URLSearchParams(searchParams);
-    params.delete('offset');
-    if (looking) params.set('looking_for_work', looking);
-    else params.delete('looking_for_work');
-    if (contacted) params.set('is_contacted', contacted);
-    else params.delete('is_contacted');
     setSearchParams(params);
   };
 
@@ -309,16 +301,21 @@ const Developers = () => {
 
   return (
     <>
-      {/* Header Bar */}
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-4">
-        <div>
-          <h1 className="text-2xl font-bold tracking-tight">{t('developers.title')}</h1>
-          <p className="text-sm text-muted-foreground mt-0.5">
-            {total} developer{total !== 1 ? 's' : ''} found
-          </p>
-        </div>
-        <div className="flex gap-2 items-center">
-          <Button variant="outline" size="sm" onClick={exportDevelopers} disabled={developers.length === 0}>
+      {/* Hero Header */}
+      <div className="relative overflow-hidden rounded-xl mb-5 bg-gradient-to-br from-orange-500 via-rose-500 to-pink-600 p-5 text-white shadow-lg">
+        <div className="absolute inset-0 opacity-10" style={{ backgroundImage: 'radial-gradient(circle at 20% 50%, white 1px, transparent 1px), radial-gradient(circle at 80% 20%, white 1px, transparent 1px)', backgroundSize: '40px 40px' }} />
+        <div className="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-3">
+          <div>
+            <div className="flex items-center gap-2 mb-1">
+              <Users className="w-5 h-5" />
+              <h1 className="text-xl font-bold tracking-tight">{t('developers.title')}</h1>
+            </div>
+            <p className="text-white/70 text-sm">{total} developer{total !== 1 ? 's' : ''} found</p>
+          </div>
+          <Button
+            className="bg-white/20 hover:bg-white/30 text-white border border-white/30 backdrop-blur-sm w-full sm:w-auto"
+            size="sm" onClick={exportDevelopers} disabled={developers.length === 0}
+          >
             <Download className="w-4 h-4 mr-1.5" />
             {t('common.exportCsv')}
           </Button>
@@ -333,7 +330,7 @@ const Developers = () => {
               <div className="space-y-3">
                 {/* Search */}
                 <div className="relative">
-                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
                   <Input
                     placeholder={t('developers.searchPlaceholder')}
                     value={searchInput}
@@ -344,26 +341,42 @@ const Developers = () => {
                 </div>
                 {/* Filters */}
                 <div className="flex flex-col sm:flex-row gap-2">
-                  <select
-                    id="looking-filter"
-                    defaultValue={lookingFilter || ''}
-                    onChange={applyFilters}
-                    className="flex-1 px-3 py-2 rounded-md border border-gray-200 text-sm bg-white"
+                  <Select
+                    value={lookingFilter || ''}
+                    onValueChange={(val) => {
+                      const p = new URLSearchParams(searchParams);
+                      p.delete('offset');
+                      if (val) p.set('looking', val); else p.delete('looking');
+                      setSearchParams(p);
+                    }}
                   >
-                    <option value="">{t('common.allStatus')}</option>
-                    <option value="true">{t('developers.lookingForWork')}</option>
-                    <option value="false">{t('developers.notLooking')}</option>
-                  </select>
-                  <select
-                    id="contacted-filter"
-                    defaultValue={contactedFilter || ''}
-                    onChange={applyFilters}
-                    className="flex-1 px-3 py-2 rounded-md border border-gray-200 text-sm bg-white"
+                    <SelectTrigger className="flex-1 h-9 text-sm">
+                      <SelectValue placeholder={t('common.allStatus')} />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="">{t('common.allStatus')}</SelectItem>
+                      <SelectItem value="true">{t('developers.lookingForWork')}</SelectItem>
+                      <SelectItem value="false">{t('developers.notLooking')}</SelectItem>
+                    </SelectContent>
+                  </Select>
+                  <Select
+                    value={contactedFilter || ''}
+                    onValueChange={(val) => {
+                      const p = new URLSearchParams(searchParams);
+                      p.delete('offset');
+                      if (val) p.set('contacted', val); else p.delete('contacted');
+                      setSearchParams(p);
+                    }}
                   >
-                    <option value="">{t('common.allContacted')}</option>
-                    <option value="true">{t('developers.contacted')}</option>
-                    <option value="false">{t('developers.notContacted')}</option>
-                  </select>
+                    <SelectTrigger className="flex-1 h-9 text-sm">
+                      <SelectValue placeholder={t('common.allContacted')} />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="">{t('common.allContacted')}</SelectItem>
+                      <SelectItem value="true">{t('developers.contacted')}</SelectItem>
+                      <SelectItem value="false">{t('developers.notContacted')}</SelectItem>
+                    </SelectContent>
+                  </Select>
                   {(lookingFilter || contactedFilter || searchQuery) && (
                     <Button variant="ghost" size="sm" onClick={clearFilters}>
                       {t('common.clear')}
@@ -398,9 +411,14 @@ const Developers = () => {
                   )}
                 </div>
               )}
-              <div className="px-4 pb-4 space-y-1">
+              <div className="divide-y">
                 {developers.length === 0 ? (
-                  <p className="text-sm text-gray-500 text-center py-8">{t('developers.noDevsMatch')}</p>
+                  <div className="flex flex-col items-center justify-center py-16 text-muted-foreground">
+                    <div className="w-12 h-12 rounded-2xl bg-muted flex items-center justify-center mb-3">
+                      <User className="w-6 h-6 opacity-40" />
+                    </div>
+                    <p className="text-sm">{t('developers.noDevsMatch')}</p>
+                  </div>
                 ) : (
                   developers.map((dev) => {
                     const isSelected = selectedDeveloper?.id === dev.id;
@@ -410,53 +428,47 @@ const Developers = () => {
                       <div
                         key={dev.id}
                         onClick={() => setSelectedDeveloper(dev)}
-                        className={`flex items-start gap-3 p-3 rounded-xl cursor-pointer transition-all ${
-                          isSelected
-                            ? 'bg-primary/5 border border-primary/20 shadow-sm'
-                            : 'hover:bg-gray-50 border border-transparent'
+                        className={`flex items-start gap-3 p-3 cursor-pointer transition-colors ${
+                          isSelected ? 'bg-primary/5' : 'hover:bg-muted/40'
                         }`}
                       >
-                        <input
-                          type="checkbox"
+                        <Checkbox
                           checked={selectedDeveloperIds.has(dev.id)}
-                          onChange={(e) => { e.stopPropagation(); toggleDeveloperSelection(dev.id); }}
-                          className="mt-2.5 w-4 h-4 accent-primary shrink-0"
+                          onCheckedChange={() => toggleDeveloperSelection(dev.id)}
+                          onClick={(e) => e.stopPropagation()}
+                          className="mt-2.5 shrink-0"
                         />
-                        {/* Avatar */}
-                        <div className={`w-10 h-10 rounded-full flex items-center justify-center text-sm font-semibold shrink-0 ${
-                          isSelected
-                            ? 'bg-primary text-primary-foreground'
-                            : 'bg-gray-200 text-gray-700'
+                        <div className={`w-9 h-9 rounded-xl flex items-center justify-center text-sm font-bold shrink-0 ${
+                          isSelected ? 'bg-primary text-primary-foreground' : 'bg-muted text-muted-foreground'
                         }`}>
                           {getInitials(senderName)}
                         </div>
-                        {/* Info */}
                         <div className="flex-1 min-w-0">
-                          <div className="flex items-center gap-2 mb-0.5">
-                            <span className={`font-medium text-base truncate ${isSelected ? 'text-primary' : ''}`}>
+                          <div className="flex items-center gap-1.5 mb-0.5 flex-wrap">
+                            <span className={`font-semibold text-sm truncate ${isSelected ? 'text-primary' : ''}`}>
                               {senderName}
                             </span>
                             {dev.is_contacted && (
-                              <Badge variant="default" className="text-xs h-5 px-1.5">{t('developers.contacted')}</Badge>
+                              <Badge variant="default" className="text-[10px] h-4 px-1.5">{t('developers.contacted')}</Badge>
                             )}
                           </div>
-                          <p className="text-sm text-gray-500 truncate">
+                          <p className="text-xs text-muted-foreground truncate">
                             {dev.name || t('developers.unnamedDeveloper')}
                           </p>
                           {skills.length > 0 && (
-                            <div className="flex gap-1 mt-1.5 flex-wrap">
+                            <div className="flex gap-1 mt-1 flex-wrap">
                               {skills.slice(0, 3).map((skill, idx) => (
-                                <span key={idx} className="text-xs px-1.5 py-0.5 bg-gray-100 text-gray-600 rounded-md">
+                                <span key={idx} className="text-[10px] px-1.5 py-0.5 bg-muted text-muted-foreground rounded-md">
                                   {skill}
                                 </span>
                               ))}
                               {skills.length > 3 && (
-                                <span className="text-[10px] text-gray-400">+{skills.length - 3}</span>
+                                <span className="text-[10px] text-muted-foreground">+{skills.length - 3}</span>
                               )}
                             </div>
                           )}
-                          <div className="flex items-center gap-1 mt-1 text-[10px] text-gray-400">
-                            <MessageSquare className="w-3 h-3" />
+                          <div className="flex items-center gap-1 mt-1 text-[10px] text-muted-foreground">
+                            <MessageSquare className="w-2.5 h-2.5" />
                             @{dev.channel?.username || t('common.unknown')}
                           </div>
                         </div>
@@ -519,7 +531,7 @@ const Developers = () => {
           </Card>
 
           {/* Right Column - Developer Details */}
-          <Card className="lg:col-span-3 overflow-visible">
+          <Card className="lg:col-span-3 overflow-visible shadow-sm">
             <CardContent className="pt-4 pb-4 sm:pt-6 sm:pb-6">
                 {selectedDeveloper ? (
                   <div className="space-y-6">
@@ -551,7 +563,7 @@ const Developers = () => {
                         <p className="text-xs sm:text-sm text-muted-foreground flex items-center gap-1 mt-0.5 flex-wrap">
                           <Send className="w-3 h-3 sm:w-3.5 sm:h-3.5" />
                           <span className="truncate">{getSenderName(selectedDeveloper, t('common.unknown'))}</span>
-                          <span className="text-gray-300 hidden sm:inline">|</span>
+                          <span className="text-muted-foreground/30 hidden sm:inline">|</span>
                           <span className="flex items-center gap-1 sm:hidden w-full mt-0.5">
                             <MessageSquare className="w-3 h-3" />
                             @{selectedDeveloper.channel?.username || t('common.unknown')}
@@ -597,25 +609,25 @@ const Developers = () => {
                       <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                         {selectedDeveloper.github && (
                           <a href={selectedDeveloper.github} target="_blank" rel="noopener noreferrer"
-                             className="flex items-center gap-2 sm:gap-2.5 p-2.5 sm:p-3 rounded-lg bg-gray-50 hover:bg-gray-100 transition-colors group">
-                            <div className="w-8 h-8 sm:w-9 sm:h-9 rounded-lg bg-gray-900 flex items-center justify-center shrink-0">
+                             className="flex items-center gap-2 sm:gap-2.5 p-2.5 sm:p-3 rounded-lg bg-muted/50 hover:bg-muted transition-colors group">
+                            <div className="w-8 h-8 sm:w-9 sm:h-9 rounded-lg bg-slate-900 flex items-center justify-center shrink-0">
                               <ExternalLink className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-white" />
                             </div>
                             <div className="min-w-0">
-                              <p className="text-[10px] sm:text-xs text-gray-500 font-medium">{t('common.github')}</p>
-                              <p className="text-xs sm:text-sm text-gray-900 truncate group-hover:text-primary transition-colors">{selectedDeveloper.github}</p>
+                              <p className="text-[10px] sm:text-xs text-muted-foreground font-medium">{t('common.github')}</p>
+                              <p className="text-xs sm:text-sm truncate group-hover:text-primary transition-colors">{selectedDeveloper.github}</p>
                             </div>
                           </a>
                         )}
                         {selectedDeveloper.linkedin && (
                           <a href={selectedDeveloper.linkedin} target="_blank" rel="noopener noreferrer"
-                             className="flex items-center gap-2 sm:gap-2.5 p-2.5 sm:p-3 rounded-lg bg-blue-50 hover:bg-blue-100 transition-colors group">
+                             className="flex items-center gap-2 sm:gap-2.5 p-2.5 sm:p-3 rounded-lg bg-blue-50/80 hover:bg-blue-100 transition-colors group">
                             <div className="w-8 h-8 sm:w-9 sm:h-9 rounded-lg bg-[#0A66C2] flex items-center justify-center shrink-0">
                               <ExternalLink className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-white" />
                             </div>
                             <div className="min-w-0">
                               <p className="text-[10px] sm:text-xs text-blue-600 font-medium">{t('common.linkedin')}</p>
-                              <p className="text-xs sm:text-sm text-gray-900 truncate group-hover:text-blue-700 transition-colors">{selectedDeveloper.linkedin}</p>
+                              <p className="text-xs sm:text-sm truncate group-hover:text-blue-700 transition-colors">{selectedDeveloper.linkedin}</p>
                             </div>
                           </a>
                         )}
@@ -626,7 +638,7 @@ const Developers = () => {
                               if (!value) return null;
                               const getStyle = (t: string) => {
                                 switch (t.toLowerCase()) {
-                                  case 'github': return { icon: '📦', bg: 'bg-gray-900', text: 'text-gray-600', hover: 'hover:bg-gray-100' };
+                                  case 'github': return { icon: '📦', bg: 'bg-slate-900', text: 'text-slate-600', hover: 'hover:bg-slate-100' };
                                   case 'demo':   return { icon: '🎮', bg: 'bg-purple-600', text: 'text-purple-600', hover: 'hover:bg-purple-100' };
                                   case 'video':  return { icon: '🎬', bg: 'bg-red-600', text: 'text-red-600', hover: 'hover:bg-red-100' };
                                   default:       return { icon: '🌐', bg: 'bg-emerald-600', text: 'text-emerald-600', hover: 'hover:bg-emerald-100' };
@@ -635,11 +647,11 @@ const Developers = () => {
                               const { icon, bg, text, hover } = getStyle(type);
                               return (
                                 <a key={idx} href={value} target="_blank" rel="noopener noreferrer"
-                                   className={`flex items-center gap-2 sm:gap-2.5 p-2.5 sm:p-3 rounded-lg bg-gray-50 ${hover} transition-colors group`}>
+                                   className={`flex items-center gap-2 sm:gap-2.5 p-2.5 sm:p-3 rounded-lg bg-muted/50 ${hover} transition-colors group`}>
                                   <div className={`w-8 h-8 sm:w-9 sm:h-9 rounded-lg ${bg} flex items-center justify-center shrink-0 text-lg`}>{icon}</div>
                                   <div className="min-w-0">
                                     <p className={`text-[10px] sm:text-xs ${text} font-medium`}>{type}</p>
-                                    <p className="text-xs sm:text-sm text-gray-900 truncate group-hover:text-gray-700 transition-colors">{value}</p>
+                                    <p className="text-xs sm:text-sm truncate group-hover:text-foreground/70 transition-colors">{value}</p>
                                   </div>
                                 </a>
                               );
@@ -652,7 +664,7 @@ const Developers = () => {
                                 </div>
                                 <div className="min-w-0">
                                   <p className="text-[10px] sm:text-xs text-emerald-600 font-medium">{t('developers.portfolio')}</p>
-                                  <p className="text-xs sm:text-sm text-gray-900 truncate group-hover:text-emerald-700 transition-colors">{selectedDeveloper.portfolio}</p>
+                                  <p className="text-xs sm:text-sm truncate group-hover:text-emerald-700 transition-colors">{selectedDeveloper.portfolio}</p>
                                 </div>
                               </a>
                             )
@@ -664,7 +676,7 @@ const Developers = () => {
                             </div>
                             <div className="min-w-0">
                               <p className="text-[10px] sm:text-xs text-amber-600 font-medium">{t('jobs.contact')}</p>
-                              <p className="text-xs sm:text-sm text-gray-900 truncate">{selectedDeveloper.contact}</p>
+                              <p className="text-xs sm:text-sm truncate">{selectedDeveloper.contact}</p>
                             </div>
                           </div>
                         )}
@@ -676,7 +688,7 @@ const Developers = () => {
                       <div>
                         <div className="flex items-center gap-2 mb-2 sm:mb-3">
                           <Code2 className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-primary" />
-                          <h3 className="text-xs sm:text-sm font-semibold text-gray-900">{t('developers.skills')}</h3>
+                          <h3 className="text-xs sm:text-sm font-semibold">{t('developers.skills')}</h3>
                         </div>
                         <div className="flex flex-wrap gap-2.5">
                           {getSkills(selectedDeveloper).map((skill, idx) => (
@@ -693,9 +705,9 @@ const Developers = () => {
                       <div>
                         <div className="flex items-center gap-2 mb-2">
                           <Briefcase className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-primary" />
-                          <h3 className="text-xs sm:text-sm font-semibold text-gray-900">{t('developers.experience')}</h3>
+                          <h3 className="text-xs sm:text-sm font-semibold">{t('developers.experience')}</h3>
                         </div>
-                        <p className="text-sm text-gray-600 leading-relaxed break-words">{selectedDeveloper.experience}</p>
+                        <p className="text-sm text-foreground/70 leading-relaxed break-words">{selectedDeveloper.experience}</p>
                       </div>
                     )}
 
@@ -704,9 +716,9 @@ const Developers = () => {
                       <div>
                         <div className="flex items-center gap-2 mb-2">
                           <FileText className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-primary" />
-                          <h3 className="text-xs sm:text-sm font-semibold text-gray-900">{t('developers.summary')}</h3>
+                          <h3 className="text-xs sm:text-sm font-semibold">{t('developers.summary')}</h3>
                         </div>
-                        <p className="text-sm text-gray-600 leading-relaxed break-words">{selectedDeveloper.summary}</p>
+                        <p className="text-sm text-foreground/70 leading-relaxed break-words">{selectedDeveloper.summary}</p>
                       </div>
                     )}
 
@@ -717,33 +729,35 @@ const Developers = () => {
                           <Languages className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-blue-600" />
                           <h3 className="text-xs sm:text-sm font-semibold text-blue-900">{t('developers.englishTranslation')}</h3>
                         </div>
-                        <p className="text-sm text-gray-700 leading-relaxed whitespace-pre-wrap break-words">{selectedDeveloper.translated_text}</p>
+                        <p className="text-sm text-foreground/80 leading-relaxed whitespace-pre-wrap break-words">{selectedDeveloper.translated_text}</p>
                       </div>
                     )}
 
                     {/* Original Message */}
                     {selectedDeveloper.message && (
-                      <div className="bg-gray-50 border border-gray-200 rounded-xl p-4">
+                      <div className="bg-muted/40 border rounded-xl p-4">
                         <div className="flex items-center gap-2 mb-2 sm:mb-3">
-                          <MessagesSquare className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-gray-600" />
-                          <h3 className="text-xs sm:text-sm font-semibold text-gray-900">{t('developers.originalMessage')}</h3>
+                          <MessagesSquare className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-muted-foreground" />
+                          <h3 className="text-xs sm:text-sm font-semibold">{t('developers.originalMessage')}</h3>
                           <Button
                             variant="ghost"
                             size="sm"
                             className="h-6 px-1.5 ml-auto"
-                            onClick={() => {
+                            onClick={async () => {
                               const text = selectedDeveloper?.message?.text?.replace(/<[^>]*>/g, '') || '';
-                              navigator.clipboard.writeText(text);
-                              setCopiedMsg(true);
-                              setTimeout(() => setCopiedMsg(false), 2000);
+                              const success = await copyToClipboard(text);
+                              if (success) {
+                                setCopiedMsg(true);
+                                setTimeout(() => setCopiedMsg(false), 2000);
+                              }
                             }}
                           >
-                            {copiedMsg ? <Check className="w-3.5 h-3.5 text-green-500" /> : <Copy className="w-3.5 h-3.5 text-gray-500" />}
+                            {copiedMsg ? <Check className="w-3.5 h-3.5 text-green-500" /> : <Copy className="w-3.5 h-3.5 text-muted-foreground" />}
                           </Button>
                         </div>
-                        <div className="text-sm text-gray-700 leading-relaxed whitespace-pre-wrap break-words prose prose-sm max-w-none"
+                        <div className="text-sm text-foreground/80 leading-relaxed whitespace-pre-wrap break-words prose prose-sm max-w-none"
                              dangerouslySetInnerHTML={{ __html: selectedDeveloper.message.text || t('developers.noTextContent') }} />
-                        <div className="mt-3 pt-3 border-t border-gray-200 flex flex-wrap gap-x-4 gap-y-1 text-xs text-gray-500">
+                        <div className="mt-3 pt-3 border-t flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted-foreground">
                           <span className="flex items-center gap-1">
                             <User className="w-3 h-3" />
                             {selectedDeveloper.message.sender_username || selectedDeveloper.message.sender_first_name || t('common.unknown')}
@@ -767,13 +781,15 @@ const Developers = () => {
                           <FileText className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-yellow-600" />
                           <h3 className="text-xs sm:text-sm font-semibold text-yellow-900">{t('developers.notes')}</h3>
                         </div>
-                        <p className="text-sm text-gray-700 leading-relaxed break-words">{selectedDeveloper.notes}</p>
+                        <p className="text-sm text-foreground/80 leading-relaxed break-words">{selectedDeveloper.notes}</p>
                       </div>
                     )}
                   </div>
                 ) : (
-                  <div className="flex flex-col items-center justify-center h-64 text-gray-400">
-                    <User className="w-12 h-12 mb-3 opacity-50" />
+                  <div className="flex flex-col items-center justify-center h-64 text-muted-foreground">
+                    <div className="w-16 h-16 rounded-2xl bg-muted flex items-center justify-center mb-3">
+                      <User className="w-8 h-8 opacity-40" />
+                    </div>
                     <p className="text-sm">{t('developers.selectDeveloper')}</p>
                   </div>
                 )}
@@ -781,29 +797,15 @@ const Developers = () => {
           </Card>
         </div>
       ) : (
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-          {/* Left Column - Developers List */}
-          <Card className="md:col-span-1">
-            <CardHeader>
-              <CardTitle className="text-lg">{t('developers.title')}</CardTitle>
-            </CardHeader>
-            <CardContent className="p-0">
-              <div className="px-4 pb-4 space-y-1">
-                <p className="text-sm text-gray-500 text-center py-8">{t('developers.noDevsFound')}</p>
-              </div>
-            </CardContent>
-          </Card>
-
-          {/* Right Column - Developer Details */}
-          <Card className="md:col-span-3">
-            <CardContent className="pt-4 pb-4 sm:pt-6 sm:pb-6">
-              <div className="flex flex-col items-center justify-center h-64 text-gray-400">
-                <User className="w-12 h-12 mb-3 opacity-50" />
-                <p className="text-sm">{t('developers.selectDeveloper')}</p>
-              </div>
-            </CardContent>
-          </Card>
-        </div>
+        <Card className="shadow-sm">
+          <CardContent className="py-24 text-center">
+            <div className="w-16 h-16 rounded-2xl bg-muted flex items-center justify-center mb-4 mx-auto">
+              <Users className="w-8 h-8 opacity-40" />
+            </div>
+            <p className="font-semibold mb-1">{t('developers.noDevsFound')}</p>
+            <p className="text-sm text-muted-foreground">{t('developers.noDevsMatch')}</p>
+          </CardContent>
+        </Card>
       )}
 
       {/* Delete Confirmation Dialog */}

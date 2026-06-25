@@ -1,27 +1,22 @@
 import { useTranslation } from 'react-i18next';
-import { Button } from '@/components/ui/button';
 import { Globe } from 'lucide-react';
 
 export const LanguageSwitcher = () => {
   const { i18n } = useTranslation();
+  const isEn = i18n.language === 'en';
 
   const toggleLanguage = () => {
-    const newLang = i18n.language === 'en' ? 'zh' : 'en';
-    i18n.changeLanguage(newLang);
+    i18n.changeLanguage(isEn ? 'zh' : 'en');
   };
 
   return (
-    <Button
-      variant="outline"
-      size="sm"
+    <button
       onClick={toggleLanguage}
-      title={i18n.language === 'en' ? '中文' : 'English'}
-      className="flex items-center gap-2"
+      title={isEn ? 'Switch to 中文' : 'Switch to English'}
+      className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-full text-sm font-medium text-muted-foreground hover:text-foreground hover:bg-accent transition-colors"
     >
-      <Globe className="w-4 h-4" />
-      <span className="text-sm hidden xl:inline">
-        {i18n.language === 'en' ? '中文' : 'English'}
-      </span>
-    </Button>
+      <Globe size={13} />
+      <span className="hidden xl:inline">{isEn ? '中文' : 'EN'}</span>
+    </button>
   );
 };

@@ -72,6 +72,22 @@ def register_message_routes(app):
             "offset": offset,
         }
 
+    @app.get("/api/messages/{message_id}")
+    async def api_get_message(message_id: int, db: AsyncSession = Depends(get_db)):
+        """Get a single message by ID."""
+        result = await db.execute(
+            select(Message).options(
+                selectinload(Message.channel),
+                selectinload(Message.website_source),
+                selectinload(Message.job),
+                selectinload(Message.developer),
+            ).filter(Message.id == message_id)
+        )
+        message = result.scalar_one_or_none()
+        if not message:
+            raise HTTPException(status_code=404, detail="Message not found")
+        return {"message": message.to_dict()}
+
     @app.post("/api/messages/bulk-delete")
     async def api_bulk_delete_messages(
         request: BulkDeleteRequest,
@@ -91,6 +107,33 @@ def register_message_routes(app):
         except Exception as e:
             await db.rollback()
             raise HTTPException(status_code=500, detail=f"Failed to bulk delete messages: {str(e)}")
+
+    @app.post("/api/messages/{message_id}/toggle-skip")
+    async def api_toggle_skip_message(message_id: int, db: AsyncSession = Depends(get_db)):
+        """Toggle manual skip on a message. Skipped messages are excluded from AI analysis."""
+        try:
+            result = await db.execute(select(Message).filter(Message.id == message_id))
+            message = result.scalar_one_or_none()
+            if not message:
+                raise HTTPException(status_code=404, detail="Message not found")
+
+            if message.is_manual_skip:
+                message.is_manual_skip = False
+                message.analysis_status = "pending"
+                message.skip_reason = None
+            else:
+                message.is_manual_skip = True
+                message.analysis_status = "skipped"
+                message.skip_reason = "manual"
+            await db.commit()
+
+            return {"success": True, "is_manual_skip": message.is_manual_skip, "analysis_status": message.analysis_status}
+        except HTTPException:
+            await db.rollback()
+            raise
+        except Exception as e:
+            await db.rollback()
+            raise HTTPException(status_code=500, detail=f"Failed to toggle skip: {str(e)}")
 
     @app.delete("/api/messages/{message_id}")
     async def api_delete_message(message_id: int, db: AsyncSession = Depends(get_db)):

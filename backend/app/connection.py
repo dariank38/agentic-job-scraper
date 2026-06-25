@@ -100,6 +100,7 @@ async def run_migrations() -> None:
     try:
         async with engine.begin() as conn:
             await conn.execute(text("ALTER TABLE jobs ADD COLUMN IF NOT EXISTS is_favorite BOOLEAN DEFAULT FALSE"))
+            await conn.execute(text("ALTER TABLE messages ADD COLUMN IF NOT EXISTS is_manual_skip BOOLEAN DEFAULT FALSE"))
     except Exception as e:
         logger.error(f"Error running migrations: {e}")
         raise

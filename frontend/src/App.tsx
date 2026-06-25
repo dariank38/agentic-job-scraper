@@ -12,6 +12,7 @@ const TelegramAccounts = lazy(() => import('@/pages/TelegramAccounts'));
 const Websites = lazy(() => import('@/pages/Websites'));
 const Autonomous = lazy(() => import('@/pages/Autonomous'));
 const Settings = lazy(() => import('@/pages/Settings'));
+const Resume = lazy(() => import('@/pages/Resume'));
 
 function App() {
   return (
@@ -29,6 +30,7 @@ function App() {
                 <Route path="/telegram-accounts" element={<TelegramAccounts />} />
                 <Route path="/websites" element={<Websites />} />
                 <Route path="/autonomous" element={<Autonomous />} />
+                <Route path="/resume" element={<Resume />} />
                 <Route path="/settings" element={<Settings />} />
               </Routes>
             </Suspense>

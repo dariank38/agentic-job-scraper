@@ -86,6 +86,7 @@ class Message(Base):
     needs_reanalysis = Column(Boolean, default=False)  # Flag for messages that need re-analysis
     analysis_status = Column(String, default="pending")  # pending, analyzed, skipped, failed
     skip_reason = Column(String, nullable=True)  # Reason why message was skipped
+    is_manual_skip = Column(Boolean, default=False)  # User-marked skip; AI should not analyze
 
     created_at = Column(DateTime, default=datetime.utcnow)
 
@@ -112,6 +113,7 @@ class Message(Base):
             "has_image": self.has_image,
             "analysis_status": self.analysis_status,
             "skip_reason": self.skip_reason,
+            "is_manual_skip": self.is_manual_skip,
             "source_type": self.source_type,
             "channel": {
                 "id": self.channel.id,
