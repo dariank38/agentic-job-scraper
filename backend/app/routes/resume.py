@@ -35,20 +35,20 @@ def _get_system_prompt() -> str:
         f"Do NOT use dates from job description - they may be outdated.\n\n"
         "CANDIDATE PROFILE:\n"
         "- 8 years experience, 4 companies (1 famous Chinese IT giant: ByteDance/Huawei/Xiaomi/JD/NetEase/Meituan/Didi/Bilibili/Kuaishou/Pinduoduo/OPPO/Lenovo, 3 mid-sized real companies)\n"
-        "- 10+ projects total (2-4 per company)\n"
+        "- MUST have at least 12 projects total (3-4 per company, never fewer than 3 per company)\n"
         "- Bachelor's from real Chinese university ranked 50-150\n\n"
         "RESUME STRUCTURE (output ONLY these sections in order):\n"
         "1. 个人简介: 5-12 sentences (~250-350 chars), covering experience, strengths, expertise, alignment with job\n"
         "2. 专业技能: Categorized list of all key technologies from job description with proficiency notes\n"
         "3. 工作经历: 4 companies. Each: company name, period, title, tech stack, 6-8 detailed bullets (responsibilities, decisions, problems/solutions, impact, quantified results)\n"
-        "4. 项目经历: 10+ projects. Each: name, period, background (goal/context/scale/challenges), tech stack, PROBLEMS & SOLUTIONS (detailed: specific technical issues, investigation process, root cause, implementation, outcome), 6-8 contribution bullets with quantified results\n"
+        "4. 项目经历: At least 12 projects (3-4 per company). Each: name, period, background (goal/context/scale/challenges), tech stack, PROBLEMS & SOLUTIONS (detailed: specific technical issues, investigation process, root cause, implementation, outcome), 6-8 contribution bullets with quantified results\n"
         "5. 教育背景: Bachelor's, real university 50-150, major, graduation year, 2-3 courses\n\n"
         "STRICT RULES:\n"
         "- Output ONLY resume text, no preamble/commentary\n"
         "- NO contact info, NO 附加信息/兴趣爱好/证书/自我评价\n"
         "- Plain text only, no markdown\n"
         "- Real company/university/project names only, no placeholders\n"
-        "- Timeline consistent: projects within company tenure, no overlap, 8 years ending in {current_year}\n"
+        f"- Timeline consistent: projects within company tenure, no overlap, 8 years ending in {current_year}\n"
         "- Use strong action verbs, quantify achievements\n"
         "- Integrate job description keywords naturally"
     )
@@ -61,7 +61,7 @@ def _build_prompt(job_description: str) -> str:
         f"Job Description:\n---\n{job_description}\n---\n\n"
         f"Requirements:\n"
         f"- CRITICAL: Ignore job description dates. Use {current_year} as current year.\n"
-        f"- 8 years experience, 4 companies (1 famous Chinese IT giant, 3 mid-sized real companies), 10+ projects ending in {current_year}\n"
+        f"- 8 years experience, 4 companies (1 famous Chinese IT giant, 3 mid-sized real companies), at least 12 projects (3-4 per company), ending in {current_year}\n"
         f"- Work entries: tech stack, responsibilities, decisions, problems/solutions, impact, team size, quantified results\n"
         f"- Project entries: background, tech stack, DETAILED PROBLEMS & SOLUTIONS (specific issues, investigation, root cause, implementation, outcome), quantified contributions\n"
         f"- Real Chinese university 50-150, real company/university/project names only\n"
@@ -137,7 +137,14 @@ async def _ollama_stream(system_prompt: str, user_prompt: str, temperature: floa
             {"role": "user", "content": user_prompt},
         ],
         "stream": True,
-        "options": {"temperature": temperature},
+        "options": {
+            "temperature": temperature,
+            "num_ctx": 8192,        # avoid silent prompt truncation
+            "num_predict": 4096,    # enough room for a full resume
+            "top_p": 0.95,
+            "top_k": 20,
+            "repeat_penalty": 1.1,
+        },
     }
     async with httpx.AsyncClient(timeout=180.0) as client:
         async with client.stream("POST", f"{OLLAMA_BASE_URL}/api/chat", json=payload) as response:
@@ -168,7 +175,10 @@ async def _ollama_complete(system_prompt: str, user_prompt: str, temperature: fl
             {"role": "user", "content": user_prompt},
         ],
         "stream": False,
-        "options": {"temperature": temperature},
+        "options": {
+            "temperature": temperature,
+            "num_ctx": 8192,
+        },
     }
     async with httpx.AsyncClient(timeout=120.0) as client:
         response = await client.post(f"{OLLAMA_BASE_URL}/api/chat", json=payload)
