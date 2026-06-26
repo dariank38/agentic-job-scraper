@@ -3,6 +3,7 @@ import { useState, createContext, useContext, useEffect, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Button } from '@/components/ui/button';
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from '@/components/ui/sheet';
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import Footer from '@/components/Footer';
 import { LanguageSwitcher } from '@/components/LanguageSwitcher';
 import type { ProgressUpdate } from '@/hooks/useWebSocket';
@@ -23,6 +24,8 @@ import {
   Info,
   AlertTriangle,
   ScrollText,
+  MoreHorizontal,
+  ChevronDown,
 } from 'lucide-react';
 
 type ToastType = 'success' | 'error' | 'info' | 'warning';
@@ -496,17 +499,20 @@ const Layout = ({ children }: { children: React.ReactNode }) => {
   const location = useLocation();
   const [sheetOpen, setSheetOpen] = useState(false);
 
-  const navLinks = [
+  const mainNavLinks = [
     { path: '/', label: t('nav.dashboard'), icon: LayoutDashboard },
     { path: '/jobs', label: t('nav.jobs'), icon: Briefcase },
+    { path: '/resume-history', label: t('nav.resumeHistory', 'Resume History'), icon: ScrollText },
+  ];
+
+  const moreNavLinks = [
     { path: '/developers', label: t('nav.developers'), icon: Code2 },
     { path: '/messages', label: t('nav.messages'), icon: MessageSquare },
     { path: '/channels', label: t('nav.channels'), icon: Radio },
     { path: '/websites', label: t('nav.websites'), icon: Globe },
     { path: '/telegram-accounts', label: t('nav.telegramAccounts'), icon: Radio },
-    { path: '/resume-history', label: 'Resume History', icon: ScrollText },
-    { path: '/settings', label: t('nav.settings'), icon: Settings2 },
     { path: '/autonomous', label: t('nav.autonomous'), icon: Bot },
+    { path: '/settings', label: t('nav.settings'), icon: Settings2 },
   ];
 
   const isActive = (path: string) =>
@@ -535,7 +541,7 @@ const Layout = ({ children }: { children: React.ReactNode }) => {
 
           {/* Desktop Navigation */}
           <nav className="hidden md:flex items-center gap-1">
-            {navLinks.map(({ path, label, icon: Icon }) => (
+            {mainNavLinks.map(({ path, label, icon: Icon }) => (
               <Link
                 key={path}
                 to={path}
@@ -547,9 +553,40 @@ const Layout = ({ children }: { children: React.ReactNode }) => {
                 }`}
               >
                 <Icon size={14} />
-                <span className="hidden xl:inline">{label}</span>
+                <span className="hidden lg:inline">{label}</span>
               </Link>
             ))}
+            <Popover>
+              <PopoverTrigger asChild>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="flex items-center gap-1.5 px-2.5 py-1.5 h-auto rounded-full text-sm font-medium text-muted-foreground hover:text-foreground hover:bg-accent"
+                >
+                  <MoreHorizontal size={14} />
+                  <span className="hidden lg:inline">More</span>
+                  <ChevronDown size={14} />
+                </Button>
+              </PopoverTrigger>
+              <PopoverContent className="w-56 p-2" align="end">
+                <div className="flex flex-col gap-1">
+                  {moreNavLinks.map(({ path, label, icon: Icon }) => (
+                    <Link
+                      key={path}
+                      to={path}
+                      className={`flex items-center gap-2 px-3 py-2 rounded-md text-sm font-medium no-underline transition-colors ${
+                        isActive(path)
+                          ? 'bg-primary text-primary-foreground'
+                          : 'text-muted-foreground hover:text-foreground hover:bg-accent'
+                      }`}
+                    >
+                      <Icon size={14} />
+                      {label}
+                    </Link>
+                  ))}
+                </div>
+              </PopoverContent>
+            </Popover>
             <LanguageSwitcher />
           </nav>
 
@@ -571,7 +608,7 @@ const Layout = ({ children }: { children: React.ReactNode }) => {
                   </SheetTitle>
                 </SheetHeader>
                 <nav className="flex flex-col p-3 gap-1">
-                  {navLinks.map(({ path, label, icon: Icon }) => (
+                  {[...mainNavLinks, ...moreNavLinks].map(({ path, label, icon: Icon }) => (
                     <Button
                       key={path}
                       asChild

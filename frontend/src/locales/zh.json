@@ -79,7 +79,8 @@
     "telegramAccounts": "Telegram 账号",
     "websites": "网站",
     "settings": "设置",
-    "autonomous": "自动模式"
+    "autonomous": "自动模式",
+    "resumeHistory": "简历历史"
   },
   "dashboard": {
     "title": "仪表板",
@@ -628,6 +629,26 @@
     "title": "语言",
     "english": "English",
     "chinese": "中文"
+  },
+  "resumeHistory": {
+    "title": "简历历史",
+    "subtitle": "查看和管理您生成的简历",
+    "filterAll": "全部",
+    "filterGenerate": "生成",
+    "filterEnhance": "优化",
+    "filterScore": "评分",
+    "backToList": "返回列表",
+    "copy": "复制",
+    "scoreResult": "评分结果",
+    "matchedSkills": "匹配技能",
+    "missingSkills": "缺失技能",
+    "noResumes": "未找到简历",
+    "noResumesDesc": "生成您的第一份简历以在此查看",
+    "failedToLoad": "加载简历失败",
+    "confirmDelete": "确定要删除此简历吗？",
+    "deleted": "简历已删除",
+    "deleteFailed": "删除简历失败",
+    "copied": "已复制到剪贴板"
   },
   "footer": {
     "copyright": "© 2026 Agentic Job Scraper. MIT License.",

@@ -79,7 +79,8 @@
     "telegramAccounts": "Telegram",
     "websites": "Websites",
     "settings": "Settings",
-    "autonomous": "Autonomous"
+    "autonomous": "Autonomous",
+    "resumeHistory": "Resume History"
   },
   "dashboard": {
     "title": "Dashboard",
@@ -630,6 +631,26 @@
     "title": "Language",
     "english": "English",
     "chinese": "中文"
+  },
+  "resumeHistory": {
+    "title": "Resume History",
+    "subtitle": "View and manage your generated resumes",
+    "filterAll": "All",
+    "filterGenerate": "Generate",
+    "filterEnhance": "Enhance",
+    "filterScore": "Score",
+    "backToList": "Back to list",
+    "copy": "Copy",
+    "scoreResult": "Score Result",
+    "matchedSkills": "Matched Skills",
+    "missingSkills": "Missing Skills",
+    "noResumes": "No resumes found",
+    "noResumesDesc": "Generate your first resume to see it here",
+    "failedToLoad": "Failed to load resumes",
+    "confirmDelete": "Are you sure you want to delete this resume?",
+    "deleted": "Resume deleted",
+    "deleteFailed": "Failed to delete resume",
+    "copied": "Copied to clipboard"
   },
   "footer": {
     "copyright": "© 2026 Agentic Job Scraper. MIT License.",
