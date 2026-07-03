@@ -84,6 +84,16 @@ async def fetch_messages(
 
     sender_cache: dict[int, dict[str, Any]] = {}
 
+    # Validate that the entity is a channel before fetching
+    try:
+        entity = await client.get_entity(channel_username)
+        if not isinstance(entity, Channel):
+            logger.error(f"[FETCH] {channel_username} is not a channel (type: {type(entity).__name__})")
+            return []
+    except Exception as e:
+        logger.error(f"[FETCH] Failed to validate entity {channel_username}: {e}")
+        return []
+
     try:
         while not reached_cutoff:
             batch: list[dict[str, Any]] = []
@@ -170,15 +180,15 @@ async def get_dialogs(client: TelegramClient) -> list[dict[str, Any]]:
     try:
         async for dialog in client.iter_dialogs():
             try:
-                if dialog.is_channel or dialog.is_group:
+                if dialog.is_channel:
                     entity = dialog.entity
-                    # Use dialog.name which works for both channels and groups
+                    # Use dialog.name which works for channels
                     name = dialog.name or getattr(entity, "title", None) or str(entity.id)
                     dialogs.append({
                         "id": entity.id,
                         "username": getattr(entity, "username", None),
                         "name": name,
-                        "type": "channel" if dialog.is_channel else "group",
+                        "type": "channel",
                     })
             except Exception as e:
                 logger.warning(f"[DIALOGS] Error processing dialog: {e}")
