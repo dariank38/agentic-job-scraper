@@ -72,15 +72,15 @@ export const DailyJobsChart = ({ days = 30 }: DailyJobsChartProps) => {
     if (!active || !payload || payload.length === 0) return null;
     return (
       <div
-        className="bg-white/95 border border-gray-200 rounded-lg px-3 py-2 shadow-lg max-h-60 overflow-y-auto pointer-events-auto"
+        className="bg-white/98 border border-gray-200 rounded-xl px-3 py-2.5 shadow-lg max-h-60 overflow-y-auto pointer-events-auto"
         onWheel={(e) => e.stopPropagation()}
       >
-        <p className="text-xs font-medium text-gray-700 mb-1">{label}</p>
+        <p className="text-xs font-semibold text-gray-800 mb-1.5">{label}</p>
         {payload.map((entry: any) => (
           <div key={entry.dataKey} className="flex items-center gap-2 text-xs py-0.5">
-            <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ backgroundColor: entry.color }} />
+            <span className="w-2.5 h-2.5 rounded-full flex-shrink-0" style={{ backgroundColor: entry.color }} />
             <span className="text-gray-600 truncate max-w-[140px]">{entry.dataKey}</span>
-            <span className="font-medium ml-auto">{entry.value}</span>
+            <span className="font-semibold ml-auto text-gray-800">{entry.value}</span>
           </div>
         ))}
       </div>
@@ -88,11 +88,11 @@ export const DailyJobsChart = ({ days = 30 }: DailyJobsChartProps) => {
   };
 
   if (loading) {
-    return <div className="h-64 flex items-center justify-center text-sm text-gray-500">{t('common.loading')}</div>;
+    return <div className="h-[260px] flex items-center justify-center text-sm text-muted-foreground">{t('common.loading')}</div>;
   }
 
   if (data.length === 0) {
-    return <div className="h-64 flex items-center justify-center text-sm text-gray-500">{t('common.noData')}</div>;
+    return <div className="h-[260px] flex items-center justify-center text-sm text-muted-foreground">{t('common.noData')}</div>;
   }
 
   return (
@@ -133,14 +133,16 @@ export const DailyJobsChart = ({ days = 30 }: DailyJobsChartProps) => {
         </div>
       )}
       <ResponsiveContainer width="100%" height={260}>
-        <LineChart data={data}>
-          <CartesianGrid strokeDasharray="3 3" />
+        <LineChart data={data} margin={{ top: 5, right: 5, bottom: 5, left: -20 }}>
+          <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" opacity={0.5} />
           <XAxis
             dataKey="date"
-            tick={{ fontSize: 12 }}
+            tick={{ fontSize: 11, fill: '#6b7280' }}
             tickFormatter={(value) => { const [,m,d] = value.split('-'); return `${new Date(0, parseInt(m)-1).toLocaleString('en-US',{month:'short'})} ${parseInt(d)}`; }}
+            axisLine={{ stroke: '#e5e7eb' }}
+            tickLine={false}
           />
-          <YAxis tick={{ fontSize: 12 }} />
+          <YAxis tick={{ fontSize: 11, fill: '#6b7280' }} axisLine={false} tickLine={false} />
           <Tooltip content={<CustomTooltip />} wrapperStyle={{ pointerEvents: 'auto' }} />
           {channels.map((channel, index) =>
             hiddenChannels.has(channel) ? null : (
@@ -150,8 +152,8 @@ export const DailyJobsChart = ({ days = 30 }: DailyJobsChartProps) => {
                 dataKey={channel}
                 stroke={colors[index % colors.length]}
                 strokeWidth={2}
-                dot={{ r: 3 }}
-                activeDot={{ r: 5 }}
+                dot={{ r: 3, strokeWidth: 0 }}
+                activeDot={{ r: 5, strokeWidth: 0 }}
               />
             )
           )}

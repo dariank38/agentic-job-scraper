@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useNavigate } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
@@ -10,6 +10,8 @@ import { Switch } from '@/components/ui/switch';
 import { Input } from '@/components/ui/input';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Separator } from '@/components/ui/separator';
+import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
+import { Progress } from '@/components/ui/progress';
 import { DailyJobsChart } from '@/components/DailyJobsChart';
 import { DailyDevelopersChart } from '@/components/DailyDevelopersChart';
 import { DailyJobsAppliedChart } from '@/components/DailyJobsAppliedChart';
@@ -31,6 +33,12 @@ import {
   MapPin,
   Mail,
   ExternalLink,
+  TrendingUp,
+  Activity,
+  Globe,
+  ArrowRight,
+  BarChart3,
+  Layers,
 } from 'lucide-react';
 import api from '@/services/api';
 import type { Channel, Stats, WebsiteSource, Job, Developer, TelegramAccount } from '@/services/api';
@@ -167,7 +175,7 @@ const Dashboard = () => {
 
   const loadRecentJobs = async () => {
     try {
-      const data = await api.getJobs({ limit: 1, offset: 0 });
+      const data = await api.getJobs({ limit: 6, offset: 0 });
       setRecentJobs(data.jobs || []);
     } catch (e: any) {
       // Silently ignore errors
@@ -176,7 +184,7 @@ const Dashboard = () => {
 
   const loadRecentDevelopers = async () => {
     try {
-      const data = await api.getDevelopers({ limit: 1, offset: 0 });
+      const data = await api.getDevelopers({ limit: 6, offset: 0 });
       setRecentDevelopers(data.developers || []);
     } catch (e: any) {
       // Silently ignore errors
@@ -518,256 +526,381 @@ const Dashboard = () => {
     }
   };
 
-  const statGrid = [
-    { icon: MessageSquare, value: stats?.total_messages ?? '-', label: t('dashboard.totalMessages'), color: 'bg-cyan-50 text-cyan-600', border: 'border-cyan-100' },
-    { icon: Clock, value: stats?.pending_messages ?? '-', label: t('dashboard.pendingAnalysis'), color: 'bg-amber-50 text-amber-600', border: 'border-amber-100' },
-    { icon: Briefcase, value: stats?.job_postings ?? '-', label: t('dashboard.jobPostings'), color: 'bg-emerald-50 text-emerald-600', border: 'border-emerald-100' },
-    { icon: Users, value: stats?.developers ?? '-', label: t('dashboard.developers'), color: 'bg-violet-50 text-violet-600', border: 'border-violet-100' },
-    { icon: CheckCircle2, value: stats?.applications?.jobs?.total ?? '-', label: t('dashboard.jobsApplied'), color: 'bg-orange-50 text-orange-600', border: 'border-orange-100' },
-    { icon: SkipForward, value: stats?.skipped_messages ?? '-', label: t('dashboard.skipped'), color: 'bg-slate-50 text-slate-500', border: 'border-slate-100' },
-    { icon: Radio, value: stats?.total_channels ?? '-', label: t('dashboard.channels'), color: 'bg-blue-50 text-blue-600', border: 'border-blue-100' },
-    { icon: Bot, value: stats?.ollama_available ? t('dashboard.online') : t('dashboard.offline'), label: t('dashboard.ollama'), color: stats?.ollama_available ? 'bg-green-50 text-green-600' : 'bg-red-50 text-red-500', border: stats?.ollama_available ? 'border-green-100' : 'border-red-100' },
+  const analysisRate = stats && stats.total_messages > 0
+    ? Math.round((stats.analyzed_messages / stats.total_messages) * 100)
+    : 0;
+
+  const statCards = [
+    { icon: MessageSquare, value: stats?.total_messages ?? 0, label: t('dashboard.totalMessages'), sub: `${stats?.analyzed_messages ?? 0} ${t('dashboard.analyzed')}`, color: 'text-cyan-600', bg: 'bg-cyan-500/10', ring: 'ring-cyan-500/20' },
+    { icon: Briefcase, value: stats?.job_postings ?? 0, label: t('dashboard.jobPostings'), sub: `${stats?.applications?.jobs?.total ?? 0} ${t('dashboard.applied')}`, color: 'text-emerald-600', bg: 'bg-emerald-500/10', ring: 'ring-emerald-500/20' },
+    { icon: Users, value: stats?.developers ?? 0, label: t('dashboard.developers'), sub: t('dashboard.devs'), color: 'text-violet-600', bg: 'bg-violet-500/10', ring: 'ring-violet-500/20' },
+    { icon: Radio, value: stats?.total_channels ?? 0, label: t('dashboard.channels'), sub: `${websiteSources.length} ${t('dashboard.sourcesTracked')}`, color: 'text-blue-600', bg: 'bg-blue-500/10', ring: 'ring-blue-500/20' },
+    { icon: Clock, value: stats?.pending_messages ?? 0, label: t('dashboard.pendingAnalysis'), sub: t('dashboard.pending'), color: 'text-amber-600', bg: 'bg-amber-500/10', ring: 'ring-amber-500/20' },
+    { icon: SkipForward, value: stats?.skipped_messages ?? 0, label: t('dashboard.skipped'), sub: t('dashboard.messages'), color: 'text-slate-500', bg: 'bg-slate-500/10', ring: 'ring-slate-500/20' },
+    { icon: CheckCircle2, value: stats?.applications?.jobs?.total ?? 0, label: t('dashboard.jobsApplied'), sub: t('dashboard.applied'), color: 'text-orange-600', bg: 'bg-orange-500/10', ring: 'ring-orange-500/20' },
+    { icon: Bot, value: stats?.ollama_available ? t('dashboard.online') : t('dashboard.offline'), label: t('dashboard.ollama'), sub: stats?.ollama_available ? t('dashboard.online') : t('dashboard.offline'), color: stats?.ollama_available ? 'text-green-600' : 'text-red-500', bg: stats?.ollama_available ? 'bg-green-500/10' : 'bg-red-500/10', ring: stats?.ollama_available ? 'ring-green-500/20' : 'ring-red-500/20' },
   ];
 
+  const topChannels = useMemo(() => {
+    return [...channels].sort((a, b) => (b.job_count ?? 0) - (a.job_count ?? 0)).slice(0, 5);
+  }, [channels]);
+
+  const topSources = useMemo(() => {
+    return [...websiteSources].sort((a, b) => (b.job_count ?? 0) - (a.job_count ?? 0)).slice(0, 5);
+  }, [websiteSources]);
+
   return (
-    <div className="space-y-5">
+    <div className="space-y-6">
     {/* Hero Header */}
-    <div className="relative overflow-hidden rounded-xl bg-gradient-to-br from-slate-800 via-slate-700 to-slate-600 p-5 text-white shadow-lg">
-      <div className="absolute inset-0 opacity-10 pointer-events-none" style={{ backgroundImage: 'radial-gradient(circle at 20% 50%, white 1px, transparent 1px), radial-gradient(circle at 80% 20%, white 1px, transparent 1px)', backgroundSize: '40px 40px' }} />
-      <div className="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-3">
+    <div className="relative overflow-hidden rounded-2xl bg-gradient-to-br from-slate-900 via-slate-800 to-slate-700 p-6 text-white shadow-xl">
+      <div className="absolute inset-0 opacity-[0.07] pointer-events-none" style={{ backgroundImage: 'radial-gradient(circle at 20% 50%, white 1px, transparent 1px), radial-gradient(circle at 80% 20%, white 1px, transparent 1px), radial-gradient(circle at 40% 80%, white 1px, transparent 1px)', backgroundSize: '40px 40px, 50px 50px, 35px 35px' }} />
+      <div className="absolute -right-8 -top-8 w-48 h-48 bg-gradient-to-br from-blue-500/20 to-purple-500/10 rounded-full blur-3xl pointer-events-none" />
+      <div className="relative flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
-          <div className="flex items-center gap-2 mb-1">
-            <Zap className="w-5 h-5 text-yellow-400" />
-            <h1 className="text-xl font-bold tracking-tight">{t('nav.dashboard')}</h1>
+          <div className="flex items-center gap-2.5 mb-2">
+            <div className="bg-white/10 backdrop-blur-sm rounded-lg p-1.5 ring-1 ring-white/20">
+              <Zap className="w-5 h-5 text-yellow-400" />
+            </div>
+            <h1 className="text-2xl font-bold tracking-tight">{t('nav.dashboard')}</h1>
           </div>
-          <div className="flex items-center gap-3 text-white/70 text-sm flex-wrap">
-            <span className="flex items-center gap-1.5">
-              <span className={`w-2 h-2 rounded-full ${cronRunning ? 'bg-green-400 animate-pulse' : 'bg-white/30'}`} />
+          <div className="flex items-center gap-4 text-sm flex-wrap">
+            <span className="flex items-center gap-2 text-white/80">
+              <span className={`relative flex h-2 w-2 ${cronRunning ? '' : ''}`}>
+                {cronRunning && <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75" />}
+                <span className={`relative inline-flex rounded-full h-2 w-2 ${cronRunning ? 'bg-green-400' : 'bg-white/30'}`} />
+              </span>
               {cronRunning ? t('dashboard.running') : t('dashboard.stopped')}
             </span>
-            <span className="text-white/30">·</span>
-            <span className="flex items-center gap-1.5">
-              <Radio size={12} className={listenerRunning ? 'text-green-400' : 'text-white/40'} />
+            <span className="text-white/20">|</span>
+            <span className="flex items-center gap-1.5 text-white/80">
+              <Radio size={13} className={listenerRunning ? 'text-green-400' : 'text-white/40'} />
               {listenerRunning ? t('dashboard.listening') : t('dashboard.stopped')}
             </span>
-            <span className="text-white/30">·</span>
+            <span className="text-white/20">|</span>
             <span className={`flex items-center gap-1.5 ${stats?.ollama_available ? 'text-green-300' : 'text-red-300'}`}>
-              <Bot size={12} />
+              <Bot size={13} />
               {stats?.ollama_available ? t('dashboard.online') : t('dashboard.offline')}
             </span>
           </div>
         </div>
-        <div className="flex items-center gap-2 text-xs text-white/50">
-          <span>{stats?.total_messages ?? 0} msgs</span>
-          <span>·</span>
-          <span>{stats?.job_postings ?? 0} jobs</span>
-          <span>·</span>
-          <span>{stats?.developers ?? 0} devs</span>
+        <div className="flex items-center gap-3">
+          <div className="bg-white/10 backdrop-blur-sm rounded-xl px-4 py-2.5 ring-1 ring-white/10">
+            <div className="flex items-center gap-4">
+              <div className="text-center">
+                <p className="text-2xl font-black leading-none">{stats?.total_messages ?? 0}</p>
+                <p className="text-[10px] text-white/50 uppercase tracking-wider mt-1">{t('dashboard.messages')}</p>
+              </div>
+              <div className="w-px h-8 bg-white/10" />
+              <div className="text-center">
+                <p className="text-2xl font-black leading-none text-emerald-400">{stats?.job_postings ?? 0}</p>
+                <p className="text-[10px] text-white/50 uppercase tracking-wider mt-1">{t('dashboard.jobs')}</p>
+              </div>
+              <div className="w-px h-8 bg-white/10" />
+              <div className="text-center">
+                <p className="text-2xl font-black leading-none text-violet-400">{stats?.developers ?? 0}</p>
+                <p className="text-[10px] text-white/50 uppercase tracking-wider mt-1">{t('dashboard.devs')}</p>
+              </div>
+            </div>
+          </div>
         </div>
       </div>
     </div>
 
-    <div className="flex flex-col lg:flex-row gap-6">
-      {/* Sidebar Navigation */}
-      <div className="w-full lg:w-72 shrink-0 space-y-4">
-        {/* Quick Actions - Glassmorphism */}
-        <Card className="backdrop-blur-xl bg-white/70 border border-white/20 shadow-lg">
-          <CardHeader className="px-4 py-3">
-            <CardTitle className="text-sm font-semibold flex items-center gap-2">
-              <Zap size={16} className="text-yellow-500" />
-              {t('dashboard.quickActions')}
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="px-4 pb-4 space-y-3">
-            <div className="space-y-2">
-              <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">{t('dashboard.allChannels')}</p>
-              <div className="flex gap-2">
-                <Button
-                  onClick={() => fetchAll()}
-                  disabled={loadingActions.has('fetch-all') || Object.keys(operations).length > 0 || effectiveBulkOperation !== null}
-                  size="sm"
-                  className="flex-1 h-8"
-                >
-                  <RefreshCw size={12} className="mr-1" />
-                  {t('dashboard.fetchAll')}
-                </Button>
-                <Button
-                  variant="outline"
-                  onClick={() => analyzeAll()}
-                  disabled={loadingActions.has('analyze-all') || Object.keys(operations).length > 0 || effectiveBulkOperation !== null}
-                  size="sm"
-                  className="flex-1 h-8"
-                >
-                  <Bot size={12} className="mr-1" />
-                  {t('dashboard.analyzeAll')}
-                </Button>
-              </div>
-              {effectiveBulkOperation && (
-                <Button
-                  variant="destructive"
-                  onClick={() => stopBulkOperation()}
-                  size="sm"
-                  className="w-full h-7 text-xs"
-                >
-                  <Square size={10} className="mr-1" />
-                  {effectiveBulkOperation.type === 'analyze-all' ? t('dashboard.stopAnalyzeAll') : effectiveBulkOperation.type === 'fetch-all' ? t('dashboard.stopFetchAll') : t('dashboard.stopFetchAnalyzeAll')}
-                </Button>
-              )}
-            </div>
-            <div className="space-y-2">
-              <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">{t('websiteSources.title')}</p>
-              <div className="flex gap-2">
-                <Button
-                  onClick={() => fetchAllWebsites()}
-                  disabled={loadingActions.has('fetch-all-ws') || loadingActions.has('analyze-all-ws') || anyWebsiteAnalyzing}
-                  size="sm"
-                  className="flex-1 h-8"
-                >
-                  <RefreshCw size={12} className="mr-1" />
-                  {t('dashboard.fetchAll')}
-                </Button>
-                <Button
-                  variant="outline"
-                  onClick={() => analyzeAllWebsites()}
-                  disabled={loadingActions.has('analyze-all-ws') || loadingActions.has('fetch-all-ws') || anyWebsiteAnalyzing}
-                  size="sm"
-                  className="flex-1 h-8"
-                >
-                  <Bot size={12} className="mr-1" />
-                  {t('dashboard.analyzeAll')}
-                </Button>
-              </div>
-              {anyWebsiteAnalyzing && (
-                <Button
-                  variant="destructive"
-                  onClick={() => stopAllWebsites()}
-                  size="sm"
-                  className="w-full h-7 text-xs"
-                >
-                  <Square size={10} className="mr-1" />
-                  {t('dashboard.stopAnalyzeAll')}
-                </Button>
-              )}
-            </div>
-            <div className="space-y-2">
-              <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">{t('dashboard.cronJob')}</p>
-              <div className="flex items-center justify-between p-2 rounded-lg bg-muted/50">
-                <div className="flex items-center gap-2">
-                  <Timer size={12} className={cronRunning ? 'text-green-500' : 'text-muted-foreground'} />
-                  <span className="text-xs font-medium">{cronRunning ? t('dashboard.running') : t('dashboard.stopped')}</span>
-                </div>
-                <Button
-                  variant={cronRunning ? 'destructive' : 'default'}
-                  onClick={() => toggleCron()}
-                  size="sm"
-                  className="h-7 px-2"
-                >
-                  {cronRunning ? <Square size={10} /> : <Play size={10} />}
-                </Button>
-              </div>
-            </div>
-            <div className="space-y-2">
-              <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">{t('dashboard.realTimeListener')}</p>
-              <div className="flex items-center justify-between p-2 rounded-lg bg-muted/50">
-                <div className="flex items-center gap-2">
-                  <Radio size={12} className={listenerRunning ? 'text-green-500' : listenedChannels.length > 0 ? 'text-yellow-500' : 'text-muted-foreground'} />
-                  <span className="text-xs font-medium">
-                    {listenerRunning
-                      ? t('dashboard.listening')
-                      : listenedChannels.length > 0
-                        ? t('dashboard.listenerNotRunning')
-                        : t('dashboard.stopped')}
-                  </span>
-                  {listenedChannels.length > 0 && (
-                    <span className="text-xs text-muted-foreground">({listenedChannels.length})</span>
-                  )}
-                </div>
-                <div className="flex gap-1">
-                  <Button
-                    variant="outline"
-                    onClick={() => setListenerDialogOpen(true)}
-                    size="sm"
-                    className="h-7 px-2"
-                  >
-                    {t('dashboard.manage')}
-                  </Button>
-                  {listenerRunning ? (
-                    <Button
-                      variant="destructive"
-                      onClick={() => stopListener()}
-                      size="sm"
-                      className="h-7 px-2"
-                    >
-                      <Square size={10} />
-                    </Button>
-                  ) : (
-                    <Button
-                      variant="default"
-                      onClick={() => startListener()}
-                      size="sm"
-                      className="h-7 px-2"
-                    >
-                      <Play size={10} />
-                    </Button>
-                  )}
-                </div>
-              </div>
-              <div className="flex items-center justify-between px-1 py-0.5">
-                <label htmlFor="autoAnalyze" className="text-xs text-muted-foreground cursor-pointer">
-                  {t('common.autoAnalyze')}
-                </label>
-                <Switch
-                  id="autoAnalyze"
-                  checked={autoAnalyze}
-                  onCheckedChange={handleAutoAnalyzeChange}
-                  size="sm"
-                />
-              </div>
-            </div>
-            <div className="space-y-2">
-              <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">{t('dashboard.other')}</p>
-              <Button
-                variant="destructive"
-                onClick={() => setCleanupDialogOpen(true)}
-                disabled={loadingActions.has('cleanup')}
-                size="sm"
-                className="w-full h-7 text-xs"
-              >
-                {t('dashboard.cleanupOldMessages')}
-              </Button>
-            </div>
-          </CardContent>
-        </Card>
+    {/* Stats Grid */}
+    <div className="grid grid-cols-4 md:grid-cols-8 gap-2">
+      {statCards.map(({ icon: Icon, value, label, color, bg, ring }) => (
+        <div key={label} className={`flex items-center gap-2.5 rounded-xl bg-white px-3 py-2.5 ring-1 ${ring} shadow-sm`}>
+          <div className={`w-8 h-8 rounded-lg flex items-center justify-center shrink-0 ${bg}`}>
+            <Icon size={15} className={color} />
+          </div>
+          <div className="min-w-0">
+            <p className="text-base font-black leading-none">{value}</p>
+            <p className="text-[10px] text-muted-foreground mt-0.5 truncate">{label}</p>
+          </div>
+        </div>
+      ))}
+    </div>
 
-        {/* Statistics Grid */}
-        <Card className="backdrop-blur-xl bg-white/70 border border-white/20 shadow-lg">
-          <CardHeader className="px-4 py-3">
-            <CardTitle className="text-sm font-semibold">{t('dashboard.statistics')}</CardTitle>
-          </CardHeader>
-          <CardContent className="px-3 pb-3">
-            <div className="grid grid-cols-2 gap-2">
-              {statGrid.map(({ icon: Icon, value, label, color, border }) => (
-                <div key={label} className={`flex flex-col gap-1 p-2.5 rounded-lg border ${border} bg-white/60`}>
-                  <div className={`w-7 h-7 rounded-md flex items-center justify-center ${color}`}>
-                    <Icon size={14} />
-                  </div>
-                  <p className="text-lg font-black leading-none">{value}</p>
-                  <p className="text-[10px] text-muted-foreground leading-tight">{label}</p>
-                </div>
-              ))}
-            </div>
-          </CardContent>
-        </Card>
+    {/* Quick Actions Bar */}
+    <div className="flex flex-col sm:flex-row flex-wrap items-start sm:items-center gap-3 p-3 bg-white rounded-xl shadow-sm ring-1 ring-border/50">
+      <div className="flex items-center gap-1.5 text-xs font-semibold text-muted-foreground uppercase tracking-wider shrink-0">
+        <Zap size={14} className="text-yellow-500" />
+        {t('dashboard.quickActions')}
+      </div>
+      <div className="hidden sm:block w-px h-5 bg-border/50" />
+      <div className="flex flex-wrap items-center gap-2">
+        <Button onClick={() => fetchAll()} disabled={loadingActions.has('fetch-all') || Object.keys(operations).length > 0 || effectiveBulkOperation !== null} size="sm" variant="default" className="h-8">
+          <RefreshCw size={13} className="mr-1.5" />
+          {t('dashboard.fetchAll')}
+        </Button>
+        <Button onClick={() => analyzeAll()} disabled={loadingActions.has('analyze-all') || Object.keys(operations).length > 0 || effectiveBulkOperation !== null} size="sm" variant="outline" className="h-8">
+          <Bot size={13} className="mr-1.5" />
+          {t('dashboard.analyzeAll')}
+        </Button>
+        <div className="w-px h-5 bg-border/50 mx-1" />
+        <Button onClick={() => fetchAllWebsites()} disabled={loadingActions.has('fetch-all-ws') || loadingActions.has('analyze-all-ws') || anyWebsiteAnalyzing} size="sm" variant="default" className="h-8">
+          <Globe size={13} className="mr-1.5" />
+          {t('dashboard.fetchAll')} ({t('websiteSources.title')})
+        </Button>
+        <Button onClick={() => analyzeAllWebsites()} disabled={loadingActions.has('analyze-all-ws') || loadingActions.has('fetch-all-ws') || anyWebsiteAnalyzing} size="sm" variant="outline" className="h-8">
+          <Bot size={13} className="mr-1.5" />
+          {t('dashboard.analyzeAll')} ({t('websiteSources.title')})
+        </Button>
+      </div>
+      <div className="flex-1" />
+      <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto">
+        {effectiveBulkOperation && (
+          <Button variant="destructive" onClick={() => stopBulkOperation()} size="sm" className="h-8">
+            <Square size={12} className="mr-1.5" />
+            {effectiveBulkOperation.type === 'analyze-all' ? t('dashboard.stopAnalyzeAll') : effectiveBulkOperation.type === 'fetch-all' ? t('dashboard.stopFetchAll') : t('dashboard.stopFetchAnalyzeAll')}
+          </Button>
+        )}
+        {anyWebsiteAnalyzing && (
+          <Button variant="destructive" onClick={() => stopAllWebsites()} size="sm" className="h-8">
+            <Square size={12} className="mr-1.5" />
+            {t('dashboard.stopAnalyzeAll')}
+          </Button>
+        )}
+        <Button variant="destructive" onClick={() => setCleanupDialogOpen(true)} disabled={loadingActions.has('cleanup')} size="sm" className="h-8">
+          {t('dashboard.cleanupOldMessages')}
+        </Button>
+      </div>
+    </div>
+
+    {/* Tabbed Content */}
+    <Tabs defaultValue="overview" className="w-full flex-col!">
+      <div className="flex items-center gap-1 border-b border-border bg-white px-2 rounded-t-xl">
+        <TabsList className="bg-transparent p-0 h-auto gap-0 w-auto rounded-none">
+          <TabsTrigger value="overview" className="flex! items-center gap-2 px-4 py-3 rounded-none border-b-2 border-transparent text-muted-foreground data-[state=active]:border-blue-500 data-[state=active]:text-blue-600 data-[state=active]:bg-transparent data-[state=active]:shadow-none font-medium text-sm transition-all">
+            <Layers size={15} />
+            {t('dashboard.overview')}
+          </TabsTrigger>
+          <TabsTrigger value="analytics" className="flex! items-center gap-2 px-4 py-3 rounded-none border-b-2 border-transparent text-muted-foreground data-[state=active]:border-violet-500 data-[state=active]:text-violet-600 data-[state=active]:bg-transparent data-[state=active]:shadow-none font-medium text-sm transition-all">
+            <BarChart3 size={15} />
+            {t('dashboard.analytics')}
+          </TabsTrigger>
+          <TabsTrigger value="activity" className="flex! items-center gap-2 px-4 py-3 rounded-none border-b-2 border-transparent text-muted-foreground data-[state=active]:border-emerald-500 data-[state=active]:text-emerald-600 data-[state=active]:bg-transparent data-[state=active]:shadow-none font-medium text-sm transition-all">
+            <Activity size={15} />
+            {t('dashboard.activity')}
+          </TabsTrigger>
+          <TabsTrigger value="system" className="flex! items-center gap-2 px-4 py-3 rounded-none border-b-2 border-transparent text-muted-foreground data-[state=active]:border-orange-500 data-[state=active]:text-orange-600 data-[state=active]:bg-transparent data-[state=active]:shadow-none font-medium text-sm transition-all">
+            <Bot size={15} />
+            {t('dashboard.systemControls')}
+          </TabsTrigger>
+        </TabsList>
       </div>
 
-      {/* Main Content - No Scroll */}
-      <div className="flex-1 space-y-4">
+      {/* Overview Tab */}
+      <TabsContent value="overview" className="mt-4 space-y-4">
+        {/* Analysis Progress Bar */}
+        {stats && stats.total_messages > 0 && (
+          <Card className="shadow-sm">
+            <CardContent className="p-4">
+              <div className="flex items-center justify-between mb-2">
+                <span className="text-sm font-medium">{t('dashboard.analysisRate')}</span>
+                <span className="text-sm font-bold text-primary">{analysisRate}%</span>
+              </div>
+              <Progress value={analysisRate} className="h-2" />
+              <div className="flex items-center justify-between mt-2 text-xs text-muted-foreground">
+                <span>{stats.analyzed_messages} / {stats.total_messages} {t('dashboard.analyzed')}</span>
+                <span>{stats.pending_messages} {t('dashboard.pending')}</span>
+              </div>
+            </CardContent>
+          </Card>
+        )}
+
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+          {/* Recent Jobs */}
+          <Card className="shadow-sm">
+            <CardHeader className="px-4 py-3 flex flex-row items-center justify-between space-y-0">
+              <CardTitle className="text-sm font-semibold flex items-center gap-2">
+                <Briefcase size={15} className="text-emerald-500" />
+                {t('dashboard.recentJobs')}
+              </CardTitle>
+              <Button variant="ghost" size="sm" className="h-7 text-xs" onClick={() => navigate('/jobs')}>
+                {t('dashboard.viewAll')} <ArrowRight size={12} className="ml-1" />
+              </Button>
+            </CardHeader>
+            <CardContent className="px-4 pb-4">
+              {recentJobs.length === 0 ? (
+                <div className="text-center py-8">
+                  <Briefcase size={32} className="text-muted-foreground/30 mx-auto mb-2" />
+                  <p className="text-xs text-muted-foreground">{t('dashboard.noRecentJobs')}</p>
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  {recentJobs.map((job) => {
+                    let skills: string[] = [];
+                    if (Array.isArray(job.skills)) {
+                      skills = job.skills;
+                    } else if (typeof job.skills === 'string') {
+                      skills = (job.skills as string).split('\n').filter(s => s.trim());
+                    }
+                    return (
+                      <div key={job.id} className="p-3 rounded-lg border border-border/60 hover:border-border hover:bg-muted/30 transition-all cursor-pointer" onClick={() => navigate(`/jobs?jobId=${job.id}`)}>
+                        <div className="flex items-center gap-2 mb-1">
+                          <span className="font-medium text-sm truncate flex-1">
+                            {job.title || t('jobs.untitledJob')}
+                          </span>
+                          {job.is_applied && (
+                            <Badge variant="default" className="text-xs h-5 px-1.5">{t('jobs.applied')}</Badge>
+                          )}
+                        </div>
+                        <p className="text-xs text-muted-foreground truncate mb-1">
+                          {job.company || t('jobs.unknownCompany')}
+                        </p>
+                        <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                          <span className="flex items-center gap-1">
+                            <MessageSquare className="w-3 h-3" />
+                            {job.channel_name || job.channel?.username || t('common.unknown')}
+                          </span>
+                          {job.location && (
+                            <span className="flex items-center gap-1">
+                              <MapPin className="w-3 h-3" />
+                              {job.location}
+                            </span>
+                          )}
+                        </div>
+                        {skills.length > 0 && (
+                          <div className="flex gap-1 mt-1.5 flex-wrap">
+                            {skills.slice(0, 3).map((skill: string, idx: number) => (
+                              <span key={idx} className="text-[10px] px-1.5 py-0.5 bg-muted text-muted-foreground rounded-md">
+                                {skill}
+                              </span>
+                            ))}
+                            {skills.length > 3 && (
+                              <span className="text-[10px] text-muted-foreground">+{skills.length - 3}</span>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </CardContent>
+          </Card>
+
+          {/* Recent Developers */}
+          <Card className="shadow-sm">
+            <CardHeader className="px-4 py-3 flex flex-row items-center justify-between space-y-0">
+              <CardTitle className="text-sm font-semibold flex items-center gap-2">
+                <Users size={15} className="text-violet-500" />
+                {t('dashboard.recentDevelopers')}
+              </CardTitle>
+              <Button variant="ghost" size="sm" className="h-7 text-xs" onClick={() => navigate('/developers')}>
+                {t('dashboard.viewAll')} <ArrowRight size={12} className="ml-1" />
+              </Button>
+            </CardHeader>
+            <CardContent className="px-4 pb-4">
+              {recentDevelopers.length === 0 ? (
+                <div className="text-center py-8">
+                  <Users size={32} className="text-muted-foreground/30 mx-auto mb-2" />
+                  <p className="text-xs text-muted-foreground">{t('dashboard.noRecentDevelopers')}</p>
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  {recentDevelopers.map((dev) => {
+                    const skills = dev.skills || [];
+                    return (
+                      <div key={dev.id} className="p-3 rounded-lg border border-border/60 hover:border-border hover:bg-muted/30 transition-all cursor-pointer" onClick={() => navigate(`/developers?developerId=${dev.id}`)}>
+                        <div className="flex items-center gap-2 mb-1">
+                          <span className="font-medium text-sm truncate flex-1">
+                            {dev.name || t('developers.unnamedDeveloper')}
+                          </span>
+                          {dev.is_contacted && (
+                            <Badge variant="default" className="text-xs h-5 px-1.5">{t('developers.contacted')}</Badge>
+                          )}
+                        </div>
+                        <p className="text-xs text-muted-foreground truncate mb-1">
+                          {dev.looking_for_work ? t('developers.lookingForWork') : t('developers.notLooking')}
+                        </p>
+                        <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                          <span className="flex items-center gap-1">
+                            <MessageSquare className="w-3 h-3" />
+                            @{dev.channel?.username || t('common.unknown')}
+                          </span>
+                        </div>
+                        {skills.length > 0 && (
+                          <div className="flex gap-1 mt-1.5 flex-wrap">
+                            {skills.slice(0, 3).map((skill: string, idx: number) => (
+                              <span key={idx} className="text-[10px] px-1.5 py-0.5 bg-muted text-muted-foreground rounded-md">
+                                {skill}
+                              </span>
+                            ))}
+                            {skills.length > 3 && (
+                              <span className="text-[10px] text-muted-foreground">+{skills.length - 3}</span>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        </div>
+
+        {/* Top Channels & Sources */}
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+          <Card className="shadow-sm">
+            <CardHeader className="px-4 py-3">
+              <CardTitle className="text-sm font-semibold flex items-center gap-2">
+                <Radio size={15} className="text-blue-500" />
+                {t('dashboard.topChannels')}
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="px-4 pb-4">
+              {topChannels.length === 0 ? (
+                <p className="text-xs text-muted-foreground text-center py-4">{t('common.noData')}</p>
+              ) : (
+                <div className="space-y-2">
+                  {topChannels.map((ch, idx) => (
+                    <div key={ch.id} className="flex items-center gap-3 p-2 rounded-lg hover:bg-muted/30 transition-colors">
+                      <span className="w-5 h-5 rounded-md bg-blue-500/10 text-blue-600 text-xs font-bold flex items-center justify-center">{idx + 1}</span>
+                      <span className="text-sm font-medium truncate flex-1">{ch.name || ch.username}</span>
+                      <Badge variant="secondary" className="text-xs">{ch.job_count ?? 0} {t('dashboard.jobs')}</Badge>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </CardContent>
+          </Card>
+          <Card className="shadow-sm">
+            <CardHeader className="px-4 py-3">
+              <CardTitle className="text-sm font-semibold flex items-center gap-2">
+                <Globe size={15} className="text-indigo-500" />
+                {t('dashboard.topSources')}
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="px-4 pb-4">
+              {topSources.length === 0 ? (
+                <p className="text-xs text-muted-foreground text-center py-4">{t('common.noData')}</p>
+              ) : (
+                <div className="space-y-2">
+                  {topSources.map((src, idx) => (
+                    <div key={src.id} className="flex items-center gap-3 p-2 rounded-lg hover:bg-muted/30 transition-colors">
+                      <span className="w-5 h-5 rounded-md bg-indigo-500/10 text-indigo-600 text-xs font-bold flex items-center justify-center">{idx + 1}</span>
+                      <span className="text-sm font-medium truncate flex-1">{src.name}</span>
+                      <Badge variant="secondary" className="text-xs">{src.job_count ?? 0} {t('dashboard.jobs')}</Badge>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        </div>
+      </TabsContent>
+
+      {/* Analytics Tab */}
+      <TabsContent value="analytics" className="mt-4 space-y-4">
         {/* Daily Statistics Charts */}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-          <Card className="backdrop-blur-xl bg-white/70 border border-white/20 shadow-lg">
+          <Card className="shadow-sm">
             <CardHeader className="px-4 py-3">
               <CardTitle className="text-xs font-medium flex items-center gap-2">
-                <Briefcase size={14} className="text-blue-500" />
+                <Briefcase size={14} className="text-emerald-500" />
                 {t('dashboard.dailyJobPostings')}
               </CardTitle>
             </CardHeader>
@@ -775,10 +908,10 @@ const Dashboard = () => {
               <DailyJobsChart days={30} />
             </CardContent>
           </Card>
-          <Card className="backdrop-blur-xl bg-white/70 border border-white/20 shadow-lg">
+          <Card className="shadow-sm">
             <CardHeader className="px-4 py-3">
               <CardTitle className="text-xs font-medium flex items-center gap-2">
-                <Users size={14} className="text-purple-500" />
+                <Users size={14} className="text-violet-500" />
                 {t('dashboard.dailyDevelopersContacted')}
               </CardTitle>
             </CardHeader>
@@ -786,10 +919,10 @@ const Dashboard = () => {
               <DailyDevelopersChart days={30} />
             </CardContent>
           </Card>
-          <Card className="backdrop-blur-xl bg-white/70 border border-white/20 shadow-lg">
+          <Card className="shadow-sm">
             <CardHeader className="px-4 py-3">
               <CardTitle className="text-xs font-medium flex items-center gap-2">
-                <CheckCircle2 size={14} className="text-green-500" />
+                <CheckCircle2 size={14} className="text-orange-500" />
                 {t('dashboard.dailyJobsApplied')}
               </CardTitle>
             </CardHeader>
@@ -800,10 +933,10 @@ const Dashboard = () => {
         </div>
 
         {/* Daily Stats Table */}
-        <Card className="backdrop-blur-xl bg-white/70 border border-white/20 shadow-lg">
+        <Card className="shadow-sm">
           <CardHeader className="px-4 py-3">
-            <CardTitle className="text-sm font-medium flex items-center gap-2">
-              <Calendar size={14} className="text-blue-500" />
+            <CardTitle className="text-sm font-semibold flex items-center gap-2">
+              <Calendar size={15} className="text-blue-500" />
               {t('dashboard.dailyStatsTable')}
             </CardTitle>
           </CardHeader>
@@ -838,13 +971,16 @@ const Dashboard = () => {
             </Table>
           </CardContent>
         </Card>
+      </TabsContent>
 
+      {/* Activity Tab */}
+      <TabsContent value="activity" className="mt-4 space-y-4">
         {/* Current Analyzing Message */}
-        {Object.keys(currentAnalyzingMessage).length > 0 && (
-          <Card className="backdrop-blur-xl bg-white/70 border border-white/20 shadow-lg">
+        {Object.keys(currentAnalyzingMessage).length > 0 ? (
+          <Card className="shadow-sm">
             <CardHeader className="px-4 py-3">
-              <CardTitle className="text-sm font-medium flex items-center gap-2">
-                <Bot size={14} className="text-blue-500" />
+              <CardTitle className="text-sm font-semibold flex items-center gap-2">
+                <Bot size={15} className="text-blue-500" />
                 {t('dashboard.currentlyAnalyzing')}
               </CardTitle>
             </CardHeader>
@@ -865,303 +1001,247 @@ const Dashboard = () => {
               ))}
             </CardContent>
           </Card>
+        ) : (
+          <Card className="shadow-sm">
+            <CardContent className="py-12 text-center">
+              <Activity size={40} className="text-muted-foreground/30 mx-auto mb-3" />
+              <p className="text-sm text-muted-foreground">{t('dashboard.noActivity')}</p>
+            </CardContent>
+          </Card>
         )}
 
-        {/* Recent Jobs */}
-        <Card className="backdrop-blur-xl bg-white/70 border border-white/20 shadow-lg">
+        {/* Channel Operations */}
+        {Object.keys(operations).length > 0 && (
+          <Card className="shadow-sm">
+            <CardHeader className="px-4 py-3">
+              <CardTitle className="text-sm font-semibold flex items-center gap-2">
+                <TrendingUp size={15} className="text-blue-500" />
+                {t('dashboard.liveAnalysis')}
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="px-4 pb-4 space-y-2">
+              {Object.entries(operations).map(([channelUsername, op]) => {
+                const progress = channelProgress[channelUsername];
+                const pct = progress && progress.total > 0 ? Math.round((progress.analyzed / progress.total) * 100) : 0;
+                return (
+                  <div key={channelUsername} className="p-3 rounded-lg border border-border/60">
+                    <div className="flex items-center justify-between mb-2">
+                      <span className="text-sm font-medium">{channelUsername}</span>
+                      <Badge variant="secondary" className="text-xs">{op.type}</Badge>
+                    </div>
+                    {progress && progress.total > 0 && (
+                      <>
+                        <Progress value={pct} className="h-1.5 mb-1" />
+                        <p className="text-xs text-muted-foreground text-right">{progress.analyzed} / {progress.total}</p>
+                      </>
+                    )}
+                  </div>
+                );
+              })}
+            </CardContent>
+          </Card>
+        )}
+      </TabsContent>
+
+      {/* System Controls Tab */}
+      <TabsContent value="system" className="mt-4 space-y-4">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          {/* Cron Job Control */}
+          <Card className="shadow-sm">
+            <CardHeader className="px-4 py-3">
+              <CardTitle className="text-sm font-semibold flex items-center gap-2">
+                <Timer size={15} className={cronRunning ? 'text-green-500' : 'text-muted-foreground'} />
+                {t('dashboard.cronJob')}
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="px-4 pb-4 space-y-3">
+              <div className="flex items-center justify-between p-3 rounded-lg bg-muted/30">
+                <div className="flex items-center gap-2">
+                  <span className={`w-2 h-2 rounded-full ${cronRunning ? 'bg-green-500 animate-pulse' : 'bg-muted-foreground/30'}`} />
+                  <span className="text-sm font-medium">{cronRunning ? t('dashboard.running') : t('dashboard.stopped')}</span>
+                </div>
+                <Button
+                  variant={cronRunning ? 'destructive' : 'default'}
+                  onClick={() => toggleCron()}
+                  size="sm"
+                  className="h-8"
+                >
+                  {cronRunning ? <><Square size={12} className="mr-1.5" />{t('dashboard.stopCronJob')}</> : <><Play size={12} className="mr-1.5" />{t('dashboard.startCronJob')}</>}
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* Real-time Listener Control */}
+          <Card className="shadow-sm">
+            <CardHeader className="px-4 py-3">
+              <CardTitle className="text-sm font-semibold flex items-center gap-2">
+                <Radio size={15} className={listenerRunning ? 'text-green-500' : listenedChannels.length > 0 ? 'text-yellow-500' : 'text-muted-foreground'} />
+                {t('dashboard.realTimeListener')}
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="px-4 pb-4 space-y-3">
+              <div className="flex items-center justify-between p-3 rounded-lg bg-muted/30">
+                <div className="flex items-center gap-2">
+                  <span className={`w-2 h-2 rounded-full ${listenerRunning ? 'bg-green-500 animate-pulse' : 'bg-muted-foreground/30'}`} />
+                  <span className="text-sm font-medium">
+                    {listenerRunning ? t('dashboard.listening') : listenedChannels.length > 0 ? t('dashboard.listenerNotRunning') : t('dashboard.stopped')}
+                  </span>
+                  {listenedChannels.length > 0 && (
+                    <Badge variant="secondary" className="text-xs">{listenedChannels.length}</Badge>
+                  )}
+                </div>
+                <div className="flex gap-1.5">
+                  <Button variant="outline" onClick={() => setListenerDialogOpen(true)} size="sm" className="h-8">
+                    {t('dashboard.manage')}
+                  </Button>
+                  {listenerRunning ? (
+                    <Button variant="destructive" onClick={() => stopListener()} size="sm" className="h-8">
+                      <Square size={12} />
+                    </Button>
+                  ) : (
+                    <Button variant="default" onClick={() => startListener()} size="sm" className="h-8">
+                      <Play size={12} />
+                    </Button>
+                  )}
+                </div>
+              </div>
+              <div className="flex items-center justify-between px-1">
+                <label htmlFor="autoAnalyze" className="text-xs text-muted-foreground cursor-pointer">
+                  {t('common.autoAnalyze')}
+                </label>
+                <Switch id="autoAnalyze" checked={autoAnalyze} onCheckedChange={handleAutoAnalyzeChange} size="sm" />
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+
+        {/* System Status */}
+        <Card className="shadow-sm">
           <CardHeader className="px-4 py-3">
-            <CardTitle className="text-sm font-medium flex items-center gap-2">
-              <Briefcase size={14} className="text-blue-500" />
-              {t('dashboard.recentJobs')}
+            <CardTitle className="text-sm font-semibold flex items-center gap-2">
+              <Activity size={15} className="text-blue-500" />
+              {t('dashboard.systemStatus')}
             </CardTitle>
           </CardHeader>
           <CardContent className="px-4 pb-4">
-            {recentJobs.length === 0 ? (
-              <div className="text-center py-6">
-                <Briefcase size={32} className="text-muted-foreground/30 mx-auto mb-2" />
-                <p className="text-xs text-muted-foreground">{t('dashboard.noRecentJobs')}</p>
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+              <div className="p-3 rounded-lg bg-muted/30 text-center">
+                <Bot size={20} className={`mx-auto mb-1.5 ${stats?.ollama_available ? 'text-green-500' : 'text-red-400'}`} />
+                <p className="text-xs font-medium">{t('dashboard.ollama')}</p>
+                <p className={`text-xs ${stats?.ollama_available ? 'text-green-600' : 'text-red-500'}`}>{stats?.ollama_available ? t('dashboard.online') : t('dashboard.offline')}</p>
               </div>
-            ) : (
-              <div className="space-y-2">
-                {recentJobs.map((job) => {
-                  let skills: string[] = [];
-                  if (Array.isArray(job.skills)) {
-                    skills = job.skills;
-                  } else if (typeof job.skills === 'string') {
-                    skills = (job.skills as string).split('\n').filter(s => s.trim());
-                  }
-                  return (
-                    <div key={job.id} className="p-3 rounded-lg bg-gradient-to-r from-white/50 to-white/30 hover:from-white/70 hover:to-white/50 transition-all border border-border">
-                      <div className="flex items-center gap-2 mb-0.5">
-                        <span className="font-medium text-sm truncate flex-1">
-                          {job.title || t('jobs.untitledJob')}
-                        </span>
-                        {job.is_applied && (
-                          <Badge variant="default" className="text-xs h-5 px-1.5">{t('jobs.applied')}</Badge>
-                        )}
-                      </div>
-                      <p className="text-sm text-muted-foreground truncate">
-                        {job.company || t('jobs.unknownCompany')}
-                      </p>
-                      {job.location && (
-                        <p className="text-sm text-muted-foreground truncate">
-                          <MapPin className="w-3 h-3 inline mr-1" />
-                          {job.location}
-                        </p>
-                      )}
-                      {job.role_type && (
-                        <div className="flex gap-1 flex-wrap">
-                          {job.role_type.split(/[|,]/).map((role, idx) => (
-                            <Badge
-                              key={idx}
-                              variant="secondary"
-                              className="text-xs h-5 px-1.5 bg-blue-50 text-blue-700 border-blue-200"
-                            >
-                              {role.trim()}
-                            </Badge>
-                          ))}
-                        </div>
-                      )}
-                      {job.contact && (
-                        <p className="text-sm text-muted-foreground truncate">
-                          <Mail className="w-3 h-3 inline mr-1" />
-                          {job.contact}
-                        </p>
-                      )}
-                      {job.summary && (
-                        <p className="text-sm text-foreground/70 mt-2 line-clamp-2">
-                          {job.summary}
-                        </p>
-                      )}
-                      {skills.length > 0 && (
-                        <div className="flex gap-1 mt-1.5 flex-wrap">
-                          {skills.slice(0, 3).map((skill: string, idx: number) => (
-                            <span key={idx} className="text-sm px-1.5 py-0.5 bg-muted text-muted-foreground rounded-md">
-                              {skill}
-                            </span>
-                          ))}
-                          {skills.length > 3 && (
-                            <span className="text-xs text-muted-foreground">+{skills.length - 3}</span>
-                          )}
-                        </div>
-                      )}
-                      <div className="flex items-center gap-2 mt-1 text-xs text-muted-foreground">
-                        <span className="flex items-center gap-1">
-                          <MessageSquare className="w-3 h-3" />
-                          {job.channel_name || job.channel?.username || t('common.unknown')}
-                        </span>
-                        <span className="flex items-center gap-1">
-                          <Calendar className="w-3 h-3" />
-                          {job.message?.date
-                            ? new Date(job.message.date).toLocaleDateString()
-                            : t('common.unknown')
-                          }
-                        </span>
-                      </div>
-                      <div className="mt-2 pt-2 border-t">
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          className="w-full text-xs"
-                          onClick={() => navigate(`/jobs?jobId=${job.id}`)}
-                        >
-                          {t('common.view')}
-                        </Button>
-                      </div>
-                    </div>
-                  );
-                })}
+              <div className="p-3 rounded-lg bg-muted/30 text-center">
+                <Timer size={20} className={`mx-auto mb-1.5 ${cronRunning ? 'text-green-500' : 'text-muted-foreground'}`} />
+                <p className="text-xs font-medium">{t('dashboard.cronJob')}</p>
+                <p className={`text-xs ${cronRunning ? 'text-green-600' : 'text-muted-foreground'}`}>{cronRunning ? t('dashboard.running') : t('dashboard.stopped')}</p>
               </div>
-            )}
-          </CardContent>
-        </Card>
-
-        {/* Recent Developers */}
-        <Card className="backdrop-blur-xl bg-white/70 border border-white/20 shadow-lg">
-          <CardHeader className="px-4 py-3">
-            <CardTitle className="text-sm font-medium flex items-center gap-2">
-              <Users size={14} className="text-purple-500" />
-              {t('dashboard.recentDevelopers')}
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="px-4 pb-4">
-            {recentDevelopers.length === 0 ? (
-              <div className="text-center py-6">
-                <Users size={32} className="text-muted-foreground/30 mx-auto mb-2" />
-                <p className="text-xs text-muted-foreground">{t('dashboard.noRecentDevelopers')}</p>
+              <div className="p-3 rounded-lg bg-muted/30 text-center">
+                <Radio size={20} className={`mx-auto mb-1.5 ${listenerRunning ? 'text-green-500' : 'text-muted-foreground'}`} />
+                <p className="text-xs font-medium">{t('dashboard.realTimeListener')}</p>
+                <p className={`text-xs ${listenerRunning ? 'text-green-600' : 'text-muted-foreground'}`}>{listenerRunning ? t('dashboard.listening') : t('dashboard.stopped')}</p>
               </div>
-            ) : (
-              <div className="space-y-2">
-                {recentDevelopers.map((dev) => {
-                  const skills = dev.skills || [];
-                  return (
-                    <div key={dev.id} className="p-3 rounded-lg bg-gradient-to-r from-white/50 to-white/30 hover:from-white/70 hover:to-white/50 transition-all border border-border">
-                      <div className="flex items-center gap-2 mb-0.5">
-                        <span className="font-medium text-sm truncate flex-1">
-                          {dev.name || t('developers.unnamedDeveloper')}
-                        </span>
-                        {dev.is_contacted && (
-                          <Badge variant="default" className="text-xs h-5 px-1.5">{t('developers.contacted')}</Badge>
-                        )}
-                      </div>
-                      <p className="text-sm text-muted-foreground truncate">
-                        {dev.looking_for_work ? t('developers.lookingForWork') : t('developers.notLooking')}
-                      </p>
-                      {dev.experience && (
-                        <p className="text-sm text-muted-foreground">
-                          <Briefcase className="w-3 h-3 inline mr-1" />
-                          {dev.experience}
-                        </p>
-                      )}
-                      {dev.contact && (
-                        <p className="text-sm text-muted-foreground truncate">
-                          <Mail className="w-3 h-3 inline mr-1" />
-                          {dev.contact}
-                        </p>
-                      )}
-                      {dev.github && (
-                        <p className="text-sm text-muted-foreground truncate">
-                          <ExternalLink className="w-3 h-3 inline mr-1" />
-                          GitHub: {dev.github}
-                        </p>
-                      )}
-                      {dev.linkedin && (
-                        <p className="text-sm text-muted-foreground truncate">
-                          <ExternalLink className="w-3 h-3 inline mr-1" />
-                          LinkedIn: {dev.linkedin}
-                        </p>
-                      )}
-                      {dev.summary && (
-                        <p className="text-sm text-foreground/70 mt-2 line-clamp-2">
-                          {dev.summary}
-                        </p>
-                      )}
-                      {skills.length > 0 && (
-                        <div className="flex gap-1 mt-1.5 flex-wrap">
-                          {skills.slice(0, 3).map((skill: string, idx: number) => (
-                            <span key={idx} className="text-sm px-1.5 py-0.5 bg-muted text-muted-foreground rounded-md">
-                              {skill}
-                            </span>
-                          ))}
-                          {skills.length > 3 && (
-                            <span className="text-xs text-muted-foreground">+{skills.length - 3}</span>
-                          )}
-                        </div>
-                      )}
-                      <div className="flex items-center gap-1 mt-1 text-xs text-muted-foreground">
-                        <MessageSquare className="w-3 h-3" />
-                        @{dev.channel?.username || t('common.unknown')}
-                      </div>
-                      <div className="mt-2 pt-2 border-t">
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          className="w-full text-xs"
-                          onClick={() => navigate(`/developers?developerId=${dev.id}`)}
-                        >
-                          {t('common.view')}
-                        </Button>
-                      </div>
-                    </div>
-                  );
-                })}
+              <div className="p-3 rounded-lg bg-muted/30 text-center">
+                <Radio size={20} className="mx-auto mb-1.5 text-blue-500" />
+                <p className="text-xs font-medium">{t('dashboard.channelsMonitored')}</p>
+                <p className="text-xs font-bold text-foreground">{stats?.total_channels ?? 0}</p>
               </div>
-            )}
-          </CardContent>
-        </Card>
-      </div>
-
-      {/* Cleanup Confirmation Dialog */}
-      <Dialog open={cleanupDialogOpen} onOpenChange={setCleanupDialogOpen}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>{t('dashboard.cleanupOldMessages')}</DialogTitle>
-            <DialogDescription>
-              {t('dashboard.deleteMessagesOlder', { days: cleanupDays })}
-            </DialogDescription>
-          </DialogHeader>
-          <div className="space-y-4">
-            <div className="space-y-1.5">
-              <label className="text-sm font-medium">{t('common.daysToKeep')}</label>
-              <Input
-                type="number"
-                min="1"
-                value={cleanupDays}
-                onChange={(e) => setCleanupDays(parseInt(e.target.value) || 30)}
-              />
             </div>
+          </CardContent>
+        </Card>
+      </TabsContent>
+    </Tabs>
+
+    {/* Cleanup Confirmation Dialog */}
+    <Dialog open={cleanupDialogOpen} onOpenChange={setCleanupDialogOpen}>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>{t('dashboard.cleanupOldMessages')}</DialogTitle>
+          <DialogDescription>
+            {t('dashboard.deleteMessagesOlder', { days: cleanupDays })}
+          </DialogDescription>
+        </DialogHeader>
+        <div className="space-y-4">
+          <div className="space-y-1.5">
+            <label className="text-sm font-medium">{t('common.daysToKeep')}</label>
+            <Input
+              type="number"
+              min="1"
+              value={cleanupDays}
+              onChange={(e) => setCleanupDays(parseInt(e.target.value) || 30)}
+            />
           </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setCleanupDialogOpen(false)}>
-              {t('common.cancel')}
-            </Button>
-            <Button variant="destructive" onClick={cleanupOldMessages} disabled={loadingActions.has('cleanup')}>
-              {loadingActions.has('cleanup') ? t('common.cleaning') : t('common.cleanupOldMessages')}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+        </div>
+        <DialogFooter>
+          <Button variant="outline" onClick={() => setCleanupDialogOpen(false)}>
+            {t('common.cancel')}
+          </Button>
+          <Button variant="destructive" onClick={cleanupOldMessages} disabled={loadingActions.has('cleanup')}>
+            {loadingActions.has('cleanup') ? t('common.cleaning') : t('common.cleanupOldMessages')}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
 
-      {/* Unified Manage Listening Dialog */}
-      <Dialog
-        open={listenerDialogOpen}
-        onOpenChange={setListenerDialogOpen}
-      >
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>{t('dashboard.manageListenerChannels')}</DialogTitle>
-            <DialogDescription>
-              {channels.filter(c => listenedChannels.includes(c.username)).length} of {channels.length} {t('dashboard.channels')} {t('dashboard.listening')}
-            </DialogDescription>
-          </DialogHeader>
-          <ScrollArea className="h-[55vh] rounded-md border">
-            <div className="p-2">
-              {channels.length === 0 ? (
-                <p className="text-sm text-muted-foreground text-center py-4">{t('dashboard.noChannels')}</p>
-              ) : (
-                channels.map((channel, idx) => {
-                  const isListening = listenedChannels.includes(channel.username);
-                  const actionKey = `listener-toggle-${channel.id}`;
-                  return (
-                    <div key={channel.id}>
-                      <div className="flex justify-between items-center py-2.5 px-1">
-                        <div className="flex items-center gap-2.5">
-                          <div className={`w-2 h-2 rounded-full shrink-0 ${isListening ? 'bg-green-500' : 'bg-muted-foreground/30'}`} />
-                          <div>
-                            <p className="font-medium text-sm">{channel.username}</p>
-                            {channel.name && (
-                              <p className="text-xs text-muted-foreground">{channel.name}</p>
-                            )}
-                            {!channel.is_active && (
-                              <span className="text-[10px] text-amber-600">{t('channels.inactive')}</span>
-                            )}
-                          </div>
+    {/* Unified Manage Listening Dialog */}
+    <Dialog
+      open={listenerDialogOpen}
+      onOpenChange={setListenerDialogOpen}
+    >
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>{t('dashboard.manageListenerChannels')}</DialogTitle>
+          <DialogDescription>
+            {channels.filter(c => listenedChannels.includes(c.username)).length} of {channels.length} {t('dashboard.channels')} {t('dashboard.listening')}
+          </DialogDescription>
+        </DialogHeader>
+        <ScrollArea className="h-[55vh] rounded-md border">
+          <div className="p-2">
+            {channels.length === 0 ? (
+              <p className="text-sm text-muted-foreground text-center py-4">{t('dashboard.noChannels')}</p>
+            ) : (
+              channels.map((channel, idx) => {
+                const isListening = listenedChannels.includes(channel.username);
+                const actionKey = `listener-toggle-${channel.id}`;
+                return (
+                  <div key={channel.id}>
+                    <div className="flex justify-between items-center py-2.5 px-1">
+                      <div className="flex items-center gap-2.5">
+                        <div className={`w-2 h-2 rounded-full shrink-0 ${isListening ? 'bg-green-500' : 'bg-muted-foreground/30'}`} />
+                        <div>
+                          <p className="font-medium text-sm">{channel.username}</p>
+                          {channel.name && (
+                            <p className="text-xs text-muted-foreground">{channel.name}</p>
+                          )}
+                          {!channel.is_active && (
+                            <span className="text-[10px] text-amber-600">{t('channels.inactive')}</span>
+                          )}
                         </div>
-                        <Button
-                          variant={isListening ? 'destructive' : 'default'}
-                          size="sm"
-                          className="h-7 text-xs"
-                          onClick={() => toggleChannelListener(channel)}
-                          disabled={loadingActions.has(actionKey)}
-                        >
-                          {loadingActions.has(actionKey) ? '…' : isListening ? t('common.stop') : t('common.listen')}
-                        </Button>
                       </div>
-                      {idx < channels.length - 1 && <Separator />}
+                      <Button
+                        variant={isListening ? 'destructive' : 'default'}
+                        size="sm"
+                        className="h-7 text-xs"
+                        onClick={() => toggleChannelListener(channel)}
+                        disabled={loadingActions.has(actionKey)}
+                      >
+                        {loadingActions.has(actionKey) ? '…' : isListening ? t('common.stop') : t('common.listen')}
+                      </Button>
                     </div>
-                  );
-                })
-              )}
-            </div>
-          </ScrollArea>
-          <DialogFooter className="flex-col sm:flex-row gap-2">
-            <Button variant="outline" onClick={() => setListenerDialogOpen(false)} className="w-full sm:w-auto">
-              {t('common.close')}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-    </div>
+                    {idx < channels.length - 1 && <Separator />}
+                  </div>
+                );
+              })
+            )}
+          </div>
+        </ScrollArea>
+        <DialogFooter className="flex-col sm:flex-row gap-2">
+          <Button variant="outline" onClick={() => setListenerDialogOpen(false)} className="w-full sm:w-auto">
+            {t('common.close')}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
     </div>
   );
 };
