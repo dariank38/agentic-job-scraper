@@ -692,21 +692,17 @@ const Dashboard = () => {
 
       {/* Overview Tab */}
       <TabsContent value="overview" className="mt-4 space-y-4">
-        {/* Analysis Progress Bar */}
+        {/* Analysis Progress Banner */}
         {stats && stats.total_messages > 0 && (
-          <Card className="shadow-sm">
-            <CardContent className="p-4">
-              <div className="flex items-center justify-between mb-2">
-                <span className="text-sm font-medium">{t('dashboard.analysisRate')}</span>
-                <span className="text-sm font-bold text-primary">{analysisRate}%</span>
-              </div>
-              <Progress value={analysisRate} className="h-2" />
-              <div className="flex items-center justify-between mt-2 text-xs text-muted-foreground">
-                <span>{stats.analyzed_messages} / {stats.total_messages} {t('dashboard.analyzed')}</span>
-                <span>{stats.pending_messages} {t('dashboard.pending')}</span>
-              </div>
-            </CardContent>
-          </Card>
+          <div className="flex items-center gap-3 bg-white rounded-xl px-4 py-2.5 shadow-sm ring-1 ring-border/50">
+            <TrendingUp size={15} className="text-primary shrink-0" />
+            <span className="text-sm font-medium shrink-0">{t('dashboard.analysisRate')}</span>
+            <Progress value={analysisRate} className="h-2 flex-1" />
+            <span className="text-sm font-bold text-primary shrink-0">{analysisRate}%</span>
+            <span className="text-xs text-muted-foreground shrink-0 hidden sm:inline">
+              {stats.analyzed_messages}/{stats.total_messages} &middot; {stats.pending_messages} {t('dashboard.pending')}
+            </span>
+          </div>
         )}
 
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
