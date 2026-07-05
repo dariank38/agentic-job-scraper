@@ -39,8 +39,10 @@ class AsyncOllamaAnalyzer:
 
         if total_input_length < 1500:
             num_ctx, num_predict = 2048, 2048
-        else:
+        elif total_input_length < 4000:
             num_ctx, num_predict = 4096, 4096
+        else:
+            num_ctx, num_predict = 8192, 8192
 
         logger.info(
             "[OLLAMA] Message: %d chars | System prompt: %d chars | Total: %d chars | num_ctx: %d | num_predict: %d",
@@ -60,7 +62,7 @@ class AsyncOllamaAnalyzer:
         language = detect_language(message_text)
         logger.info("[OLLAMA] Detected language: %s", language.value)
 
-        clean_text = " ".join(message_text.split())[:2000]
+        clean_text = message_text[:4000]
         msg_preview = clean_text[:50]
         options = self._get_model_options(len(clean_text))
 
@@ -97,7 +99,7 @@ class AsyncOllamaAnalyzer:
                     "total_duration": response.get("total_duration", 0),
                 }
 
-                if usage["output_tokens"] >= 1024:
+                if usage["output_tokens"] >= options["num_predict"] * 0.9:
                     logger.warning("[OLLAMA] Output may be truncated: %d tokens", usage["output_tokens"])
 
                 result = self._parse_json(response_text)
