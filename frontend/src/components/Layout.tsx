@@ -2,8 +2,7 @@ import { Link, useLocation } from 'react-router-dom';
 import { useState, createContext, useContext, useEffect, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Button } from '@/components/ui/button';
-import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from '@/components/ui/sheet';
-import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
+import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet';
 import Footer from '@/components/Footer';
 import { LanguageSwitcher } from '@/components/LanguageSwitcher';
 import type { ProgressUpdate } from '@/hooks/useWebSocket';
@@ -14,18 +13,16 @@ import {
   MessageSquare,
   Briefcase,
   Code2,
-  Menu,
   Zap,
   Globe,
-  Bot,
   Settings2,
   CheckCircle2,
   AlertCircle,
   Info,
   AlertTriangle,
   ScrollText,
-  MoreHorizontal,
-  ChevronDown,
+  Grid,
+  X,
 } from 'lucide-react';
 
 type ToastType = 'success' | 'error' | 'info' | 'warning';
@@ -497,33 +494,33 @@ const WsStatusDot = () => {
 const Layout = ({ children }: { children: React.ReactNode }) => {
   const { t } = useTranslation();
   const location = useLocation();
-  const [sheetOpen, setSheetOpen] = useState(false);
+  const [moreOpen, setMoreOpen] = useState(false);
 
-  const mainNavLinks = [
-    { path: '/', label: t('nav.dashboard'), icon: LayoutDashboard },
-    { path: '/jobs', label: t('nav.jobs'), icon: Briefcase },
-    { path: '/resume-history', label: t('nav.resumeHistory', 'Resume History'), icon: ScrollText },
+  const allNavLinks = [
+    { path: '/', label: t('nav.dashboard'), icon: LayoutDashboard, primary: true },
+    { path: '/jobs', label: t('nav.jobs'), icon: Briefcase, primary: true },
+    { path: '/resume-history', label: t('nav.resumeHistory', 'Resume History'), icon: ScrollText, primary: true },
+    { path: '/developers', label: t('nav.developers'), icon: Code2, primary: false },
+    { path: '/messages', label: t('nav.messages'), icon: MessageSquare, primary: false },
+    { path: '/channels', label: t('nav.channels'), icon: Radio, primary: false },
+    { path: '/websites', label: t('nav.websites'), icon: Globe, primary: false },
+    { path: '/telegram-accounts', label: t('nav.telegramAccounts'), icon: Radio, primary: false },
+    { path: '/settings', label: t('nav.settings'), icon: Settings2, primary: false },
   ];
 
-  const moreNavLinks = [
-    { path: '/developers', label: t('nav.developers'), icon: Code2 },
-    { path: '/messages', label: t('nav.messages'), icon: MessageSquare },
-    { path: '/channels', label: t('nav.channels'), icon: Radio },
-    { path: '/websites', label: t('nav.websites'), icon: Globe },
-    { path: '/telegram-accounts', label: t('nav.telegramAccounts'), icon: Radio },
-    { path: '/autonomous', label: t('nav.autonomous'), icon: Bot },
-    { path: '/settings', label: t('nav.settings'), icon: Settings2 },
-  ];
+  const primaryLinks = allNavLinks.filter(l => l.primary);
+  const secondaryLinks = allNavLinks.filter(l => !l.primary);
 
   const isActive = (path: string) =>
     path === '/' ? location.pathname === '/' : location.pathname.startsWith(path);
 
+  const activeSecondary = secondaryLinks.find(l => isActive(l.path));
+
   return (
     <div className="min-h-screen bg-muted/40">
-      {/* Header */}
-      <header className="bg-background border-b sticky top-0 z-50">
-        <div className="max-w-[1280px] mx-auto px-4 md:px-8 h-14 flex items-center justify-between gap-4">
-
+      {/* Desktop Header */}
+      <header className="hidden md:block bg-background/95 backdrop-blur-sm border-b sticky top-0 z-50">
+        <div className="max-w-[1280px] mx-auto px-4 lg:px-8 h-14 flex items-center gap-6">
           {/* Logo */}
           <Link to="/" className="flex items-center gap-2.5 no-underline shrink-0">
             <div className="bg-primary text-primary-foreground w-8 h-8 rounded-lg flex items-center justify-center shadow-sm">
@@ -534,112 +531,119 @@ const Layout = ({ children }: { children: React.ReactNode }) => {
             </span>
           </Link>
 
-          {/* WS status dot */}
-          <div className="hidden md:block">
-            <WsStatusDot />
-          </div>
-
-          {/* Desktop Navigation */}
-          <nav className="hidden md:flex items-center gap-1">
-            {mainNavLinks.map(({ path, label, icon: Icon }) => (
+          {/* Navigation — all items inline */}
+          <nav className="flex items-center gap-0.5 flex-1">
+            {allNavLinks.map(({ path, label, icon: Icon }) => (
               <Link
                 key={path}
                 to={path}
-                title={label}
-                className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-full text-sm font-medium no-underline transition-colors ${
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium no-underline transition-colors ${
                   isActive(path)
-                    ? 'bg-primary text-primary-foreground'
+                    ? 'bg-primary/10 text-primary'
                     : 'text-muted-foreground hover:text-foreground hover:bg-accent'
                 }`}
               >
-                <Icon size={14} />
+                <Icon size={15} className="shrink-0" />
                 <span className="hidden lg:inline">{label}</span>
               </Link>
             ))}
-            <Popover>
-              <PopoverTrigger asChild>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  className="flex items-center gap-1.5 px-2.5 py-1.5 h-auto rounded-full text-sm font-medium text-muted-foreground hover:text-foreground hover:bg-accent"
-                >
-                  <MoreHorizontal size={14} />
-                  <span className="hidden lg:inline">More</span>
-                  <ChevronDown size={14} />
-                </Button>
-              </PopoverTrigger>
-              <PopoverContent className="w-56 p-2" align="end">
-                <div className="flex flex-col gap-1">
-                  {moreNavLinks.map(({ path, label, icon: Icon }) => (
-                    <Link
-                      key={path}
-                      to={path}
-                      className={`flex items-center gap-2 px-3 py-2 rounded-md text-sm font-medium no-underline transition-colors ${
-                        isActive(path)
-                          ? 'bg-primary text-primary-foreground'
-                          : 'text-muted-foreground hover:text-foreground hover:bg-accent'
-                      }`}
-                    >
-                      <Icon size={14} />
-                      {label}
-                    </Link>
-                  ))}
-                </div>
-              </PopoverContent>
-            </Popover>
-            <LanguageSwitcher />
           </nav>
 
-          {/* Mobile Menu — shadcn Sheet */}
-          <div className="md:hidden">
-            <Sheet open={sheetOpen} onOpenChange={setSheetOpen}>
-              <SheetTrigger asChild>
-                <Button variant="ghost" size="icon">
-                  <Menu size={20} />
-                </Button>
-              </SheetTrigger>
-              <SheetContent side="left" className="w-64 p-0">
-                <SheetHeader className="px-4 py-4 border-b">
-                  <SheetTitle className="flex items-center gap-2">
-                    <div className="bg-primary text-primary-foreground w-7 h-7 rounded-md flex items-center justify-center">
-                      <Zap size={13} strokeWidth={2.5} />
-                    </div>
-                    Job Scraper
-                  </SheetTitle>
-                </SheetHeader>
-                <nav className="flex flex-col p-3 gap-1">
-                  {[...mainNavLinks, ...moreNavLinks].map(({ path, label, icon: Icon }) => (
-                    <Button
-                      key={path}
-                      asChild
-                      variant={isActive(path) ? 'secondary' : 'ghost'}
-                      className="justify-start gap-2 font-medium"
-                      onClick={() => setSheetOpen(false)}
-                    >
-                      <Link to={path}>
-                        <Icon size={15} />
-                        {label}
-                      </Link>
-                    </Button>
-                  ))}
-                  <div className="border-t pt-3 mt-3">
-                    <LanguageSwitcher />
-                  </div>
-                </nav>
-              </SheetContent>
-            </Sheet>
+          {/* Right side */}
+          <div className="flex items-center gap-2 shrink-0">
+            <WsStatusDot />
+            <LanguageSwitcher />
           </div>
+        </div>
+      </header>
 
+      {/* Mobile Header — minimal, just logo + status */}
+      <header className="md:hidden bg-background/95 backdrop-blur-sm border-b sticky top-0 z-50">
+        <div className="px-4 h-12 flex items-center justify-between">
+          <Link to="/" className="flex items-center gap-2 no-underline">
+            <div className="bg-primary text-primary-foreground w-7 h-7 rounded-md flex items-center justify-center">
+              <Zap size={13} strokeWidth={2.5} />
+            </div>
+            <span className="font-bold text-foreground text-sm tracking-tight">
+              Job Scraper
+            </span>
+          </Link>
+          <div className="flex items-center gap-2">
+            <WsStatusDot />
+            <LanguageSwitcher />
+          </div>
         </div>
       </header>
 
       {/* Main Content */}
-      <main className="max-w-[1280px] mx-auto px-4 md:px-6 lg:px-8 py-8">
+      <main className="max-w-[1280px] mx-auto px-4 md:px-6 lg:px-8 py-6 md:py-8 pb-24 md:pb-8">
         {children}
       </main>
 
-      {/* Footer */}
-      <Footer />
+      {/* Footer — desktop only */}
+      <div className="hidden md:block">
+        <Footer />
+      </div>
+
+      {/* Mobile Bottom Tab Bar */}
+      <nav className="md:hidden fixed bottom-0 inset-x-0 z-50 bg-background/95 backdrop-blur-sm border-t">
+        <div className="flex items-stretch h-16">
+          {primaryLinks.map(({ path, label, icon: Icon }) => (
+            <Link
+              key={path}
+              to={path}
+              className={`flex-1 flex flex-col items-center justify-center gap-0.5 no-underline transition-colors ${
+                isActive(path)
+                  ? 'text-primary'
+                  : 'text-muted-foreground'
+              }`}
+            >
+              <Icon size={20} strokeWidth={isActive(path) ? 2.5 : 2} />
+              <span className="text-[10px] font-medium truncate max-w-full px-1">{label}</span>
+            </Link>
+          ))}
+
+          {/* More button */}
+          <button
+            onClick={() => setMoreOpen(true)}
+            className={`flex-1 flex flex-col items-center justify-center gap-0.5 transition-colors ${
+              activeSecondary ? 'text-primary' : 'text-muted-foreground'
+            }`}
+          >
+            <Grid size={20} strokeWidth={activeSecondary ? 2.5 : 2} />
+            <span className="text-[10px] font-medium">More</span>
+          </button>
+        </div>
+      </nav>
+
+      {/* Mobile More Sheet — bottom slide-up */}
+      <Sheet open={moreOpen} onOpenChange={setMoreOpen}>
+        <SheetContent side="bottom" showCloseButton={false} className="rounded-t-2xl p-0">
+          <SheetHeader className="px-4 pt-4 pb-2 flex-row items-center justify-between">
+            <SheetTitle className="text-base font-semibold">More</SheetTitle>
+            <Button variant="ghost" size="icon-sm" onClick={() => setMoreOpen(false)}>
+              <X size={16} />
+            </Button>
+          </SheetHeader>
+          <div className="grid grid-cols-3 gap-1 p-3 pb-6">
+            {secondaryLinks.map(({ path, label, icon: Icon }) => (
+              <Link
+                key={path}
+                to={path}
+                onClick={() => setMoreOpen(false)}
+                className={`flex flex-col items-center gap-2 p-3 rounded-xl no-underline transition-colors ${
+                  isActive(path)
+                    ? 'bg-primary/10 text-primary'
+                    : 'text-muted-foreground hover:text-foreground hover:bg-accent'
+                }`}
+              >
+                <Icon size={22} />
+                <span className="text-xs font-medium text-center leading-tight">{label}</span>
+              </Link>
+            ))}
+          </div>
+        </SheetContent>
+      </Sheet>
     </div>
   );
 };

@@ -12,7 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.connection import get_db, AsyncSessionLocal
 from app.models import Channel, Developer, Job, Message, Operation
-from app.tasks.helpers import _to_bool
+from app.tasks.helpers import _to_bool, _to_str, _resolve_contacts, _normalize_category, _normalize_salary_level, _normalize_priority
 from app.tasks import (
     analyze_messages,
     broadcast_progress,
@@ -143,7 +143,7 @@ def register_analyze_action_routes(app):
                         job_data = analysis.get("job_posting", {})
                         job_result = await db.execute(select(Job).filter(Job.message_id == message.id))
                         job = job_result.scalar_one_or_none()
-                        summary_text = job_data.get("summary") or ""
+                        summary_text = _to_str(job_data.get("jd")) or _to_str(job_data.get("summary")) or ""
                         title = job_data.get("title") or (summary_text.split(".")[0].strip()[:200] if summary_text else None)
                         if job:
                             job.title = title
@@ -152,13 +152,18 @@ def register_analyze_action_routes(app):
                             job.is_remote = _to_bool(job_data.get("is_remote"))
                             job.role_type = _to_str(job_data.get("role_type"))
                             job.skills = job_data.get("skills")
-                            job.contact = job_data.get("contact")
-                            job.summary = job_data.get("summary")
-                            job.translated_text = analysis.get("translated_text")
-                            job.confidence = analysis.get("confidence")
+                            job.jd = _to_str(job_data.get("jd")) or _to_str(job_data.get("summary"))
+                            hr_contact, channel_contact = _resolve_contacts(job_data.get("contacts"), job_data, channel.name if channel else None, message)
+                            job.hr_contact = hr_contact
+                            job.channel_contact = channel_contact
+                            job.salary = _to_str(job_data.get("salary"))
+                            job.salary_level = _normalize_salary_level(job_data.get("salary_level"))
+                            job.category = _normalize_category(job_data.get("category"))
+                            job.priority = _normalize_priority(job_data.get("priority"))
                             job.analyzed_at = datetime.utcnow()
                             job.needs_reanalysis = False
                         else:
+                            hr_contact, channel_contact = _resolve_contacts(job_data.get("contacts"), job_data, channel.name if channel else None, message)
                             db.add(Job(
                                 message_id=message.id,
                                 channel_id=message.channel_id,
@@ -170,10 +175,13 @@ def register_analyze_action_routes(app):
                                 is_remote=_to_bool(job_data.get("is_remote")),
                                 role_type=_to_str(job_data.get("role_type")),
                                 skills=job_data.get("skills"),
-                                contact=job_data.get("contact"),
-                                summary=job_data.get("summary"),
-                                translated_text=analysis.get("translated_text"),
-                                confidence=analysis.get("confidence"),
+                                salary=_to_str(job_data.get("salary")),
+                                salary_level=_normalize_salary_level(job_data.get("salary_level")),
+                                category=_normalize_category(job_data.get("category")),
+                                priority=_normalize_priority(job_data.get("priority")),
+                                jd=_to_str(job_data.get("jd")) or _to_str(job_data.get("summary")),
+                                hr_contact=hr_contact,
+                                channel_contact=channel_contact,
                             ))
                             message.needs_reanalysis = False
 
@@ -188,8 +196,6 @@ def register_analyze_action_routes(app):
                             dev.contact = dev_data.get("contact")
                             dev.looking_for_work = _to_bool(dev_data.get("looking_for_work"))
                             dev.summary = dev_data.get("summary")
-                            dev.translated_text = analysis.get("translated_text")
-                            dev.confidence = analysis.get("confidence")
                             dev.analyzed_at = datetime.utcnow()
                             message.needs_reanalysis = False
                         else:
@@ -202,8 +208,6 @@ def register_analyze_action_routes(app):
                                 contact=dev_data.get("contact"),
                                 looking_for_work=_to_bool(dev_data.get("looking_for_work")),
                                 summary=dev_data.get("summary"),
-                                translated_text=analysis.get("translated_text"),
-                                confidence=analysis.get("confidence"),
                             ))
                             message.needs_reanalysis = False
                     else:
@@ -301,8 +305,6 @@ def register_analyze_action_routes(app):
                 return {"success": True, "analyzed": False, "reason": "No relevant content found"}
 
             category = result_data.get("category", "other")
-            confidence = result_data.get("confidence")
-            translated_text = result_data.get("translated_text")
 
             if category == "job_posting" and result_data.get("job_posting"):
                 job_data = result_data.get("job_posting", {})
@@ -316,8 +318,8 @@ def register_analyze_action_routes(app):
                 if isinstance(location, list):
                     location = ", ".join(location)
 
-                summary_str = job_data.get("summary") or ""
-                title = job_data.get("title") or (summary_str.split(".")[0].strip()[:200] if summary_str else None)
+                jd_text = _to_str(job_data.get("jd")) or _to_str(job_data.get("summary")) or ""
+                title = job_data.get("title") or (jd_text.split(".")[0].strip()[:200] if jd_text else None)
                 company = job_data.get("company")
                 if title and company:
                     existing_job_result = await db.execute(select(Job).filter(Job.title == title, Job.company == company))
@@ -330,20 +332,16 @@ def register_analyze_action_routes(app):
                 if isinstance(role_type, list):
                     role_type = ", ".join(role_type)
 
-                contact = job_data.get("contact")
-                if isinstance(contact, list):
-                    contact = ", ".join(contact)
-                contact_type = job_data.get("contact_type")
-                if isinstance(contact_type, list):
-                    contact_type = ", ".join(contact_type)
+                hr_contact, channel_contact = _resolve_contacts(
+                    job_data.get("contacts"), job_data,
+                    channel.name if channel else None, message,
+                )
 
                 db.add(Job(
                     message_id=message.id,
                     channel_id=message.channel_id,
                     channel_name=channel.name if channel else None,
                     source_type="telegram",
-                    confidence=confidence,
-                    translated_text=translated_text,
                     title=title,
                     company=company,
                     company_link=job_data.get("company_link"),
@@ -351,9 +349,13 @@ def register_analyze_action_routes(app):
                     is_remote=is_remote,
                     role_type=job_data.get("role_type"),
                     skills=job_data.get("skills", []),
-                    contact=contact,
-                    contact_type=contact_type,
-                    summary=job_data.get("summary"),
+                    salary=_to_str(job_data.get("salary")),
+                    salary_level=_normalize_salary_level(job_data.get("salary_level")),
+                    category=_normalize_category(job_data.get("category")),
+                    priority=_normalize_priority(job_data.get("priority")),
+                    jd=jd_text or None,
+                    hr_contact=hr_contact,
+                    channel_contact=channel_contact,
                 ))
                 message.analysis_status = "analyzed"
                 await db.commit()
@@ -385,8 +387,6 @@ def register_analyze_action_routes(app):
                 db.add(Developer(
                     message_id=message.id,
                     channel_id=message.channel_id,
-                    confidence=confidence,
-                    translated_text=translated_text,
                     name=name,
                     skills=pi_data.get("skills", []),
                     experience=pi_data.get("experience"),

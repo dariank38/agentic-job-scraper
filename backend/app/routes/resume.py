@@ -264,10 +264,8 @@ def register_resume_routes(app):
                 if job.skills:
                     skills = job.skills if isinstance(job.skills, list) else [job.skills]
                     parts.append(f"技能要求：{', '.join(skills)}")
-                if job.summary:
-                    parts.append(f"\n职位描述：\n{job.summary}")
-                if job.translated_text:
-                    parts.append(f"\n英文原文：\n{job.translated_text}")
+                if job.jd:
+                    parts.append(f"\n职位描述：\n{job.jd}")
                 job_description = "\n".join(parts)
             job_title = job.title or job.company or f"Job #{request.job_id}"
         elif request.message_text:
@@ -413,10 +411,8 @@ def register_resume_routes(app):
                 if job.skills:
                     skills = job.skills if isinstance(job.skills, list) else [job.skills]
                     parts.append(f"技能要求：{', '.join(skills)}")
-                if job.summary:
-                    parts.append(f"\n职位描述：\n{job.summary}")
-                if job.translated_text:
-                    parts.append(f"\n英文原文：\n{job.translated_text}")
+                if job.jd:
+                    parts.append(f"\n职位描述：\n{job.jd}")
                 job_description = "\n".join(parts)
         elif request.message_text:
             job_description = request.message_text.strip()
@@ -564,10 +560,8 @@ def register_resume_routes(app):
                 if job.skills:
                     skills = job.skills if isinstance(job.skills, list) else [job.skills]
                     parts.append(f"技能要求：{', '.join(skills)}")
-                if job.summary:
-                    parts.append(f"\n职位描述：\n{job.summary}")
-                if job.translated_text:
-                    parts.append(f"\n英文原文：\n{job.translated_text}")
+                if job.jd:
+                    parts.append(f"\n职位描述：\n{job.jd}")
                 job_description = "\n".join(parts)
         elif request.message_text:
             job_description = request.message_text.strip()

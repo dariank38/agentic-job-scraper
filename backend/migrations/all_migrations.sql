@@ -152,38 +152,20 @@ CREATE TABLE IF NOT EXISTS analysis_runs (
 CREATE INDEX IF NOT EXISTS idx_analysis_runs_status ON analysis_runs(status);
 CREATE INDEX IF NOT EXISTS idx_analysis_runs_channel ON analysis_runs(channel_id);
 
--- 20. autonomous system tables
-CREATE TABLE IF NOT EXISTS autonomous_states (
-    key VARCHAR(255) PRIMARY KEY,
-    value JSONB NOT NULL DEFAULT '{}',
-    updated_at TIMESTAMP DEFAULT NOW()
-);
+-- 20. Drop deprecated autonomous system tables
+DROP TABLE IF EXISTS autonomous_states;
+DROP TABLE IF EXISTS fetch_outcomes;
+DROP TABLE IF EXISTS source_scorings;
 
-CREATE TABLE IF NOT EXISTS fetch_outcomes (
-    id SERIAL PRIMARY KEY,
-    source_id INTEGER,
-    source_type VARCHAR(50) DEFAULT 'website',
-    fetched_at TIMESTAMP DEFAULT NOW(),
-    new_jobs_found INTEGER DEFAULT 0,
-    new_messages INTEGER DEFAULT 0,
-    duration_seconds INTEGER,
-    error_type VARCHAR(50),
-    error_message TEXT
-);
-
-CREATE INDEX IF NOT EXISTS idx_fetch_outcomes_source_id ON fetch_outcomes(source_id);
-CREATE INDEX IF NOT EXISTS idx_fetch_outcomes_fetched_at ON fetch_outcomes(fetched_at);
-
-CREATE TABLE IF NOT EXISTS source_scorings (
-    source_id INTEGER PRIMARY KEY,
-    source_type VARCHAR(50) NOT NULL,
-    hourly_yield_24h INTEGER DEFAULT 0,
-    hourly_yield_7d INTEGER DEFAULT 0,
-    best_window_start VARCHAR(10),
-    best_window_end VARCHAR(10),
-    recommended_interval_minutes INTEGER DEFAULT 60,
-    consecutive_failures INTEGER DEFAULT 0,
-    last_optimized_at TIMESTAMP,
-    created_at TIMESTAMP DEFAULT NOW(),
-    updated_at TIMESTAMP DEFAULT NOW()
-);
+-- 21. Jobees-compatible fields and publish tracking on jobs
+ALTER TABLE jobs ADD COLUMN IF NOT EXISTS salary VARCHAR(120);
+ALTER TABLE jobs ADD COLUMN IF NOT EXISTS salary_level VARCHAR(20);
+ALTER TABLE jobs ADD COLUMN IF NOT EXISTS category VARCHAR(40);
+ALTER TABLE jobs ADD COLUMN IF NOT EXISTS priority VARCHAR(4);
+ALTER TABLE jobs ADD COLUMN IF NOT EXISTS jd TEXT;
+ALTER TABLE jobs ADD COLUMN IF NOT EXISTS hr_contact VARCHAR(255);
+ALTER TABLE jobs ADD COLUMN IF NOT EXISTS channel_contact VARCHAR(255);
+ALTER TABLE jobs ADD COLUMN IF NOT EXISTS published_to_jobees BOOLEAN DEFAULT FALSE;
+ALTER TABLE jobs ADD COLUMN IF NOT EXISTS published_at TIMESTAMP;
+ALTER TABLE jobs ADD COLUMN IF NOT EXISTS jobees_job_id VARCHAR(255);
+CREATE INDEX IF NOT EXISTS idx_jobs_published_to_jobees ON jobs(published_to_jobees);

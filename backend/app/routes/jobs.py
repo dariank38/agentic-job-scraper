@@ -50,14 +50,14 @@ def register_job_routes(app):
                 (Job.title.ilike(search_pattern)) |
                 (Job.company.ilike(search_pattern)) |
                 (Job.location.ilike(search_pattern)) |
-                (Job.summary.ilike(search_pattern)) |
+                (Job.jd.ilike(search_pattern)) |
                 (Job.company_link.ilike(search_pattern)) |
                 (Job.role_type.ilike(search_pattern)) |
                 (cast(Job.skills, String).ilike(search_pattern)) |
-                (Job.contact.ilike(search_pattern)) |
+                (Job.hr_contact.ilike(search_pattern)) |
+                (Job.channel_contact.ilike(search_pattern)) |
                 (Job.channel_name.ilike(search_pattern)) |
-                (Job.notes.ilike(search_pattern)) |
-                (Job.translated_text.ilike(search_pattern))
+                (Job.notes.ilike(search_pattern))
             )
 
         # Get total count
@@ -220,3 +220,23 @@ def register_job_routes(app):
         except Exception as e:
             await db.rollback()
             raise HTTPException(status_code=500, detail=f"Failed to hide job: {str(e)}")
+
+    @app.post("/api/jobs/{job_id}/publish-to-jobees")
+    async def api_publish_job_to_jobees(job_id: int):
+        """Publish a single job to Jobees."""
+        try:
+            from app.services.jobees_publisher import publish_single_job
+            result = await publish_single_job(job_id)
+            return {"success": result["failed"] == 0, **result}
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=f"Failed to publish job: {str(e)}")
+
+    @app.post("/api/jobs/publish-to-jobees/bulk")
+    async def api_publish_all_jobs_to_jobees():
+        """Publish all unpublished jobs to Jobees."""
+        try:
+            from app.services.jobees_publisher import publish_jobs
+            result = await publish_jobs()
+            return {"success": result["failed"] == 0, **result}
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=f"Failed to publish jobs: {str(e)}")

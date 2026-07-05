@@ -149,11 +149,7 @@ class Job(Base):
     channel_name = Column(String, nullable=True)  # Store channel/source name for reference
     source_type = Column(String, nullable=True)  # 'telegram' or 'website'
 
-    # AI Analysis results
-    confidence = Column(String, nullable=True)  # high, medium, low
-    translated_text = Column(Text, nullable=True)  # English translation of original message
-
-    # Job posting fields
+    # Job posting fields (also used for Jobees publishing)
     title = Column(String, nullable=True)
     company = Column(String, nullable=True)
     company_link = Column(String, nullable=True)
@@ -161,9 +157,18 @@ class Job(Base):
     is_remote = Column(Boolean, nullable=True)
     role_type = Column(String, nullable=True)
     skills = Column(JSON, nullable=True)
-    contact = Column(String, nullable=True)
-    contact_type = Column(String, nullable=True)
-    summary = Column(Text, nullable=True)
+    salary = Column(String, nullable=True)
+    salary_level = Column(String, nullable=True)
+    category = Column(String, nullable=True)
+    priority = Column(String, nullable=True)
+    jd = Column(Text, nullable=True)
+    hr_contact = Column(String, nullable=True)
+    channel_contact = Column(String, nullable=True)
+
+    # Publishing state
+    published_to_jobees = Column(Boolean, default=False)
+    published_at = Column(DateTime, nullable=True)
+    jobees_job_id = Column(String, nullable=True)
 
     is_applied = Column(Boolean, default=False)
     applied_at = Column(DateTime, nullable=True)
@@ -191,8 +196,6 @@ class Job(Base):
             "channel_name": self.channel_name,
             "source_type": self.source_type,
             "website_source_id": self.website_source_id,
-            "confidence": self.confidence,
-            "translated_text": self.translated_text,
             "title": self.title,
             "company": self.company,
             "company_link": self.company_link,
@@ -200,9 +203,16 @@ class Job(Base):
             "is_remote": self.is_remote,
             "role_type": self.role_type,
             "skills": self.skills or [],
-            "contact": self.contact,
-            "contact_type": self.contact_type,
-            "summary": self.summary,
+            "salary": self.salary,
+            "salary_level": self.salary_level,
+            "category": self.category,
+            "priority": self.priority,
+            "jd": self.jd,
+            "hr_contact": self.hr_contact,
+            "channel_contact": self.channel_contact,
+            "published_to_jobees": self.published_to_jobees,
+            "published_at": self.published_at.isoformat() if self.published_at else None,
+            "jobees_job_id": self.jobees_job_id,
             "is_applied": self.is_applied,
             "applied_at": self.applied_at.isoformat() if self.applied_at else None,
             "is_favorite": self.is_favorite,
@@ -220,10 +230,6 @@ class Developer(Base):
     message_id = Column(Integer, ForeignKey("messages.id", ondelete="CASCADE"), unique=True, nullable=True)
     channel_id = Column(Integer, ForeignKey("channels.id"), nullable=True)  # Null for website sources
     website_source_id = Column(Integer, ForeignKey("website_sources.id"), nullable=True)  # For website sources
-
-    # AI Analysis results
-    confidence = Column(String, nullable=True)  # high, medium, low
-    translated_text = Column(Text, nullable=True)  # English translation of original message
 
     # Personal info fields
     name = Column(String, nullable=True)
@@ -327,8 +333,6 @@ class Developer(Base):
             "id": self.id,
             "message_id": self.message_id,
             "channel_id": self.channel_id,
-            "confidence": self.confidence,
-            "translated_text": self.translated_text,
             "name": self.name,
             "skills": self.skills or [],
             "experience": self.experience,
@@ -411,63 +415,6 @@ class TelegramAccount(Base):
 
     def __repr__(self) -> str:
         return f"<TelegramAccount {self.id} {self.username or self.phone_number}>"
-
-
-class AutonomousState(Base):
-    """Persist volatile, dynamically generated autonomous state.
-
-    Used for learned scheduling patterns, selector registries, Ollama budgets,
-    fingerprint rotation indices, and any other state that must survive restarts.
-    """
-
-    __tablename__ = "autonomous_states"
-
-    key = Column(String, primary_key=True)
-    value = Column(JSON, nullable=False, default=dict)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
-
-    def __repr__(self) -> str:
-        return f"<AutonomousState {self.key}>"
-
-
-class FetchOutcome(Base):
-    """Track every fetch result for autonomous schedule optimization."""
-
-    __tablename__ = "fetch_outcomes"
-
-    id = Column(Integer, primary_key=True)
-    source_id = Column(Integer, nullable=True, index=True)
-    source_type = Column(String, default="website")  # 'telegram' or 'website'
-    fetched_at = Column(DateTime, default=datetime.utcnow, index=True)
-    new_jobs_found = Column(Integer, default=0)
-    new_messages = Column(Integer, default=0)
-    duration_seconds = Column(Integer, nullable=True)
-    error_type = Column(String, nullable=True)
-    error_message = Column(Text, nullable=True)
-
-    def __repr__(self) -> str:
-        return f"<FetchOutcome source={self.source_id} jobs={self.new_jobs_found}>"
-
-
-class SourceScoring(Base):
-    """Learned scoring and optimal windows for each source."""
-
-    __tablename__ = "source_scorings"
-
-    source_id = Column(Integer, primary_key=True)
-    source_type = Column(String, nullable=False)  # 'telegram' or 'website'
-    hourly_yield_24h = Column(Integer, default=0)
-    hourly_yield_7d = Column(Integer, default=0)
-    best_window_start = Column(String, nullable=True)  # HH:MM
-    best_window_end = Column(String, nullable=True)    # HH:MM
-    recommended_interval_minutes = Column(Integer, default=60)
-    consecutive_failures = Column(Integer, default=0)
-    last_optimized_at = Column(DateTime, nullable=True)
-    created_at = Column(DateTime, default=datetime.utcnow)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
-
-    def __repr__(self) -> str:
-        return f"<SourceScoring source={self.source_id} interval={self.recommended_interval_minutes}m>"
 
 
 class Resume(Base):

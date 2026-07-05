@@ -168,7 +168,7 @@ const Resume = () => {
   const jobDescriptionDisplay = job
     ? [
         job.title && `【${job.title}】${job.company ? `  ·  ${job.company}` : ''}`,
-        job.message?.text || job.translated_text || job.summary,
+        job.message?.text || job.jd,
       ].filter(Boolean).join('\n\n')
     : messageText;
 

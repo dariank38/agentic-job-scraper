@@ -2,33 +2,36 @@
 
 import re
 
-SYSTEM_PROMPT = """你是电报消息分类器。仅输出JSON，无markdown。
+SYSTEM_PROMPT = """你是消息分类器。仅输出JSON，无markdown。
 
-分类规则（按优先级）：
-- job_posting：雇主/公司招聘。特征：列出多个职位/岗位、提供薪资待遇、含地点或包食宿、招聘联系方式。即使职位名称包含非工程师岗（产品/运营/DBA/技术总监）也算。
-- personal_info：个人求职。必须同时满足：(1)第一人称求职语气（"求职"/"找工作"/"本人"/"我"），(2)描述自己的技能/经验年限/作品集/GitHub。若消息列出多个岗位名称，则为job_posting而非personal_info。
-- other：非招聘内容，闲聊，广告，仅含联系方式无职位信息。
-
-歧义处理：
-- 消息同时含多个岗位名称（如"前端/java/产品/运维"）→ job_posting
-- 消息含"包食宿"/"单休"/"双休" → job_posting
+分类规则：
+- job_posting：招聘。列出岗位/薪资/地点/联系方式。含多个岗位名→job_posting。
+- personal_info：个人求职。第一人称语气+描述自己的技能/经验/作品集。列出多个岗位名→job_posting。
+- other：非招聘内容。
 
 字段规则：
-- skills：数组，非逗号字符串
+- skills：数组
 - is_remote：true=远程，false=现场，null=未提及
 - contacts：[{type,value}]，type可为telegram/email/linkedin/github/wechat/whatsapp/website/other
-- confidence：high/medium/low
-- translated_text：将原始消息完整翻译为英文。若原文已是英文，则输出null（不重复原文）。
-- 未知字段：null
+- 未知填null
+
+job_posting额外字段：
+- salary：薪资字符串，如"15k-25k"、"面议"
+- salary_level：high（30k+） | normal（明确） | negotiable（面议/未知）
+- category：运营|增长|技术|产品|AI专项|设计|内容|职能|客服|其他
+- priority：P0（紧急/高薪） | P1（优先） | P2（普通）
+- jd：完整职位描述，优先原文
+- hr_contact：HR联系方式（邮箱/Telegram/手机号）
+- channel_contact：发布渠道联系方式。仅一种联系方式时填channel_contact，hr_contact填null
 
 job_posting输出：
-{"category":"job_posting","confidence":"...","translated_text":"...","job_posting":{"company":null,"company_link":null,"location":null,"is_remote":null,"role_type":"frontend|backend|fullstack|devops|mobile|blockchain|data|ml_ai|qa|security|other_tech","skills":[],"contacts":[],"summary":null}}
+{"category":"job_posting","job_posting":{"company":null,"company_link":null,"location":null,"is_remote":null,"role_type":"frontend|backend|fullstack|devops|mobile|blockchain|data|ml_ai|qa|security|other_tech","skills":[],"contacts":[],"salary":null,"salary_level":"negotiable","category":"其他","priority":"P2","jd":null,"hr_contact":null,"channel_contact":null}}
 
 personal_info输出：
-{"category":"personal_info","confidence":"...","translated_text":"...","personal_info":{"name":null,"skills":[],"experience":null,"portfolio":null,"github":null,"linkedin":null,"contacts":[],"looking_for_work":null,"summary":null}}
+{"category":"personal_info","personal_info":{"name":null,"skills":[],"experience":null,"portfolio":null,"github":null,"linkedin":null,"contacts":[],"looking_for_work":null,"summary":null}}
 
 other输出：
-{"category":"other","confidence":"..."}"""
+{"category":"other"}"""
 
 
 _SPAM_PATTERN = re.compile(
@@ -37,7 +40,7 @@ _SPAM_PATTERN = re.compile(
     re.IGNORECASE,
 )
 
-_MIN_LENGTH = 20
+_MIN_LENGTH = 30
 
 
 def should_analyze_message(text: str) -> bool:

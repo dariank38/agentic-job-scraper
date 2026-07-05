@@ -26,7 +26,14 @@ from app.tasks.operations import (
     create_operation,
     update_operation,
 )
-from app.tasks.helpers import _to_str, _to_bool, _resolve_contact
+from app.tasks.helpers import (
+    _to_str,
+    _to_bool,
+    _resolve_contacts,
+    _normalize_category,
+    _normalize_salary_level,
+    _normalize_priority,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -154,14 +161,11 @@ async def analyze_messages(
             total_output_tokens += usage.get("output_tokens", 0)
 
             category = _to_str(result.get("category"))
-            confidence = _to_str(result.get("confidence"))
-            translated_text = _to_str(result.get("translated_text"))
 
             notification_data = {
                 "message_id": message.id,
-                "status": "success" if (confidence and category) else "json_cutoff",
+                "status": "success" if category else "json_cutoff",
                 "category": category,
-                "confidence": confidence,
             }
 
             if category == "job_posting":
@@ -173,10 +177,10 @@ async def analyze_messages(
                     logger.info(f"[ANALYZE] [{channel_username}] [{msg_index+1}/{total_messages}] SKIPPED (on-site) | msg_id={message.id}")
                     return
 
-                summary_text = _to_str(job_data.get("summary"))
+                jd_text = _to_str(job_data.get("jd")) or _to_str(job_data.get("summary"))
                 title = _to_str(job_data.get("title"))
-                if not title and summary_text:
-                    title = summary_text.split(".")[0].strip()[:200]
+                if not title and jd_text:
+                    title = jd_text.split(".")[0].strip()[:200]
                 if not title and message.text:
                     clean_text = message.text.replace('<br/>', '\n').replace('<br>', '\n').replace('<p>', '\n').replace('</p>', '\n')
                     title = clean_text.split('\n')[0].strip()[:100] or None
@@ -188,7 +192,9 @@ async def analyze_messages(
                 notification_data["company"] = company
 
                 location = _to_str(job_data.get("location"))
-                contact, contact_type = _resolve_contact(job_data.get("contacts"), message)
+                hr_contact, channel_contact = _resolve_contacts(
+                    job_data.get("contacts"), job_data, channel_name, message
+                )
 
                 if title and company:
                     company_link = _to_str(job_data.get("company_link"))
@@ -209,8 +215,6 @@ async def analyze_messages(
                         channel_id=channel_id,
                         channel_name=channel_name,
                         source_type="telegram",
-                        confidence=confidence,
-                        translated_text=translated_text,
                         title=title,
                         company=company,
                         company_link=_to_str(job_data.get("company_link")),
@@ -218,9 +222,13 @@ async def analyze_messages(
                         is_remote=is_remote,
                         role_type=role_str,
                         skills=job_data.get("skills"),
-                        contact=contact,
-                        contact_type=contact_type,
-                        summary=_to_str(job_data.get("summary")),
+                        salary=_to_str(job_data.get("salary")),
+                        salary_level=_normalize_salary_level(job_data.get("salary_level")),
+                        category=_normalize_category(job_data.get("category")),
+                        priority=_normalize_priority(job_data.get("priority")),
+                        jd=jd_text,
+                        hr_contact=hr_contact,
+                        channel_contact=channel_contact,
                     )
                     db.add(job)
                     await db.flush()
@@ -279,8 +287,6 @@ async def analyze_messages(
                     developer = Developer(
                         message_id=message.id,
                         channel_id=channel_id,
-                        confidence=confidence,
-                        translated_text=translated_text,
                         name=name,
                         skills=pi_data.get("skills"),
                         experience=exp_str,
@@ -458,6 +464,14 @@ async def analyze_messages(
         await update_operation(db, operation_id, status=status, analyzed=analyzed_count, jobs_found=jobs_added, developers_found=devs_added)
         await broadcast_stats_update(db)
 
+        # Auto-publish new jobs to Jobees
+        if jobs_added > 0:
+            try:
+                from app.services.jobees_publisher import publish_jobs
+                await publish_jobs()
+            except Exception as e:
+                logger.warning(f"[ANALYZE] Auto-publish to Jobees failed: {e}")
+
         return {
             "success": True,
             "analyzed": analyzed_count,
@@ -554,6 +568,12 @@ async def analyze_website_posts(
                     await db.rollback()
                     continue
 
+                if not message.text or not should_analyze_message(message.text):
+                    await db.delete(message)
+                    skipped_count += 1
+                    logger.info(f"[ANALYZE WEBSITE] [{source_name}] [{batch_num+1}/{total_batches}] SKIPPED (pre-filter) | msg_id={message_id}")
+                    continue
+
                 await broadcast_progress("analyzing_message", {
                     "channel": source_name,
                     "message_id": message_id,
@@ -593,7 +613,12 @@ async def analyze_website_posts(
                             location=job.location,
                             is_remote=job.is_remote,
                             company_link=job.url,
-                            summary=job.requirements,
+                            salary=_to_str(job.salary),
+                            salary_level=_normalize_salary_level(None),
+                            category="技术",
+                            priority="P2",
+                            jd=job.requirements,
+                            channel_contact=source_name,
                         )
                         db.add(job_obj)
                         await db.flush()
@@ -717,6 +742,15 @@ async def analyze_website_posts(
             "developers": devs_added,
             "operation_id": operation_id,
         })
+
+        # Auto-publish new jobs to Jobees
+        if jobs_added > 0:
+            try:
+                from app.services.jobees_publisher import publish_jobs
+                await publish_jobs()
+            except Exception as e:
+                logger.warning(f"[ANALYZE WEBSITE] Auto-publish to Jobees failed: {e}")
+
         logger.info(f"[ANALYZE WEBSITE] ✓ COMPLETE | source={source_name} | analyzed={analyzed_count}/{total_messages} | jobs_saved={jobs_added} | devs_saved={devs_added} | skipped={skipped_count} | status={status} | tokens: in={total_input_tokens} out={total_output_tokens}")
 
         return {

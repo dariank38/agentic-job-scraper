@@ -77,3 +77,71 @@ def _resolve_contact(contacts, message) -> tuple[Optional[str], Optional[str]]:
         contact = message.sender_username or (str(message.sender_id) if message.sender_id else None)
         contact_type = "telegram" if contact else None
     return contact, contact_type
+
+
+def _resolve_contacts(
+    contacts,
+    job_data: dict,
+    channel_name: Optional[str],
+    message,
+) -> tuple[Optional[str], Optional[str]]:
+    """Resolve (hr_contact, channel_contact) from AI output + fallbacks.
+
+    Prefer explicit AI fields (hr_contact, channel_contact).
+    Fallback: classify the contacts list by type.
+    """
+    hr_contact = _to_str(job_data.get("hr_contact"))
+    channel_contact = _to_str(job_data.get("channel_contact"))
+
+    raw_contact = _first_contact(contacts)
+    raw_contact_type = _first_contact_type(contacts)
+
+    if not raw_contact:
+        raw_contact = message.sender_username or (str(message.sender_id) if message.sender_id else None)
+        raw_contact_type = "telegram" if raw_contact else None
+
+    if not channel_contact:
+        if raw_contact_type in ("telegram", "channel") and raw_contact:
+            channel_contact = raw_contact
+        elif raw_contact:
+            channel_contact = raw_contact
+        else:
+            channel_contact = channel_name or message.sender_username or (str(message.sender_id) if message.sender_id else None)
+
+    if not hr_contact:
+        if raw_contact and raw_contact_type not in ("telegram", "channel"):
+            hr_contact = raw_contact
+
+    return hr_contact, channel_contact
+
+
+JOBEE_CATEGORIES = {
+    "运营", "增长", "技术", "产品", "AI专项", "设计", "内容", "职能", "客服", "其他"
+}
+
+
+def _normalize_category(value) -> Optional[str]:
+    if not value:
+        return None
+    value = str(value).strip()
+    if value in JOBEE_CATEGORIES:
+        return value
+    return "其他"
+
+
+def _normalize_salary_level(value) -> Optional[str]:
+    if not value:
+        return None
+    value = str(value).strip().lower()
+    if value in ("high", "normal", "negotiable"):
+        return value
+    return "negotiable"
+
+
+def _normalize_priority(value) -> Optional[str]:
+    if not value:
+        return None
+    value = str(value).strip().upper()
+    if value in ("P0", "P1", "P2"):
+        return value
+    return "P2"

@@ -13,9 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.connection import AsyncSessionLocal
 from app.models import Channel, Message, WebsiteSource
 from services.ollama_service import get_analyzer, is_ollama_available
-from app.autonomous.budget_guard import OllamaBudgetGuard
-from app.autonomous.state_manager import AutonomousStateManager
-from app.tasks.fetch import fetch_and_store_messages, record_fetch_outcome
+from app.tasks.fetch import fetch_and_store_messages
 from app.tasks.analyze import analyze_messages, analyze_website_posts
 
 logger = logging.getLogger(__name__)
@@ -27,9 +25,6 @@ _cron_lock = asyncio.Lock()
 
 # Global auto-analyze preference
 _auto_analyze_enabled = False
-
-# Module-level cache for source intervals
-_source_intervals: dict[tuple[str, int], int] = {}
 
 
 def is_cron_running() -> bool:
@@ -67,11 +62,6 @@ async def stop_cron_task() -> bool:
         return True
 
 
-def refresh_source_intervals() -> None:
-    global _source_intervals
-    _source_intervals.clear()
-
-
 async def cleanup_old_messages():
     from app.models import Job, Developer
     from sqlalchemy.orm import selectinload
@@ -107,33 +97,12 @@ async def continuous_scanner(
     fetch_interval_minutes: int = 30,
     sleep_interval_seconds: int = 30,
 ) -> None:
-    global cron_running, _source_intervals
+    global cron_running
 
     channel_index = 0
     website_index = 0
     last_fetch_time: dict[int, datetime] = {}
     last_website_fetch_time: dict[int, datetime] = {}
-
-    async def get_source_interval(db, source_type: str, source_id: int) -> int:
-        cache_key = (source_type, source_id)
-        if cache_key in _source_intervals:
-            return _source_intervals[cache_key]
-        try:
-            from app.models import SourceScoring
-            result = await db.execute(
-                select(SourceScoring).filter(
-                    SourceScoring.source_id == source_id,
-                    SourceScoring.source_type == source_type,
-                )
-            )
-            scoring = result.scalar_one_or_none()
-            if scoring and scoring.recommended_interval_minutes:
-                _source_intervals[cache_key] = scoring.recommended_interval_minutes
-                return scoring.recommended_interval_minutes
-        except Exception:
-            pass
-        _source_intervals[cache_key] = fetch_interval_minutes
-        return fetch_interval_minutes
 
     while cron_running:
         try:
@@ -151,7 +120,7 @@ async def continuous_scanner(
 
                         now = datetime.now(timezone.utc)
                         last = last_fetch_time.get(channel_id)
-                        interval_minutes = await get_source_interval(db, "telegram", channel_id)
+                        interval_minutes = fetch_interval_minutes
                         due = last is None or (now - last).total_seconds() >= interval_minutes * 60
 
                         if due:
@@ -179,32 +148,21 @@ async def continuous_scanner(
 
                         now = datetime.now(timezone.utc)
                         last_website = last_website_fetch_time.get(website_id)
-                        interval_minutes = await get_source_interval(db, "website", website_id)
+                        interval_minutes = fetch_interval_minutes
                         website_due = last_website is None or (now - last_website).total_seconds() >= interval_minutes * 60
 
                         if website_due:
-                            fetch_start = datetime.now()
-                            fetch_error = None
-                            new_jobs_count = 0
-
                             try:
                                 if website.site_type == "bossjob":
                                     from web_crawler import fetch_posts
                                     analyzer = None
-                                    budget_guard = None
-                                    state_manager = None
                                     if await is_ollama_available():
                                         analyzer = get_analyzer()
-                                        budget_guard = OllamaBudgetGuard(db)
-                                        state_manager = AutonomousStateManager(db)
-                                        await budget_guard.initialize()
                                     posts = await fetch_posts(
                                         website.url,
                                         site_type="bossjob",
                                         days_back=WEB_DAYS_BACK,
                                         analyzer=analyzer,
-                                        budget_guard=budget_guard,
-                                        state_manager=state_manager,
                                     )
                                     rss_entries = [
                                         {
@@ -269,15 +227,6 @@ async def continuous_scanner(
                                         last_website_fetch_time[website_id] = now
                                         await db.commit()
 
-                                        duration = int((datetime.now() - fetch_start).total_seconds())
-                                        await record_fetch_outcome(
-                                            source_id=website.id,
-                                            source_type="website",
-                                            new_jobs=new_jobs_count,
-                                            new_messages=new_count,
-                                            duration_seconds=duration,
-                                        )
-
                                         try:
                                             await analyze_website_posts(db, website)
                                         except Exception:
@@ -286,16 +235,7 @@ async def continuous_scanner(
                                     last_website_fetch_time[website_id] = now
 
                             except Exception as e:
-                                fetch_error = e
-                                duration = int((datetime.now() - fetch_start).total_seconds())
-                                await record_fetch_outcome(
-                                    source_id=website.id,
-                                    source_type="website",
-                                    new_jobs=0,
-                                    new_messages=0,
-                                    duration_seconds=duration,
-                                    error=e,
-                                )
+                                logger.warning(f"[CRON] Error fetching website {website.name}: {e}", exc_info=True)
 
                 except Exception:
                     pass
@@ -322,23 +262,9 @@ async def lifespan(app):
     except Exception:
         pass
 
-    autonomous_orchestrator = None
-    try:
-        from app.autonomous.orchestrator import AutonomousOrchestrator
-        autonomous_orchestrator = AutonomousOrchestrator()
-        asyncio.create_task(autonomous_orchestrator.start())
-    except Exception as e:
-        logger.error(f"Error starting autonomous orchestrator: {e}", exc_info=True)
-
     try:
         yield
     finally:
-        if autonomous_orchestrator:
-            try:
-                await autonomous_orchestrator.stop()
-            except Exception as e:
-                logger.error(f"Error stopping autonomous orchestrator: {e}")
-
         from app.tasks.listener import telegram_listener_running, stop_telegram_listener
         try:
             for account_id in list(telegram_listener_running.keys()):

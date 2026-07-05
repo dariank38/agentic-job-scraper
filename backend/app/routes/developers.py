@@ -57,8 +57,7 @@ def register_developer_routes(app):
                 (Developer.summary.ilike(search_pattern)) |
                 (Developer.experience.ilike(search_pattern)) |
                 (cast(Developer.skills, String).ilike(search_pattern)) |
-                (Developer.notes.ilike(search_pattern)) |
-                (Developer.translated_text.ilike(search_pattern))
+                (Developer.notes.ilike(search_pattern))
             )
 
         # Get total count

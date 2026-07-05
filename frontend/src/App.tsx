@@ -10,7 +10,6 @@ const Developers = lazy(() => import('@/pages/Developers'));
 const Messages = lazy(() => import('@/pages/Messages'));
 const TelegramAccounts = lazy(() => import('@/pages/TelegramAccounts'));
 const Websites = lazy(() => import('@/pages/Websites'));
-const Autonomous = lazy(() => import('@/pages/Autonomous'));
 const Settings = lazy(() => import('@/pages/Settings'));
 const Resume = lazy(() => import('@/pages/Resume'));
 const ResumeHistory = lazy(() => import('@/pages/ResumeHistory'));
@@ -30,7 +29,6 @@ function App() {
                 <Route path="/messages" element={<Messages />} />
                 <Route path="/telegram-accounts" element={<TelegramAccounts />} />
                 <Route path="/websites" element={<Websites />} />
-                <Route path="/autonomous" element={<Autonomous />} />
                 <Route path="/resume" element={<Resume />} />
                 <Route path="/resume-history" element={<ResumeHistory />} />
                 <Route path="/settings" element={<Settings />} />

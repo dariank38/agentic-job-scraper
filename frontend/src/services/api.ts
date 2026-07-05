@@ -25,11 +25,16 @@ export interface Job {
   is_remote?: boolean;
   role_type?: string;
   skills?: string[] | string;
-  contact?: string;
-  contact_type?: string;
-  summary?: string;
-  translated_text?: string;
-  confidence?: string;
+  salary?: string;
+  salary_level?: string;
+  category?: string;
+  priority?: string;
+  jd?: string;
+  hr_contact?: string;
+  channel_contact?: string;
+  published_to_jobees?: boolean;
+  published_at?: string;
+  jobees_job_id?: string;
   is_applied: boolean;
   applied_at?: string;
   is_favorite: boolean;
@@ -61,8 +66,6 @@ export interface Developer {
   contact?: string;
   contact_type?: string;
   summary?: string;
-  translated_text?: string;
-  confidence?: string;
   looking_for_work?: boolean;
   is_contacted: boolean;
   contacted_at?: string;
@@ -261,6 +264,20 @@ const api = {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ ids }),
+    });
+    return response.json();
+  },
+
+  publishJobToJobees: async (id: number): Promise<{ success: boolean; published: number; created: number; skipped: number; failed: number; errors: string[] }> => {
+    const response = await fetch(`${API_BASE}/api/jobs/${id}/publish-to-jobees`, {
+      method: 'POST',
+    });
+    return response.json();
+  },
+
+  publishAllJobsToJobees: async (): Promise<{ success: boolean; published: number; created: number; skipped: number; failed: number; errors: string[] }> => {
+    const response = await fetch(`${API_BASE}/api/jobs/publish-to-jobees/bulk`, {
+      method: 'POST',
     });
     return response.json();
   },
@@ -613,32 +630,6 @@ const api = {
 
   stopWebsiteSource: async (id: number): Promise<any> => {
     const response = await fetch(`${API_BASE}/api/website-sources/${id}/stop`, { method: 'POST' });
-    return response.json();
-  },
-
-  // Autonomous
-  getAutonomousStatus: async (): Promise<any> => {
-    const response = await fetch(`${API_BASE}/api/autonomous/status`);
-    return response.json();
-  },
-
-  getAutonomousSources: async (): Promise<any> => {
-    const response = await fetch(`${API_BASE}/api/autonomous/sources`);
-    return response.json();
-  },
-
-  getAutonomousOutcomes: async (limit: number = 50): Promise<any> => {
-    const response = await fetch(`${API_BASE}/api/autonomous/outcomes?limit=${limit}`);
-    return response.json();
-  },
-
-  getAutonomousState: async (): Promise<any> => {
-    const response = await fetch(`${API_BASE}/api/autonomous/state`);
-    return response.json();
-  },
-
-  getAutonomousDiscovered: async (): Promise<any> => {
-    const response = await fetch(`${API_BASE}/api/autonomous/discovered`);
     return response.json();
   },
 

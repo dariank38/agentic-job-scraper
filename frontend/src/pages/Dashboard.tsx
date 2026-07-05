@@ -31,8 +31,6 @@ import {
   Zap,
   Calendar,
   MapPin,
-  Mail,
-  ExternalLink,
   TrendingUp,
   Activity,
   Globe,
@@ -700,7 +698,7 @@ const Dashboard = () => {
             <Progress value={analysisRate} className="h-2 flex-1" />
             <span className="text-sm font-bold text-primary shrink-0">{analysisRate}%</span>
             <span className="text-xs text-muted-foreground shrink-0 hidden sm:inline">
-              {stats.analyzed_messages}/{stats.total_messages} &middot; {stats.pending_messages} {t('dashboard.pending')}
+              {stats.analyzed_messages} {t('dashboard.analyzed')} &middot; {stats.pending_messages} {t('dashboard.pending')} &middot; {stats.skipped_messages} {t('dashboard.skipped')}
             </span>
           </div>
         )}

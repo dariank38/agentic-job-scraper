@@ -22,12 +22,10 @@ import {
   MessageSquare,
   Calendar,
   Briefcase,
-  CheckCircle2,
   Search,
   Download,
   Code2,
   FileText,
-  Languages,
   MessagesSquare,
   Building2,
   MapPin,
@@ -37,6 +35,7 @@ import {
   ScrollText,
   Loader2,
   Star,
+  Send,
 } from 'lucide-react';
 import api from '@/services/api';
 import type { Job } from '@/services/api';
@@ -314,7 +313,7 @@ const Jobs = () => {
       t('jobs.location'),
       t('jobs.roleType'),
       t('jobs.skills'),
-      t('jobs.contact'),
+      t('jobs.hrContact'),
       t('jobs.remote'),
       t('jobs.applied'),
       t('common.channels'),
@@ -328,7 +327,7 @@ const Jobs = () => {
         job.location || '',
         job.role_type || '',
         skillsStr,
-        job.contact || '',
+        job.hr_contact || job.channel_contact || '',
         job.is_remote ? t('common.yes') : t('common.no'),
         job.is_applied ? t('common.yes') : t('common.no'),
         job.channel?.username || t('common.unknown'),
@@ -518,6 +517,9 @@ const Jobs = () => {
                             {job.is_applied && (
                               <Badge variant="default" className="text-xs h-5 px-1.5">{t('jobs.applied')}</Badge>
                             )}
+                            {job.published_to_jobees && (
+                              <Badge className="text-xs h-5 px-1.5 bg-green-100 text-green-700 border-green-200 hover:bg-green-100">Jobees</Badge>
+                            )}
                             {job.role_type && (
                               <>
                                 {job.role_type.split(/[|,]/).slice(0, 3).map((role, idx) => (
@@ -643,10 +645,10 @@ const Jobs = () => {
                         {selectedJob.is_remote && (
                           <Badge className="bg-teal-100 text-teal-700 hover:bg-teal-100 text-sm px-3 py-1 shrink-0">{t('jobs.remote')}</Badge>
                         )}
-                        {selectedJob.confidence && (
-                          <Badge variant="outline" className="text-xs sm:text-sm px-2.5 py-0.5 sm:px-3 sm:py-1 shrink-0">
-                            <CheckCircle2 className="w-3.5 h-3.5 mr-1.5" />
-                            {selectedJob.confidence}
+                        {selectedJob.published_to_jobees && (
+                          <Badge className="bg-green-100 text-green-700 hover:bg-green-100 text-sm px-3 py-1 shrink-0">
+                            <Send className="w-3.5 h-3.5 mr-1.5" />
+                            Jobees
                           </Badge>
                         )}
                       </div>
@@ -729,6 +731,39 @@ const Jobs = () => {
                       </TooltipTrigger>
                       <TooltipContent>{resumeGenerating ? t('jobs.resumeGeneratingFor', { title: resumeGenerating.job_title }) : t('jobs.generateResume')}</TooltipContent>
                     </Tooltip>
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          className="border-green-200 text-green-700 hover:bg-green-50"
+                          disabled={loadingActions.has(`publish-${selectedJob.id}`) || selectedJob.published_to_jobees}
+                          onClick={async () => {
+                            try {
+                              const result = await api.publishJobToJobees(selectedJob.id);
+                              if (result.success) {
+                                showToast('success', `Published to Jobees: ${result.created} created, ${result.skipped} skipped`);
+                                setJobs(prev => prev.map(j => j.id === selectedJob.id ? { ...j, published_to_jobees: true } : j));
+                                setSelectedJob(prev => prev ? { ...prev, published_to_jobees: true } : null);
+                              } else {
+                                showToast('error', `Publish failed: ${result.errors?.join(', ') || 'unknown error'}`);
+                              }
+                            } catch (e: any) {
+                              showToast('error', `Publish failed: ${e.message}`);
+                            }
+                          }}
+                        >
+                          {loadingActions.has(`publish-${selectedJob.id}`) ? (
+                            <><Loader2 className="w-3.5 h-3.5 mr-1.5 animate-spin" />Publishing...</>
+                          ) : selectedJob.published_to_jobees ? (
+                            <><Send className="w-3.5 h-3.5 mr-1.5" />Published</>
+                          ) : (
+                            <><Send className="w-3.5 h-3.5 mr-1.5" />Publish to Jobees</>
+                          )}
+                        </Button>
+                      </TooltipTrigger>
+                      <TooltipContent>{selectedJob.published_to_jobees ? 'Already published to Jobees' : 'Publish this job to Jobees'}</TooltipContent>
+                    </Tooltip>
                     <Button
                       size="sm"
                       variant="destructive"
@@ -740,15 +775,28 @@ const Jobs = () => {
 
                   <Separator />
 
-                  {/* Contact Link */}
-                  {selectedJob.contact && (
+                  {/* HR Contact */}
+                  {selectedJob.hr_contact && (
                     <div className="flex items-center gap-2 sm:gap-2.5 p-2.5 sm:p-3 rounded-lg bg-amber-50 border border-amber-100">
                       <div className="w-8 h-8 sm:w-9 sm:h-9 rounded-lg bg-amber-500 flex items-center justify-center shrink-0">
                         <Mail className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-white" />
                       </div>
                       <div className="min-w-0">
-                        <p className="text-[10px] sm:text-xs text-amber-600 font-medium">{t('jobs.contact')}</p>
-                        <p className="text-xs sm:text-sm truncate">{selectedJob.contact}</p>
+                        <p className="text-[10px] sm:text-xs text-amber-600 font-medium">{t('jobs.hrContact')}</p>
+                        <p className="text-xs sm:text-sm truncate">{selectedJob.hr_contact}</p>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Channel Contact */}
+                  {selectedJob.channel_contact && (
+                    <div className="flex items-center gap-2 sm:gap-2.5 p-2.5 sm:p-3 rounded-lg bg-blue-50 border border-blue-100">
+                      <div className="w-8 h-8 sm:w-9 sm:h-9 rounded-lg bg-blue-500 flex items-center justify-center shrink-0">
+                        <Send className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-white" />
+                      </div>
+                      <div className="min-w-0">
+                        <p className="text-[10px] sm:text-xs text-blue-600 font-medium">{t('jobs.channelContact')}</p>
+                        <p className="text-xs sm:text-sm truncate">{selectedJob.channel_contact}</p>
                       </div>
                     </div>
                   )}
@@ -804,25 +852,14 @@ const Jobs = () => {
                     </div>
                   )}
 
-                  {/* Summary */}
-                  {selectedJob.summary && (
+                  {/* Job Description */}
+                  {selectedJob.jd && (
                     <div>
                       <div className="flex items-center gap-2 mb-2">
                         <FileText className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-primary" />
-                        <h3 className="text-xs sm:text-sm font-semibold">{t('jobs.summary')}</h3>
+                        <h3 className="text-xs sm:text-sm font-semibold">{t('jobs.jd')}</h3>
                       </div>
-                      <p className="text-sm text-foreground/70 leading-relaxed break-words">{selectedJob.summary}</p>
-                    </div>
-                  )}
-
-                  {/* English Translation */}
-                  {selectedJob.translated_text && (
-                    <div className="bg-blue-50/50 border border-blue-100 rounded-xl p-4">
-                      <div className="flex items-center gap-2 mb-2 sm:mb-3">
-                        <Languages className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-blue-600" />
-                        <h3 className="text-xs sm:text-sm font-semibold text-blue-800">{t('jobs.englishTranslation')}</h3>
-                      </div>
-                      <p className="text-sm text-foreground/80 leading-relaxed whitespace-pre-wrap break-words">{selectedJob.translated_text}</p>
+                      <p className="text-sm text-foreground/70 leading-relaxed break-words">{selectedJob.jd}</p>
                     </div>
                   )}
 

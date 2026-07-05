@@ -7,7 +7,6 @@ from typing import Optional
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.connection import AsyncSessionLocal
 from app.models import AnalysisRun, Channel, Message, TelegramAccount
 from telegram_processor import TelegramClientManager, fetch_messages
 from app.tasks.stop_events import get_fetch_lock, is_bulk_operation_stopped
@@ -19,33 +18,6 @@ from app.tasks.operations import (
 )
 
 logger = logging.getLogger(__name__)
-
-
-async def record_fetch_outcome(
-    source_id: int,
-    source_type: str,
-    new_jobs: int = 0,
-    new_messages: int = 0,
-    duration_seconds: int = 0,
-    error: Optional[Exception] = None,
-) -> None:
-    from app.models import FetchOutcome
-    try:
-        async with AsyncSessionLocal() as db:
-            outcome = FetchOutcome(
-                source_id=source_id,
-                source_type=source_type,
-                new_jobs_found=new_jobs,
-                new_messages=new_messages,
-                duration_seconds=duration_seconds,
-                error_type=type(error).__name__ if error else None,
-                error_message=str(error) if error else None,
-                fetched_at=datetime.utcnow(),
-            )
-            db.add(outcome)
-            await db.commit()
-    except Exception as e:
-        logger.error(f"[FETCH OUTCOME] Failed to record outcome: {e}")
 
 
 async def fetch_and_store_messages(
@@ -94,9 +66,6 @@ async def fetch_and_store_messages(
     operation_id = await create_operation(db, "fetch", channel, bulk_operation_id=bulk_operation_id)
 
     try:
-        fetch_start = datetime.now()
-        fetch_error = None
-
         async with fetch_lock:
             await broadcast_progress("fetch_start", {"channel": channel.username, "days_back": days_back, "operation_id": operation_id})
             await telegram_manager.connect()
@@ -172,15 +141,6 @@ async def fetch_and_store_messages(
             channel.last_fetch_at = datetime.utcnow()
             await db.commit()
 
-            duration = int((datetime.now() - fetch_start).total_seconds())
-            await record_fetch_outcome(
-                source_id=channel.id,
-                source_type="telegram",
-                new_jobs=0,
-                new_messages=new_count,
-                duration_seconds=duration,
-            )
-
             await broadcast_stats_update(db)
 
             if run_id:
@@ -196,19 +156,8 @@ async def fetch_and_store_messages(
             return {"success": True, "fetched": len(messages), "new_stored": new_count}
 
     except Exception as e:
-        fetch_error = e
         await db.rollback()
         await update_operation(db, operation_id, status="error", error_message=str(e))
-
-        duration = int((datetime.now() - fetch_start).total_seconds())
-        await record_fetch_outcome(
-            source_id=channel.id,
-            source_type="telegram",
-            new_jobs=0,
-            new_messages=0,
-            duration_seconds=duration,
-            error=e,
-        )
 
         await broadcast_progress("error", {
             "channel": channel_username,

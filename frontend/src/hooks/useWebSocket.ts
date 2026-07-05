@@ -4,7 +4,6 @@ export interface MessageResult {
   message_id: number;
   status: 'success' | 'failed' | 'other' | 'json_cutoff';
   category?: string;
-  confidence?: string;
   error?: string;
 }
 

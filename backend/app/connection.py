@@ -101,6 +101,41 @@ async def run_migrations() -> None:
         async with engine.begin() as conn:
             await conn.execute(text("ALTER TABLE jobs ADD COLUMN IF NOT EXISTS is_favorite BOOLEAN DEFAULT FALSE"))
             await conn.execute(text("ALTER TABLE messages ADD COLUMN IF NOT EXISTS is_manual_skip BOOLEAN DEFAULT FALSE"))
+            # Jobees integration columns
+            await conn.execute(text("ALTER TABLE jobs ADD COLUMN IF NOT EXISTS salary VARCHAR(120)"))
+            await conn.execute(text("ALTER TABLE jobs ADD COLUMN IF NOT EXISTS salary_level VARCHAR(20)"))
+            await conn.execute(text("ALTER TABLE jobs ADD COLUMN IF NOT EXISTS category VARCHAR(40)"))
+            await conn.execute(text("ALTER TABLE jobs ADD COLUMN IF NOT EXISTS priority VARCHAR(4)"))
+            await conn.execute(text("ALTER TABLE jobs ADD COLUMN IF NOT EXISTS jd TEXT"))
+            await conn.execute(text("ALTER TABLE jobs ADD COLUMN IF NOT EXISTS hr_contact VARCHAR(255)"))
+            await conn.execute(text("ALTER TABLE jobs ADD COLUMN IF NOT EXISTS channel_contact VARCHAR(255)"))
+            await conn.execute(text("ALTER TABLE jobs ADD COLUMN IF NOT EXISTS published_to_jobees BOOLEAN DEFAULT FALSE"))
+            await conn.execute(text("ALTER TABLE jobs ADD COLUMN IF NOT EXISTS published_at TIMESTAMP"))
+            await conn.execute(text("ALTER TABLE jobs ADD COLUMN IF NOT EXISTS jobees_job_id VARCHAR(255)"))
+            # Migrate data from old columns to new ones, then drop old columns
+            # Guard with column-existence checks since columns may already be dropped
+            await conn.execute(text("""
+                DO $$ BEGIN
+                    IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='jobs' AND column_name='summary') THEN
+                        UPDATE jobs SET jd = summary WHERE jd IS NULL AND summary IS NOT NULL;
+                    END IF;
+                END $$;
+            """))
+            await conn.execute(text("""
+                DO $$ BEGIN
+                    IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='jobs' AND column_name='contact') THEN
+                        UPDATE jobs SET hr_contact = contact WHERE hr_contact IS NULL AND contact IS NOT NULL;
+                    END IF;
+                END $$;
+            """))
+            await conn.execute(text("ALTER TABLE jobs DROP COLUMN IF EXISTS contact"))
+            await conn.execute(text("ALTER TABLE jobs DROP COLUMN IF EXISTS contact_type"))
+            await conn.execute(text("ALTER TABLE jobs DROP COLUMN IF EXISTS summary"))
+            await conn.execute(text("ALTER TABLE jobs DROP COLUMN IF EXISTS confidence"))
+            await conn.execute(text("ALTER TABLE developers DROP COLUMN IF EXISTS confidence"))
+            await conn.execute(text("DROP TABLE IF EXISTS autonomous_states"))
+            await conn.execute(text("DROP TABLE IF EXISTS fetch_outcomes"))
+            await conn.execute(text("DROP TABLE IF EXISTS source_scorings"))
     except Exception as e:
         logger.error(f"Error running migrations: {e}")
         raise

@@ -23,13 +23,11 @@ import {
   Calendar,
   User,
   Users,
-  CheckCircle2,
   Search,
   Download,
   Code2,
   Briefcase,
   FileText,
-  Languages,
   MessagesSquare,
   Send,
   ExternalLink,
@@ -545,12 +543,6 @@ const Developers = () => {
                           <Badge variant={selectedDeveloper.looking_for_work ? 'default' : 'secondary'} className="text-sm px-3 py-1 shrink-0">
                             {selectedDeveloper.looking_for_work ? t('developers.lookingForWork') : t('developers.notLooking')}
                           </Badge>
-                          {selectedDeveloper.confidence && (
-                            <Badge variant="outline" className="text-xs sm:text-sm px-2.5 py-0.5 sm:px-3 sm:py-1 shrink-0">
-                              <CheckCircle2 className="w-3.5 h-3.5 mr-1.5" />
-                              {selectedDeveloper.confidence}
-                            </Badge>
-                          )}
                           {selectedDeveloper.is_contacted && (
                             <Badge className="bg-green-100 text-green-700 hover:bg-green-100 text-sm px-3 py-1 shrink-0">
                               {t('developers.contacted')}
@@ -719,17 +711,6 @@ const Developers = () => {
                           <h3 className="text-xs sm:text-sm font-semibold">{t('developers.summary')}</h3>
                         </div>
                         <p className="text-sm text-foreground/70 leading-relaxed break-words">{selectedDeveloper.summary}</p>
-                      </div>
-                    )}
-
-                    {/* English Translation */}
-                    {selectedDeveloper.translated_text && (
-                      <div className="bg-blue-50/50 border border-blue-100 rounded-xl p-4">
-                        <div className="flex items-center gap-2 mb-2 sm:mb-3">
-                          <Languages className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-blue-600" />
-                          <h3 className="text-xs sm:text-sm font-semibold text-blue-900">{t('developers.englishTranslation')}</h3>
-                        </div>
-                        <p className="text-sm text-foreground/80 leading-relaxed whitespace-pre-wrap break-words">{selectedDeveloper.translated_text}</p>
                       </div>
                     )}
 

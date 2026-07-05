@@ -40,10 +40,13 @@ from app.tasks.helpers import (
     _to_str,
     _to_bool,
     _resolve_contact,
+    _resolve_contacts,
+    _normalize_category,
+    _normalize_salary_level,
+    _normalize_priority,
 )
 
 from app.tasks.fetch import (
-    record_fetch_outcome,
     fetch_and_store_messages,
 )
 
@@ -70,13 +73,11 @@ from app.tasks.scanner import (
     cron_running,
     cron_task,
     _auto_analyze_enabled,
-    _source_intervals,
     is_cron_running,
     get_auto_analyze,
     set_auto_analyze,
     start_cron_task,
     stop_cron_task,
-    refresh_source_intervals,
     cleanup_old_messages,
     continuous_scanner,
     lifespan,
