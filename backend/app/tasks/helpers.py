@@ -1,5 +1,6 @@
 """Data coercion helpers for mapping LLM JSON output to ORM fields."""
 
+import re
 from typing import Optional
 
 
@@ -85,32 +86,27 @@ def _resolve_contacts(
     channel_name: Optional[str],
     message,
 ) -> tuple[Optional[str], Optional[str]]:
-    """Resolve (hr_contact, channel_contact) from AI output + fallbacks.
+    """Resolve (hr_contact, channel_contact).
 
-    Prefer explicit AI fields (hr_contact, channel_contact).
-    Fallback: classify the contacts list by type.
+    - hr_contact: from AI's hr_contact field, or fallback to first contact in message.
+    - channel_contact: channel username (e.g. zhixhaohr8), from channel_name arg or message.sender_username.
     """
     hr_contact = _to_str(job_data.get("hr_contact"))
-    channel_contact = _to_str(job_data.get("channel_contact"))
 
-    raw_contact = _first_contact(contacts)
-    raw_contact_type = _first_contact_type(contacts)
-
-    if not raw_contact:
-        raw_contact = message.sender_username or (str(message.sender_id) if message.sender_id else None)
-        raw_contact_type = "telegram" if raw_contact else None
-
-    if not channel_contact:
-        if raw_contact_type in ("telegram", "channel") and raw_contact:
-            channel_contact = raw_contact
-        elif raw_contact:
-            channel_contact = raw_contact
-        else:
-            channel_contact = channel_name or message.sender_username or (str(message.sender_id) if message.sender_id else None)
+    # Reject AI hr_contact if it doesn't look like a real contact handle
+    # (must contain @, ., +, or be numeric — otherwise it's likely a garbled value)
+    if hr_contact and not re.search(r"[@.+\d]", hr_contact):
+        hr_contact = None
 
     if not hr_contact:
-        if raw_contact and raw_contact_type not in ("telegram", "channel"):
-            hr_contact = raw_contact
+        raw_contact = _first_contact(contacts)
+        if not raw_contact:
+            raw_contact = message.sender_username or (str(message.sender_id) if message.sender_id else None)
+        hr_contact = raw_contact
+
+    channel_contact = _to_str(job_data.get("channel_contact"))
+    if not channel_contact:
+        channel_contact = channel_name or message.sender_username or (str(message.sender_id) if message.sender_id else None)
 
     return hr_contact, channel_contact
 
@@ -145,3 +141,57 @@ def _normalize_priority(value) -> Optional[str]:
     if value in ("P0", "P1", "P2"):
         return value
     return "P2"
+
+
+_JD_PREFIXES = ("岗位职责：", "岗位职责:", "岗位描述：", "岗位描述:", "职责：", "职责:", "要求：", "要求:")
+
+_JOB_TITLE_PATTERN = re.compile(r"\*{0,2}岗位速递[：:]\s*(.+?)\*{0,2}\s*(?:\n|$)")
+
+
+def _extract_title(job_data: dict, message_text: Optional[str] = None) -> Optional[str]:
+    """Extract a clean job title from AI output, message text, or JD fallback.
+
+    Strategy:
+    1. AI-provided title (if not a full paragraph)
+    2. 岗位速递：Title pattern from message text
+    3. First non-empty, non-prefix line from JD text
+    4. First line from message text
+    """
+    # 1. AI title — reject if it looks like a JD paragraph (contains newlines or is too long)
+    title = _to_str(job_data.get("title"))
+    if title and "\n" not in title and len(title) <= 100:
+        return title.strip()[:80]
+
+    jd_text = _to_str(job_data.get("jd")) or _to_str(job_data.get("summary")) or ""
+
+    # 2. Try 岗位速递：Title pattern from message text
+    if message_text:
+        clean = message_text.replace("<br/>", "\n").replace("<br>", "\n").replace("<p>", "\n").replace("</p>", "\n")
+        m = _JOB_TITLE_PATTERN.search(clean)
+        if m:
+            extracted = m.group(1).strip().strip("*").strip()
+            if extracted and len(extracted) <= 100:
+                return extracted[:80]
+
+    # 3. First non-empty, non-prefix line from JD
+    if jd_text:
+        for line in jd_text.split("\n"):
+            line = line.strip()
+            if not line:
+                continue
+            for prefix in _JD_PREFIXES:
+                if line.startswith(prefix):
+                    line = line[len(prefix):].strip()
+                    break
+            if line:
+                return line[:80]
+
+    # 4. First line from message text
+    if message_text:
+        clean = message_text.replace("<br/>", "\n").replace("<br>", "\n").replace("<p>", "\n").replace("</p>", "\n")
+        for line in clean.split("\n"):
+            line = line.strip().strip("*").strip()
+            if line:
+                return line[:80]
+
+    return None

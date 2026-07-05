@@ -70,7 +70,14 @@ export interface Developer {
   is_contacted: boolean;
   contacted_at?: string;
   notes?: string;
+  source_type?: string;
+  website_source_id?: number;
   channel: Channel;
+  website_source?: {
+    id: number;
+    name: string;
+    url: string;
+  };
   message: {
     id: number;
     text?: string;

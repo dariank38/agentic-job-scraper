@@ -111,6 +111,7 @@ def register_developer_routes(app):
         result = await db.execute(
             select(Developer).options(
                 selectinload(Developer.channel),
+                selectinload(Developer.website_source),
                 selectinload(Developer.message).selectinload(Message.job),
                 selectinload(Developer.message).selectinload(Message.developer)
             ).filter(Developer.id == developer_id)
@@ -158,6 +159,7 @@ def register_developer_routes(app):
             result = await db.execute(
                 select(Developer).options(
                     selectinload(Developer.channel),
+                    selectinload(Developer.website_source),
                     selectinload(Developer.message).selectinload(Message.job),
                     selectinload(Developer.message).selectinload(Message.developer)
                 ).filter(Developer.id == developer_id)

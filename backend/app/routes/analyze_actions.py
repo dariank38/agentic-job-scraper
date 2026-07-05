@@ -11,8 +11,8 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.connection import get_db, AsyncSessionLocal
-from app.models import Channel, Developer, Job, Message, Operation
-from app.tasks.helpers import _to_bool, _to_str, _resolve_contacts, _normalize_category, _normalize_salary_level, _normalize_priority
+from app.models import Channel, Developer, Job, Message, Operation, WebsiteSource
+from app.tasks.helpers import _to_bool, _to_str, _resolve_contacts, _normalize_category, _normalize_salary_level, _normalize_priority, _extract_title
 from app.tasks import (
     analyze_messages,
     broadcast_progress,
@@ -144,7 +144,7 @@ def register_analyze_action_routes(app):
                         job_result = await db.execute(select(Job).filter(Job.message_id == message.id))
                         job = job_result.scalar_one_or_none()
                         summary_text = _to_str(job_data.get("jd")) or _to_str(job_data.get("summary")) or ""
-                        title = job_data.get("title") or (summary_text.split(".")[0].strip()[:200] if summary_text else None)
+                        title = _extract_title(job_data, message.text)
                         if job:
                             job.title = title
                             job.company = job_data.get("company")
@@ -153,7 +153,7 @@ def register_analyze_action_routes(app):
                             job.role_type = _to_str(job_data.get("role_type"))
                             job.skills = job_data.get("skills")
                             job.jd = _to_str(job_data.get("jd")) or _to_str(job_data.get("summary"))
-                            hr_contact, channel_contact = _resolve_contacts(job_data.get("contacts"), job_data, channel.name if channel else None, message)
+                            hr_contact, channel_contact = _resolve_contacts(job_data.get("contacts"), job_data, channel.username if channel else None, message)
                             job.hr_contact = hr_contact
                             job.channel_contact = channel_contact
                             job.salary = _to_str(job_data.get("salary"))
@@ -163,7 +163,7 @@ def register_analyze_action_routes(app):
                             job.analyzed_at = datetime.utcnow()
                             job.needs_reanalysis = False
                         else:
-                            hr_contact, channel_contact = _resolve_contacts(job_data.get("contacts"), job_data, channel.name if channel else None, message)
+                            hr_contact, channel_contact = _resolve_contacts(job_data.get("contacts"), job_data, channel.username if channel else None, message)
                             db.add(Job(
                                 message_id=message.id,
                                 channel_id=message.channel_id,
@@ -285,13 +285,30 @@ def register_analyze_action_routes(app):
             if not message:
                 raise HTTPException(status_code=404, detail="Message not found")
 
-            channel_result = await db.execute(select(Channel).filter(Channel.id == message.channel_id))
-            channel = channel_result.scalar_one_or_none()
+            channel = None
+            website_source = None
+            if message.channel_id:
+                channel_result = await db.execute(select(Channel).filter(Channel.id == message.channel_id))
+                channel = channel_result.scalar_one_or_none()
+            if message.website_source_id:
+                ws_result = await db.execute(select(WebsiteSource).filter(WebsiteSource.id == message.website_source_id))
+                website_source = ws_result.scalar_one_or_none()
+
+            existing_job_result = await db.execute(select(Job).filter(Job.message_id == message.id))
+            existing_job = existing_job_result.scalar_one_or_none()
+            if existing_job:
+                await db.delete(existing_job)
+
+            existing_dev_result = await db.execute(select(Developer).filter(Developer.message_id == message.id))
+            existing_dev = existing_dev_result.scalar_one_or_none()
+            if existing_dev:
+                await db.delete(existing_dev)
+
             message.analysis_status = "pending"
             await db.commit()
 
             analyzer = get_analyzer()
-            channel_username = channel.username if channel else "unknown"
+            channel_username = channel.username if channel else (website_source.name if website_source else "unknown")
             message, result_data, error = await _analyze_single(analyzer, message, channel_username)
 
             if error:
@@ -319,7 +336,7 @@ def register_analyze_action_routes(app):
                     location = ", ".join(location)
 
                 jd_text = _to_str(job_data.get("jd")) or _to_str(job_data.get("summary")) or ""
-                title = job_data.get("title") or (jd_text.split(".")[0].strip()[:200] if jd_text else None)
+                title = _extract_title(job_data, message.text)
                 company = job_data.get("company")
                 if title and company:
                     existing_job_result = await db.execute(select(Job).filter(Job.title == title, Job.company == company))
@@ -334,14 +351,15 @@ def register_analyze_action_routes(app):
 
                 hr_contact, channel_contact = _resolve_contacts(
                     job_data.get("contacts"), job_data,
-                    channel.name if channel else None, message,
+                    channel.username if channel else (website_source.name if website_source else None), message,
                 )
 
-                db.add(Job(
+                new_job = Job(
                     message_id=message.id,
                     channel_id=message.channel_id,
                     channel_name=channel.name if channel else None,
-                    source_type="telegram",
+                    website_source_id=message.website_source_id,
+                    source_type=message.source_type,
                     title=title,
                     company=company,
                     company_link=job_data.get("company_link"),
@@ -356,9 +374,23 @@ def register_analyze_action_routes(app):
                     jd=jd_text or None,
                     hr_contact=hr_contact,
                     channel_contact=channel_contact,
-                ))
+                )
+                db.add(new_job)
+                await db.flush()
+                await db.refresh(new_job)
+                logger.info(f"[REANALYZE] [{channel_username}] ✓ JOB SAVED | msg_id={message.id} | job_id={new_job.id} | title={(new_job.title or '')[:60]}")
                 message.analysis_status = "analyzed"
                 await db.commit()
+
+                # Auto-publish new job to Jobees
+                try:
+                    from services.jobees_publisher import publish_single_job
+                    logger.info(f"[REANALYZE] [{channel_username}] Auto-publishing job_id={new_job.id} to Jobees...")
+                    pub_result = await publish_single_job(new_job.id)
+                    logger.info(f"[REANALYZE] [{channel_username}] Jobees publish result: created={pub_result.get('created',0)} skipped={pub_result.get('skipped',0)} failed={pub_result.get('failed',0)}")
+                except Exception as pub_e:
+                    logger.warning(f"[REANALYZE] Auto-publish to Jobees failed: {pub_e}")
+
                 return {"success": True, "analyzed": True, "type": "job"}
 
             elif category == "personal_info" and result_data.get("personal_info"):
@@ -384,7 +416,7 @@ def register_analyze_action_routes(app):
                             await db.commit()
                             return {"success": True, "analyzed": False, "reason": "Duplicate developer"}
 
-                db.add(Developer(
+                new_dev = Developer(
                     message_id=message.id,
                     channel_id=message.channel_id,
                     name=name,
@@ -397,7 +429,9 @@ def register_analyze_action_routes(app):
                     contact_type=contact_type,
                     looking_for_work=_to_bool(pi_data.get("looking_for_work")),
                     summary=pi_data.get("summary"),
-                ))
+                )
+                db.add(new_dev)
+                logger.info(f"[REANALYZE] [{channel_username}] ✓ DEV SAVED | msg_id={message.id} | name={(name or '')[:60]}")
                 message.analysis_status = "analyzed"
                 await db.commit()
                 return {"success": True, "analyzed": True, "type": "developer"}
@@ -410,7 +444,7 @@ def register_analyze_action_routes(app):
             raise
         except Exception as e:
             await db.rollback()
-            raise HTTPException(status_code=500, detail=f"Failed to re-analyze message: {str(e)}")
+            raise HTTPException(status_code=500, detail=f"Failed to analyze message: {str(e)}")
 
     @app.post("/api/stop-analyze")
     async def stop_analyze(channel_id: int = Query(..., description="Channel ID to stop analysis for"), db: AsyncSession = Depends(get_db)):

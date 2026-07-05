@@ -49,22 +49,31 @@ def _normalize_salary_level(value: Optional[str]) -> str:
     return value if value in {"high", "normal", "negotiable"} else DEFAULT_SALARY_LEVEL
 
 
+def _strip_contact_lines(jd: str) -> str:
+    """Remove trailing contact/channel/hashtag lines from JD."""
+    import re
+    lines = jd.split("\n")
+    while lines:
+        last = lines[-1].strip()
+        if not last:
+            lines.pop()
+            continue
+        if re.match(r"^(联系\s*HR|联系方式|招聘频道)[：:]", last):
+            lines.pop()
+            continue
+        if re.match(r"^@\w+\s*$", last):
+            lines.pop()
+            continue
+        if re.match(r"^(#\w+\s*)+$", last):
+            lines.pop()
+            continue
+        break
+    return "\n".join(lines).strip()
+
+
 def _build_jobees_payload(job: Job) -> dict:
     """Map a scraper Job to a Jobees JobCreate payload."""
-    jd_parts = []
-    if job.jd:
-        jd_parts.append(job.jd)
-    if job.company:
-        jd_parts.append(f"Company: {job.company}")
-    if job.company_link:
-        jd_parts.append(f"Link: {job.company_link}")
-    if job.role_type:
-        jd_parts.append(f"Role type: {job.role_type}")
-    if job.skills:
-        skills_str = ", ".join(str(s) for s in job.skills) if isinstance(job.skills, list) else str(job.skills)
-        jd_parts.append(f"Skills: {skills_str}")
-
-    jd = job.jd or "\n\n".join(jd_parts)
+    jd = _strip_contact_lines(job.jd) if job.jd else ""
     if not jd:
         jd = job.title or "No description"
 
@@ -114,6 +123,8 @@ async def publish_jobs(job_ids: Optional[list[int]] = None) -> dict:
 
             payloads = [_build_jobees_payload(job) for job in jobs]
             logger.info(f"[JOBEES] Publishing {len(payloads)} jobs to {JOBEES_API_URL}/api/external/jobs/bulk")
+            for job in jobs:
+                logger.info(f"[JOBEES]   → job_id={job.id} | title={job.title[:80]} | category={_normalize_category(job.category)} | salary={job.salary or 'N/A'}")
 
             async with httpx.AsyncClient(timeout=60.0) as client:
                 response = await client.post(
@@ -137,7 +148,10 @@ async def publish_jobs(job_ids: Optional[list[int]] = None) -> dict:
                 job.published_at = now
 
             await db.commit()
-            logger.info(f"[JOBEES] Published: created={created} skipped={skipped} failed={failed}")
+            logger.info(f"[JOBEES] ✓ Done: created={created} skipped={skipped} failed={failed}")
+            if errors:
+                for err in errors:
+                    logger.warning(f"[JOBEES]   ⚠ {err}")
             return {"published": len(jobs), "created": created, "skipped": skipped, "failed": failed, "errors": errors}
 
         except httpx.HTTPStatusError as e:

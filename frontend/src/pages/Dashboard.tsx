@@ -811,8 +811,14 @@ const Dashboard = () => {
                         </p>
                         <div className="flex items-center gap-2 text-xs text-muted-foreground">
                           <span className="flex items-center gap-1">
-                            <MessageSquare className="w-3 h-3" />
-                            @{dev.channel?.username || t('common.unknown')}
+                            {dev.source_type === 'website' ? (
+                              <Globe className="w-3 h-3" />
+                            ) : (
+                              <MessageSquare className="w-3 h-3" />
+                            )}
+                            {dev.source_type === 'website'
+                              ? (dev.website_source?.name || t('common.website'))
+                              : (dev.channel?.username || t('common.unknown'))}
                           </span>
                         </div>
                         {skills.length > 0 && (

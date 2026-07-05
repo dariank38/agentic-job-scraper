@@ -225,7 +225,7 @@ def register_job_routes(app):
     async def api_publish_job_to_jobees(job_id: int):
         """Publish a single job to Jobees."""
         try:
-            from app.services.jobees_publisher import publish_single_job
+            from services.jobees_publisher import publish_single_job
             result = await publish_single_job(job_id)
             return {"success": result["failed"] == 0, **result}
         except Exception as e:
@@ -235,7 +235,7 @@ def register_job_routes(app):
     async def api_publish_all_jobs_to_jobees():
         """Publish all unpublished jobs to Jobees."""
         try:
-            from app.services.jobees_publisher import publish_jobs
+            from services.jobees_publisher import publish_jobs
             result = await publish_jobs()
             return {"success": result["failed"] == 0, **result}
         except Exception as e:

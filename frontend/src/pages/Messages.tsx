@@ -39,6 +39,7 @@ import {
   Calendar,
   Image as ImageIcon,
   ScrollText,
+  Sparkles,
 } from 'lucide-react';
 import api from '@/services/api';
 import { useWebSocketProgress, useToast } from '@/components/Layout';
@@ -192,7 +193,15 @@ const Messages = () => {
     try {
       const data = await api.reanalyzeMessage(messageId);
       if (data.success) {
+        if (data.analyzed) {
+          showToast('success', data.type === 'job' ? t('messages.analyzedAsJob') : t('messages.analyzedAsDeveloper'));
+        } else {
+          showToast('info', t('messages.analysisSkipped', { reason: data.reason || '' }));
+        }
         loadMessages();
+        if (selectedMessage && selectedMessage.id === messageId) {
+          setSelectedMessage(null);
+        }
       }
     } catch (e: any) {
       let errorMessage = `${t('common.failedToAnalyze')} ${t('messages.title')}`;
@@ -701,7 +710,7 @@ const Messages = () => {
                     )}
                     {selectedMessage.is_manual_skip ? t('messages.unskip') : t('messages.skip')}
                   </Button>
-                  {(selectedMessage.analysis_status === 'skipped' || selectedMessage.analysis_status === 'failed') && !selectedMessage.is_manual_skip && (
+                  {!selectedMessage.is_manual_skip && (
                     <Button
                       variant="outline"
                       size="sm"
@@ -710,10 +719,12 @@ const Messages = () => {
                     >
                       {reanalyzingId === selectedMessage.id ? (
                         <Loader2 className="w-3.5 h-3.5 mr-1.5 animate-spin" />
+                      ) : selectedMessage.analysis_status === 'pending' ? (
+                        <Sparkles className="w-3.5 h-3.5 mr-1.5" />
                       ) : (
                         <RotateCcw className="w-3.5 h-3.5 mr-1.5" />
                       )}
-                      {t('messages.reanalyze')}
+                      {selectedMessage.analysis_status === 'pending' ? t('messages.analyze') : t('messages.reanalyze')}
                     </Button>
                   )}
                   <Button

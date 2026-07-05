@@ -466,8 +466,17 @@ const Developers = () => {
                             </div>
                           )}
                           <div className="flex items-center gap-1 mt-1 text-[10px] text-muted-foreground">
-                            <MessageSquare className="w-2.5 h-2.5" />
-                            @{dev.channel?.username || t('common.unknown')}
+                            {dev.source_type === 'website' ? (
+                              <>
+                                <Globe className="w-2.5 h-2.5" />
+                                {dev.website_source?.name || t('common.website')}
+                              </>
+                            ) : (
+                              <>
+                                <MessageSquare className="w-2.5 h-2.5" />
+                                {dev.channel?.username || t('common.unknown')}
+                              </>
+                            )}
                           </div>
                         </div>
                       </div>
@@ -557,12 +566,30 @@ const Developers = () => {
                           <span className="truncate">{getSenderName(selectedDeveloper, t('common.unknown'))}</span>
                           <span className="text-muted-foreground/30 hidden sm:inline">|</span>
                           <span className="flex items-center gap-1 sm:hidden w-full mt-0.5">
-                            <MessageSquare className="w-3 h-3" />
-                            @{selectedDeveloper.channel?.username || t('common.unknown')}
+                            {selectedDeveloper.source_type === 'website' ? (
+                              <>
+                                <Globe className="w-3 h-3" />
+                                {selectedDeveloper.website_source?.name || t('common.website')}
+                              </>
+                            ) : (
+                              <>
+                                <MessageSquare className="w-3 h-3" />
+                                {selectedDeveloper.channel?.username || t('common.unknown')}
+                              </>
+                            )}
                           </span>
                           <span className="hidden sm:flex items-center gap-1">
-                            <MessageSquare className="w-3.5 h-3.5" />
-                            @{selectedDeveloper.channel?.username || t('common.unknown')}
+                            {selectedDeveloper.source_type === 'website' ? (
+                              <>
+                                <Globe className="w-3.5 h-3.5" />
+                                {selectedDeveloper.website_source?.name || t('common.website')}
+                              </>
+                            ) : (
+                              <>
+                                <MessageSquare className="w-3.5 h-3.5" />
+                                {selectedDeveloper.channel?.username || t('common.unknown')}
+                              </>
+                            )}
                           </span>
                         </p>
                       </div>
@@ -744,8 +771,14 @@ const Developers = () => {
                             {selectedDeveloper.message.sender_username || selectedDeveloper.message.sender_first_name || t('common.unknown')}
                           </span>
                           <span className="flex items-center gap-1">
-                            <MessageSquare className="w-3 h-3" />
-                            @{selectedDeveloper.channel?.username || t('common.unknown')}
+                            {selectedDeveloper.source_type === 'website' ? (
+                              <Globe className="w-3 h-3" />
+                            ) : (
+                              <MessageSquare className="w-3 h-3" />
+                            )}
+                            {selectedDeveloper.source_type === 'website'
+                              ? (selectedDeveloper.website_source?.name || t('common.website'))
+                              : (selectedDeveloper.channel?.username || t('common.unknown'))}
                           </span>
                           <span className="flex items-center gap-1">
                             <Calendar className="w-3 h-3" />

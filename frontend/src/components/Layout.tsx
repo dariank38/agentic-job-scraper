@@ -499,7 +499,7 @@ const Layout = ({ children }: { children: React.ReactNode }) => {
   const allNavLinks = [
     { path: '/', label: t('nav.dashboard'), icon: LayoutDashboard, primary: true },
     { path: '/jobs', label: t('nav.jobs'), icon: Briefcase, primary: true },
-    { path: '/resume-history', label: t('nav.resumeHistory', 'Resume History'), icon: ScrollText, primary: true },
+    { path: '/resume-history', label: t('nav.resumeHistory', 'Resumes'), icon: ScrollText, primary: true },
     { path: '/developers', label: t('nav.developers'), icon: Code2, primary: false },
     { path: '/messages', label: t('nav.messages'), icon: MessageSquare, primary: false },
     { path: '/channels', label: t('nav.channels'), icon: Radio, primary: false },

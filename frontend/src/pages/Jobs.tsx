@@ -36,6 +36,7 @@ import {
   Loader2,
   Star,
   Send,
+  Globe,
 } from 'lucide-react';
 import api from '@/services/api';
 import type { Job } from '@/services/api';
@@ -551,7 +552,11 @@ const Jobs = () => {
                           )}
                           <div className="flex items-center gap-2 mt-1 text-[10px] text-muted-foreground">
                             <span className="flex items-center gap-1">
-                              <MessageSquare className="w-3 h-3" />
+                              {job.source_type === 'website' ? (
+                                <Globe className="w-3 h-3" />
+                              ) : (
+                                <MessageSquare className="w-3 h-3" />
+                              )}
                               {job.channel_name || job.channel?.username || t('common.unknown')}
                             </span>
                             <span className="flex items-center gap-1">
@@ -888,7 +893,11 @@ const Jobs = () => {
                          dangerouslySetInnerHTML={{ __html: selectedJob.message?.text || t('jobs.noTextContent') }} />
                     <div className="mt-3 pt-3 border-t flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted-foreground">
                       <span className="flex items-center gap-1">
-                        <MessageSquare className="w-3 h-3" />
+                        {selectedJob.source_type === 'website' ? (
+                          <Globe className="w-3 h-3" />
+                        ) : (
+                          <MessageSquare className="w-3 h-3" />
+                        )}
                         {selectedJob.channel_name || selectedJob.channel?.username || t('common.unknown')}
                       </span>
                       <span className="flex items-center gap-1">

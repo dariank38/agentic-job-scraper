@@ -333,6 +333,8 @@ class Developer(Base):
             "id": self.id,
             "message_id": self.message_id,
             "channel_id": self.channel_id,
+            "website_source_id": self.website_source_id,
+            "source_type": "website" if self.website_source_id else "telegram",
             "name": self.name,
             "skills": self.skills or [],
             "experience": self.experience,
@@ -347,6 +349,8 @@ class Developer(Base):
             "contacted_at": self.contacted_at.isoformat() if self.contacted_at else None,
             "notes": self.notes,
             "message": self.message.to_dict() if self.message else None,
+            "channel": {"id": self.channel.id, "username": self.channel.username, "name": self.channel.name} if self.channel else None,
+            "website_source": {"id": self.website_source.id, "name": self.website_source.name, "url": self.website_source.url} if self.website_source else None,
         }
 
 

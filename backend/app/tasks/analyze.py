@@ -29,10 +29,12 @@ from app.tasks.operations import (
 from app.tasks.helpers import (
     _to_str,
     _to_bool,
+    _first_contact,
     _resolve_contacts,
     _normalize_category,
     _normalize_salary_level,
     _normalize_priority,
+    _extract_title,
 )
 
 logger = logging.getLogger(__name__)
@@ -178,12 +180,7 @@ async def analyze_messages(
                     return
 
                 jd_text = _to_str(job_data.get("jd")) or _to_str(job_data.get("summary"))
-                title = _to_str(job_data.get("title"))
-                if not title and jd_text:
-                    title = jd_text.split(".")[0].strip()[:200]
-                if not title and message.text:
-                    clean_text = message.text.replace('<br/>', '\n').replace('<br>', '\n').replace('<p>', '\n').replace('</p>', '\n')
-                    title = clean_text.split('\n')[0].strip()[:100] or None
+                title = _extract_title(job_data, message.text)
                 if not title:
                     title = f"[No Title] sender:{message.sender_username or message.sender_id or 'unknown'}"
                 company = _to_str(job_data.get("company"))
@@ -193,7 +190,7 @@ async def analyze_messages(
 
                 location = _to_str(job_data.get("location"))
                 hr_contact, channel_contact = _resolve_contacts(
-                    job_data.get("contacts"), job_data, channel_name, message
+                    job_data.get("contacts"), job_data, channel_username, message
                 )
 
                 if title and company:
@@ -466,9 +463,11 @@ async def analyze_messages(
 
         # Auto-publish new jobs to Jobees
         if jobs_added > 0:
+            logger.info(f"[ANALYZE] [{channel_username}] Auto-publishing {jobs_added} new job(s) to Jobees...")
             try:
-                from app.services.jobees_publisher import publish_jobs
-                await publish_jobs()
+                from services.jobees_publisher import publish_jobs
+                result = await publish_jobs()
+                logger.info(f"[ANALYZE] [{channel_username}] Jobees publish result: created={result.get('created',0)} skipped={result.get('skipped',0)} failed={result.get('failed',0)}")
             except Exception as e:
                 logger.warning(f"[ANALYZE] Auto-publish to Jobees failed: {e}")
 
@@ -603,6 +602,19 @@ async def analyze_website_posts(
                         if existing_job.scalars().first():
                             continue
 
+                        # Extract hr_contact from job.contacts, then contact_info
+                        hr_contact = _first_contact(job.contacts) if job.contacts else None
+                        if not hr_contact and extracted_data.contact_info:
+                            ci = extracted_data.contact_info
+                            if ci.emails:
+                                hr_contact = ci.emails[0]
+                            elif ci.phone_numbers:
+                                hr_contact = ci.phone_numbers[0]
+                            elif ci.social_links:
+                                hr_contact = ci.social_links[0]
+                            elif ci.contact_persons:
+                                hr_contact = ci.contact_persons[0]
+
                         job_obj = Job(
                             message_id=message_id,
                             website_source_id=source_id,
@@ -618,6 +630,7 @@ async def analyze_website_posts(
                             category="技术",
                             priority="P2",
                             jd=job.requirements,
+                            hr_contact=hr_contact,
                             channel_contact=source_name,
                         )
                         db.add(job_obj)
@@ -625,6 +638,7 @@ async def analyze_website_posts(
                         await db.refresh(job_obj)
                         jobs_added += 1
                         msg_job_added += 1
+                        logger.info(f"[ANALYZE WEBSITE] [{source_name}] [{batch_num+1}/{total_batches}] ✓ JOB SAVED | msg_id={message_id} | title={job_obj.title[:60]}")
                         await broadcast_progress("new_job", {
                             "job_id": job_obj.id,
                             "title": job_obj.title,
@@ -745,9 +759,11 @@ async def analyze_website_posts(
 
         # Auto-publish new jobs to Jobees
         if jobs_added > 0:
+            logger.info(f"[ANALYZE WEBSITE] [{source_name}] Auto-publishing {jobs_added} new job(s) to Jobees...")
             try:
-                from app.services.jobees_publisher import publish_jobs
-                await publish_jobs()
+                from services.jobees_publisher import publish_jobs
+                result = await publish_jobs()
+                logger.info(f"[ANALYZE WEBSITE] [{source_name}] Jobees publish result: created={result.get('created',0)} skipped={result.get('skipped',0)} failed={result.get('failed',0)}")
             except Exception as e:
                 logger.warning(f"[ANALYZE WEBSITE] Auto-publish to Jobees failed: {e}")
 
