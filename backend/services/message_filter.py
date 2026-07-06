@@ -7,7 +7,7 @@ SYSTEM_PROMPT = """你是消息分类器。仅输出JSON，无markdown。
 分类规则：
 - job_posting：招聘信息。列出岗位/薪资/地点/联系方式。含多个岗位名→job_posting。
 - personal_info：个人求职。第一人称语气+描述自己的技能/经验/作品集。列出多个岗位名→job_posting。
-- other：非招聘内容。
+- other：非招聘内容。包括：乱码/无意义重复文本/广告/通知/闲聊/无法理解的内容→一律other。不确定时选other。
 
 字段规则：
 - title：岗位名称，简短（≤30字），如"高级前端开发"、"SEO运营专员"。不要放整段JD。
@@ -52,10 +52,30 @@ _SPAM_PATTERN = re.compile(
 
 _MIN_LENGTH = 30
 
+_HASHTAG_ONLY = re.compile(r"^(\s*#\w+\s*)+$")
+
+_JOB_KEYWORDS = re.compile(
+    r"招聘|岗位|职位|薪资|薪水|工资|简历|应聘|求职|工作|职责|要求|经验|技能|skill|job|hire|salary|remote|"
+    r"k/月|k月|万/月|面议|全职|兼职|实习|@\w+|t\.me/|\w+@\w+\.\w+|\+\d{7,}",
+    re.IGNORECASE,
+)
+
 
 def should_analyze_message(text: str) -> bool:
     if not text or len(text.strip()) < _MIN_LENGTH:
         return False
     if _SPAM_PATTERN.search(text):
+        return False
+    if _HASHTAG_ONLY.match(text.strip()):
+        return False
+    lines = [l.strip() for l in text.strip().splitlines() if l.strip()]
+    if lines:
+        most_common_count = max(lines.count(l) for l in set(lines))
+        if most_common_count >= 3:
+            return False
+        unique_ratio = len(set(lines)) / len(lines)
+        if len(lines) >= 5 and unique_ratio < 0.4:
+            return False
+    if not _JOB_KEYWORDS.search(text):
         return False
     return True

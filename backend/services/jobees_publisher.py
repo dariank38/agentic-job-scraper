@@ -6,16 +6,20 @@ from datetime import datetime
 from typing import Optional
 
 import httpx
+from dotenv import load_dotenv
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.connection import AsyncSessionLocal
 from app.models import Job
 
+load_dotenv()
+
 logger = logging.getLogger(__name__)
 
 JOBEES_API_URL = os.getenv("JOBEES_API_URL", "http://localhost:8001")
 JOBEES_API_KEY = os.getenv("JOBEES_API_KEY", "")
+logger.info("[JOBEES] Configured → URL=%s key=%s", JOBEES_API_URL, "***" if JOBEES_API_KEY else "(not set)")
 
 # Default values aligned with Jobees schema
 DEFAULT_CATEGORY = "其他"

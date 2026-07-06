@@ -1,7 +1,10 @@
 """Data coercion helpers for mapping LLM JSON output to ORM fields."""
 
+import logging
 import re
 from typing import Optional
+
+logger = logging.getLogger(__name__)
 
 
 def _first_contact(value) -> Optional[str]:
@@ -108,6 +111,12 @@ def _resolve_contacts(
     if not channel_contact:
         channel_contact = channel_name or message.sender_username or (str(message.sender_id) if message.sender_id else None)
 
+    logger.debug(
+        "[contacts] ai_hr=%r ai_contacts=%r ai_channel=%r | resolved hr=%r channel=%r | channel_name_arg=%r sender_username=%r",
+        job_data.get("hr_contact"), contacts, job_data.get("channel_contact"),
+        hr_contact, channel_contact, channel_name,
+        getattr(message, "sender_username", None),
+    )
     return hr_contact, channel_contact
 
 

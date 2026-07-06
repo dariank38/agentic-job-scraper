@@ -39,6 +39,8 @@ from app.tasks.helpers import (
 
 logger = logging.getLogger(__name__)
 
+_analyzing_channels: set[int] = set()
+
 
 async def _analyze_single(analyzer, message, channel_username: str, msg_index: int = 0, total_messages: int = 0):
     import asyncio
@@ -100,9 +102,14 @@ async def analyze_messages(
     channel_username = channel.username
     channel_name = channel.name
 
+    if channel_id in _analyzing_channels:
+        logger.warning(f"[ANALYZE] [{channel_username}] Already analyzing, skipping duplicate request")
+        return {"success": False, "error": "Analysis already in progress for this channel"}
+
     if not await is_ollama_available():
         return {"success": False, "error": "AI provider not available (check ANALYZE_PROVIDER and related API keys)"}
 
+    _analyzing_channels.add(channel_id)
     try:
         await reset_stop_event(channel_id)
 
@@ -493,6 +500,7 @@ async def analyze_messages(
         return {"success": False, "error": str(e)}
 
     finally:
+        _analyzing_channels.discard(channel_id)
         await cleanup_stop_event(channel_id)
 
 
