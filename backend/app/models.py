@@ -163,7 +163,9 @@ class Job(Base):
     priority = Column(String, nullable=True)
     jd = Column(Text, nullable=True)
     hr_contact = Column(String, nullable=True)
+    hr_contact_type = Column(String, nullable=True, default="telegram")
     channel_contact = Column(String, nullable=True)
+    channel_contact_type = Column(String, nullable=True, default="telegram")
 
     # Publishing state
     published_to_jobees = Column(Boolean, default=False)

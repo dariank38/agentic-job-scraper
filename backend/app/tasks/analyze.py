@@ -196,7 +196,7 @@ async def analyze_messages(
                 notification_data["company"] = company
 
                 location = _to_str(job_data.get("location"))
-                hr_contact, channel_contact = _resolve_contacts(
+                hr_contact, channel_contact, hr_contact_type, channel_contact_type = _resolve_contacts(
                     job_data.get("contacts"), job_data, channel_username, message
                 )
 
@@ -232,7 +232,9 @@ async def analyze_messages(
                         priority=_normalize_priority(job_data.get("priority")),
                         jd=jd_text,
                         hr_contact=hr_contact,
+                        hr_contact_type=hr_contact_type,
                         channel_contact=channel_contact,
+                        channel_contact_type=channel_contact_type,
                     )
                     db.add(job)
                     await db.flush()

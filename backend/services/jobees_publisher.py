@@ -91,7 +91,9 @@ def _build_jobees_payload(job: Job) -> dict:
         "priority": _normalize_priority(job.priority),
         "jd": jd,
         "hr_contact": (job.hr_contact or "").strip()[:120],
+        "hr_contact_type": job.hr_contact_type or "telegram",
         "channel_contact": (job.channel_contact or job.channel_name or "").strip()[:120],
+        "channel_contact_type": job.channel_contact_type or "telegram",
         "is_published": True,
     }
 

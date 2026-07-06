@@ -83,41 +83,65 @@ def _resolve_contact(contacts, message) -> tuple[Optional[str], Optional[str]]:
     return contact, contact_type
 
 
+def _infer_contact_type(value: Optional[str], ai_type: Optional[str] = None) -> str:
+    """Infer contact type from value or AI-provided type."""
+    VALID = {"telegram", "email", "phone", "wechat", "website", "other"}
+    if ai_type and ai_type in VALID:
+        return ai_type
+    if not value:
+        return "telegram"
+    v = value.strip()
+    if v.startswith("@") or re.match(r"^https?://t\.me/", v):
+        return "telegram"
+    if re.match(r"[^@]+@[^@]+\.[^@]+", v):
+        return "email"
+    if re.match(r"^\+?\d[\d\s\-]{6,}$", v):
+        return "phone"
+    if re.match(r"^https?://", v):
+        return "website"
+    return "telegram"
+
+
 def _resolve_contacts(
     contacts,
     job_data: dict,
     channel_name: Optional[str],
     message,
-) -> tuple[Optional[str], Optional[str]]:
-    """Resolve (hr_contact, channel_contact).
+) -> tuple[Optional[str], Optional[str], str, str]:
+    """Resolve (hr_contact, channel_contact, hr_contact_type, channel_contact_type).
 
     - hr_contact: from AI's hr_contact field, or fallback to first contact in message.
-    - channel_contact: channel username (e.g. zhixhaohr8), from channel_name arg or message.sender_username.
+    - channel_contact: channel username, from channel_name arg or message.sender_username.
     """
     hr_contact = _to_str(job_data.get("hr_contact"))
 
     # Reject AI hr_contact if it doesn't look like a real contact handle
-    # (must contain @, ., +, or be numeric — otherwise it's likely a garbled value)
     if hr_contact and not re.search(r"[@.+\d]", hr_contact):
         hr_contact = None
 
+    ai_hr_type = _first_contact_type(contacts) if not hr_contact else None
+
     if not hr_contact:
         raw_contact = _first_contact(contacts)
+        ai_hr_type = _first_contact_type(contacts)
         if not raw_contact:
             raw_contact = message.sender_username or (str(message.sender_id) if message.sender_id else None)
+            ai_hr_type = "telegram"
         hr_contact = raw_contact
+
+    hr_contact_type = _infer_contact_type(hr_contact, ai_hr_type)
 
     channel_contact = _to_str(job_data.get("channel_contact"))
     if not channel_contact:
         channel_contact = channel_name or message.sender_username or (str(message.sender_id) if message.sender_id else None)
+    channel_contact_type = _infer_contact_type(channel_contact, "telegram")
 
     logger.debug(
-        "[contacts] ai_hr=%r ai_contacts=%r ai_channel=%r | resolved hr=%r channel=%r | channel_name_arg=%r sender_username=%r",
-        job_data.get("hr_contact"), contacts, job_data.get("channel_contact"),
-        hr_contact, channel_contact, channel_name,
-        getattr(message, "sender_username", None),
+        "[contacts] resolved hr=%r (%s) channel=%r (%s) | channel_name_arg=%r sender_username=%r",
+        hr_contact, hr_contact_type, channel_contact, channel_contact_type,
+        channel_name, getattr(message, "sender_username", None),
     )
-    return hr_contact, channel_contact
+    return hr_contact, channel_contact, hr_contact_type, channel_contact_type
 
 
 JOBEE_CATEGORIES = {

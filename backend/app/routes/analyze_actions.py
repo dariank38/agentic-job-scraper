@@ -153,9 +153,11 @@ def register_analyze_action_routes(app):
                             job.role_type = _to_str(job_data.get("role_type"))
                             job.skills = job_data.get("skills")
                             job.jd = _to_str(job_data.get("jd")) or _to_str(job_data.get("summary"))
-                            hr_contact, channel_contact = _resolve_contacts(job_data.get("contacts"), job_data, channel.username if channel else None, message)
+                            hr_contact, channel_contact, hr_contact_type, channel_contact_type = _resolve_contacts(job_data.get("contacts"), job_data, channel.username if channel else None, message)
                             job.hr_contact = hr_contact
+                            job.hr_contact_type = hr_contact_type
                             job.channel_contact = channel_contact
+                            job.channel_contact_type = channel_contact_type
                             job.salary = _to_str(job_data.get("salary"))
                             job.salary_level = _normalize_salary_level(job_data.get("salary_level"))
                             job.category = _normalize_category(job_data.get("category"))
@@ -163,7 +165,7 @@ def register_analyze_action_routes(app):
                             job.analyzed_at = datetime.utcnow()
                             job.needs_reanalysis = False
                         else:
-                            hr_contact, channel_contact = _resolve_contacts(job_data.get("contacts"), job_data, channel.username if channel else None, message)
+                            hr_contact, channel_contact, hr_contact_type, channel_contact_type = _resolve_contacts(job_data.get("contacts"), job_data, channel.username if channel else None, message)
                             db.add(Job(
                                 message_id=message.id,
                                 channel_id=message.channel_id,
@@ -181,7 +183,9 @@ def register_analyze_action_routes(app):
                                 priority=_normalize_priority(job_data.get("priority")),
                                 jd=_to_str(job_data.get("jd")) or _to_str(job_data.get("summary")),
                                 hr_contact=hr_contact,
+                                hr_contact_type=hr_contact_type,
                                 channel_contact=channel_contact,
+                                channel_contact_type=channel_contact_type,
                             ))
                             message.needs_reanalysis = False
 
@@ -349,7 +353,7 @@ def register_analyze_action_routes(app):
                 if isinstance(role_type, list):
                     role_type = ", ".join(role_type)
 
-                hr_contact, channel_contact = _resolve_contacts(
+                hr_contact, channel_contact, hr_contact_type, channel_contact_type = _resolve_contacts(
                     job_data.get("contacts"), job_data,
                     channel.username if channel else (website_source.name if website_source else None), message,
                 )
@@ -373,7 +377,9 @@ def register_analyze_action_routes(app):
                     priority=_normalize_priority(job_data.get("priority")),
                     jd=jd_text or None,
                     hr_contact=hr_contact,
+                    hr_contact_type=hr_contact_type,
                     channel_contact=channel_contact,
+                    channel_contact_type=channel_contact_type,
                 )
                 db.add(new_job)
                 await db.flush()
