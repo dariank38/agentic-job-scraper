@@ -694,10 +694,8 @@ const Dashboard = () => {
         {stats && stats.total_messages > 0 && (
           <div className="flex items-center gap-3 bg-white rounded-xl px-4 py-2.5 shadow-sm ring-1 ring-border/50">
             <TrendingUp size={15} className="text-primary shrink-0" />
-            <span className="text-sm font-medium shrink-0">{t('dashboard.analysisRate')}</span>
-            <Progress value={analysisRate} className="h-2 flex-1" />
-            <span className="text-sm font-bold text-primary shrink-0">{analysisRate}%</span>
-            <span className="text-xs text-muted-foreground shrink-0 hidden sm:inline">
+            <span className="text-sm font-medium shrink-0">{t('dashboard.analysisStatus')}</span>
+            <span className="text-xs text-muted-foreground shrink-0">
               {stats.analyzed_messages} {t('dashboard.analyzed')} &middot; {stats.pending_messages} {t('dashboard.pending')} &middot; {stats.skipped_messages} {t('dashboard.skipped')}
             </span>
           </div>
