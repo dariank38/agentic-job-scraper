@@ -1,11 +1,16 @@
 """Website post fetcher using Playwright for dynamic sites.
 
+
 Bossjob-specific logic lives in web_crawler/bossjob_fetcher.py.
 """
 
+
 import asyncio
+
 import logging
+
 from datetime import datetime, timedelta, timezone
+
 from typing import Any, Optional
 
 from playwright.async_api import async_playwright, Page
@@ -17,8 +22,11 @@ from web_crawler.config import (
     TIMEOUT,
     USER_AGENT,
 )
+
 from services.ollama_service import AsyncOllamaAnalyzer
+
 from web_crawler.bossjob_fetcher import fetch_bossjob_posts as _fetch_bossjob_posts
+
 
 logger = logging.getLogger(__name__)
 

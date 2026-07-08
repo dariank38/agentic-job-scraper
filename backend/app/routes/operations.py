@@ -15,6 +15,7 @@ def register_operations_routes(app):
     async def get_operations(db: AsyncSession = Depends(get_db)):
         """Get all running and recent operations."""
         from datetime import datetime, timedelta
+
         # Get running, error, and recently stopped operations (within last 5 minutes)
         recent_cutoff = datetime.utcnow() - timedelta(minutes=5)
         # Force fresh data from database (not cached)
@@ -104,8 +105,8 @@ def register_operations_routes(app):
     @app.post("/api/operations/cleanup")
     async def cleanup_stuck_operations(db: AsyncSession = Depends(get_db)):
         """Mark old 'running' operations as 'error' - use when backend restarted."""
-        from datetime import datetime, timedelta
         import logging
+        from datetime import datetime, timedelta
         logger = logging.getLogger(__name__)
         
         # Find operations running for more than 10 minutes
@@ -133,6 +134,7 @@ def register_operations_routes(app):
     async def get_current_analyzing(db: AsyncSession = Depends(get_db)):
         """Get current analyzing messages for all running operations."""
         from datetime import datetime, timedelta
+
         # Get running operations from the last 10 minutes
         recent_cutoff = datetime.utcnow() - timedelta(minutes=10)
         db.expire_all()

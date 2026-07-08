@@ -8,16 +8,11 @@ from fastapi import BackgroundTasks, Depends, HTTPException
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.connection import get_db, AsyncSessionLocal
+from app.connection import AsyncSessionLocal, get_db
 from app.models import Channel
-from app.tasks import (
-    fetch_and_store_messages,
-    broadcast_progress,
-    reset_bulk_stop_event,
-    is_bulk_operation_stopped,
-    cleanup_bulk_stop_event,
-    cleanup_stale_operations,
-)
+from app.tasks import (broadcast_progress, cleanup_bulk_stop_event,
+                       cleanup_stale_operations, fetch_and_store_messages,
+                       is_bulk_operation_stopped, reset_bulk_stop_event)
 from telegram_processor.config import DEFAULT_DAYS_BACK
 
 logger = logging.getLogger(__name__)
@@ -115,9 +110,9 @@ def register_fetch_action_routes(app):
     @app.get("/api/telegram-dialogs")
     async def get_telegram_dialogs(account_id: Optional[int] = None, db: AsyncSession = Depends(get_db)):
         try:
-            from telegram_processor import TelegramClientManager, get_dialogs
             from app.models import TelegramAccount
             from app.tasks import get_fetch_lock
+            from telegram_processor import TelegramClientManager, get_dialogs
 
             if account_id:
                 result = await db.execute(select(TelegramAccount).filter(TelegramAccount.id == account_id))

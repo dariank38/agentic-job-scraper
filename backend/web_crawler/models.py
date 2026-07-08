@@ -1,7 +1,8 @@
 """Pydantic models for structured extraction from website content."""
 
+from typing import List, Optional
+
 from pydantic import BaseModel, Field
-from typing import Optional, List
 
 
 class JobPosting(BaseModel):

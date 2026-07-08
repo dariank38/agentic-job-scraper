@@ -2,6 +2,7 @@
 
 import asyncio
 from pathlib import Path
+
 from telethon import TelegramClient
 
 from telegram_processor.config import TELEGRAM_SESSION_PATH

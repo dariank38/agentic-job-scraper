@@ -9,33 +9,22 @@ from typing import Optional
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models import AnalysisRun, Channel, Developer, Job, Message, WebsiteSource
-from services.ollama_service import get_analyzer, is_ollama_available, should_analyze_message
-from app.tasks.stop_events import (
-    reset_stop_event,
-    cleanup_stop_event,
-    is_analysis_stopped,
-    is_bulk_operation_stopped,
-    reset_website_stop_event,
-    cleanup_website_stop_event,
-    is_website_operation_stopped,
-)
-from app.tasks.operations import (
-    broadcast_progress,
-    broadcast_stats_update,
-    create_operation,
-    update_operation,
-)
-from app.tasks.helpers import (
-    _to_str,
-    _to_bool,
-    _first_contact,
-    _resolve_contacts,
-    _normalize_category,
-    _normalize_salary_level,
-    _normalize_priority,
-    _extract_title,
-)
+from app.models import (AnalysisRun, Channel, Developer, Job, Message,
+                        WebsiteSource)
+from app.tasks.helpers import (_extract_title, _first_contact,
+                               _normalize_category, _normalize_priority,
+                               _normalize_salary_level, _resolve_contacts,
+                               _to_bool, _to_str)
+from app.tasks.operations import (broadcast_progress, broadcast_stats_update,
+                                  create_operation, update_operation)
+from app.tasks.stop_events import (cleanup_stop_event,
+                                   cleanup_website_stop_event,
+                                   is_analysis_stopped,
+                                   is_bulk_operation_stopped,
+                                   is_website_operation_stopped,
+                                   reset_stop_event, reset_website_stop_event)
+from services.ollama_service import (get_analyzer, is_ollama_available,
+                                     should_analyze_message)
 
 logger = logging.getLogger(__name__)
 

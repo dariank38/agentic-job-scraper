@@ -11,16 +11,11 @@ from fastapi import BackgroundTasks, Depends, Form, HTTPException
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.connection import get_db, AsyncSessionLocal
+from app.connection import AsyncSessionLocal, get_db
 from app.models import Developer, Job, Message, WebsiteSource
-from app.tasks import (
-    broadcast_progress,
-    create_operation,
-    update_operation,
-    analyze_website_posts,
-    stop_website_operation,
-    website_stop_events,
-)
+from app.tasks import (analyze_website_posts, broadcast_progress,
+                       create_operation, stop_website_operation,
+                       update_operation, website_stop_events)
 from services.ollama_service import get_analyzer, is_ollama_available
 from web_crawler import Fetcher
 from web_crawler.config import DEFAULT_DAYS_BACK

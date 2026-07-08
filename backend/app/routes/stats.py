@@ -1,12 +1,13 @@
 """Stats-related API routes."""
 
 from datetime import datetime, timedelta
+
 from fastapi import Depends, Query
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.connection import get_db
-from app.models import AnalysisRun, Channel, Job, Developer, Message
+from app.models import AnalysisRun, Channel, Developer, Job, Message
 
 
 def register_stats_routes(app):
@@ -16,7 +17,7 @@ def register_stats_routes(app):
     async def api_stats(db: AsyncSession = Depends(get_db)):
         """Get dashboard statistics."""
         from services.ollama_service import is_ollama_available
-        
+
         # Get channel counts
         total_channels_result = await db.execute(
             select(func.count()).select_from(Channel)

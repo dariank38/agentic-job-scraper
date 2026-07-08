@@ -6,7 +6,6 @@ import logging
 import os
 
 import httpx
-
 from fastapi import Depends, HTTPException
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
@@ -16,9 +15,10 @@ from sqlalchemy.orm import selectinload
 
 from app.connection import get_db, manager
 from app.models import Job, Resume
+from app.routes.settings import (get_analyze_provider, get_ollama_model,
+                                 get_resume_provider)
 from services.ollama_service import NVIDIA_ANALYZE_MODEL
 from telegram_processor.config import OLLAMA_BASE_URL
-from app.routes.settings import get_analyze_provider, get_resume_provider, get_ollama_model
 
 logger = logging.getLogger(__name__)
 

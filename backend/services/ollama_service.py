@@ -8,14 +8,20 @@ Implementation is split across:
 """
 
 import logging
+
 import os
 
 from services.language import Language, detect_language
+
 from services.message_filter import SYSTEM_PROMPT, should_analyze_message
+
 from services.ollama_analyzer import AsyncOllamaAnalyzer, RECOMMENDED_MODEL
+
 from services.nvidia_analyzer import AsyncNvidiaAnalyzer, NVIDIA_API_KEY, NVIDIA_INVOKE_URL, NVIDIA_ANALYZE_MODEL
 
 from telegram_processor.config import OLLAMA_BASE_URL, OLLAMA_MODEL
+
+
 
 logger = logging.getLogger(__name__)
 
@@ -23,6 +29,7 @@ logger = logging.getLogger(__name__)
 async def is_ollama_available() -> bool:
     """Returns True if the configured analyze provider is reachable."""
     import asyncio
+
     from app.routes.settings import get_analyze_provider
     if get_analyze_provider() == "nvidia":
         if not NVIDIA_API_KEY:

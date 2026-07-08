@@ -1,6 +1,7 @@
 """Message-related API routes."""
 
 from typing import Optional
+
 from fastapi import Depends, HTTPException
 from pydantic import BaseModel
 from sqlalchemy import func, select

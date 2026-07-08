@@ -1,6 +1,7 @@
 """Developer-related API routes."""
 
 from typing import Optional
+
 from fastapi import Depends, Form, HTTPException
 from pydantic import BaseModel
 from sqlalchemy import func, select
@@ -9,7 +10,9 @@ from sqlalchemy.orm import selectinload
 
 from app.connection import get_db
 from app.models import Developer, Message
-
+from sqlalchemy import func as sql_func
+from app.models import Message
+from sqlalchemy import String, cast
 
 class BulkDeleteRequest(BaseModel):
     ids: list[int]
@@ -46,7 +49,7 @@ def register_developer_routes(app):
 
         # Apply search filter — searches name, contact, github, linkedin, portfolio, summary, experience, skills
         if search:
-            from sqlalchemy import cast, String
+            
             search_pattern = f"%{search}%"
             query = query.where(
                 (Developer.name.ilike(search_pattern)) |
@@ -67,8 +70,7 @@ def register_developer_routes(app):
 
         # Get developers with pagination, eagerly load message and channel
         # Also eagerly load job/developer on message to prevent circular lazy-loading
-        from app.models import Message
-        from sqlalchemy import func as sql_func
+        
         developers_query = query.options(
             selectinload(Developer.message).selectinload(Message.job),
             selectinload(Developer.message).selectinload(Message.developer),

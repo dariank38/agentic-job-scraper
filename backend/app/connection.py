@@ -3,9 +3,10 @@
 import logging
 import os
 from typing import Set
-from fastapi import WebSocket
 
-from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
+from fastapi import WebSocket
+from sqlalchemy.ext.asyncio import (AsyncSession, async_sessionmaker,
+                                    create_async_engine)
 
 from telegram_processor.config import DATABASE_URL
 

@@ -1,13 +1,14 @@
 """Channel-related API routes."""
 
 from typing import Optional
+
 from fastapi import Depends, Form, HTTPException
 from sqlalchemy import delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.connection import get_db
-from app.models import Channel, Developer, Message, Job
+from app.models import Channel, Developer, Job, Message
 
 
 def register_channel_routes(app):

@@ -1,9 +1,12 @@
 """Reset the database by dropping and reinitializing tables."""
 
 import asyncio
+
 from sqlalchemy.ext.asyncio import create_async_engine
-from telegram_processor.config import DATABASE_URL
+
 from app import models
+from telegram_processor.config import DATABASE_URL
+
 
 async def reset_database():
     """Drop all tables and recreate them."""

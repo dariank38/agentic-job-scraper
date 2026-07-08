@@ -3,7 +3,8 @@
 from datetime import datetime
 from typing import Optional
 
-from sqlalchemy import Column, Integer, BigInteger, String, Text, Boolean, DateTime, ForeignKey, JSON
+from sqlalchemy import (JSON, BigInteger, Boolean, Column, DateTime,
+                        ForeignKey, Integer, String, Text)
 from sqlalchemy.orm import declarative_base, relationship
 
 Base = declarative_base()

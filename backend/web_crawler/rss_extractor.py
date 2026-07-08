@@ -3,11 +3,13 @@
 import json
 import logging
 import os
-from typing import Optional, List
-from ollama import AsyncClient
-import httpx
+from typing import List, Optional
 
-from web_crawler.models import ExtractedData, JobPosting, DeveloperInfo, ContactInfo
+import httpx
+from ollama import AsyncClient
+
+from web_crawler.models import (ContactInfo, DeveloperInfo, ExtractedData,
+                                JobPosting)
 from web_crawler.prompts import get_prompt_for_site
 
 logger = logging.getLogger(__name__)

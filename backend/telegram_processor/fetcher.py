@@ -5,14 +5,12 @@ import logging
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
-from telethon.errors import FloodWaitError, ChannelInvalidError, ChannelPrivateError, UsernameNotOccupiedError
 from telethon import TelegramClient
-from telethon.tl.types import User, Channel, MessageMediaPhoto
+from telethon.errors import (ChannelInvalidError, ChannelPrivateError,
+                             FloodWaitError, UsernameNotOccupiedError)
+from telethon.tl.types import Channel, MessageMediaPhoto, User
 
-from telegram_processor.config import (
-    DEFAULT_BATCH_SIZE,
-    DEFAULT_BATCH_DELAY,
-)
+from telegram_processor.config import DEFAULT_BATCH_DELAY, DEFAULT_BATCH_SIZE
 
 logger = logging.getLogger(__name__)
 

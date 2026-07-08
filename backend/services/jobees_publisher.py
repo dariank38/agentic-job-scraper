@@ -9,6 +9,7 @@ import httpx
 from dotenv import load_dotenv
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
 from app.connection import AsyncSessionLocal
 from app.models import Job
@@ -81,7 +82,10 @@ def _build_jobees_payload(job: Job) -> dict:
     if not jd:
         jd = job.title or "No description"
 
-    return {
+    # Prefer the original Telegram message date, fallback to job creation date
+    post_date = job.message.date if job.message and getattr(job.message, "date", None) else job.created_at
+
+    payload = {
         "title": (job.title or "Untitled").strip()[:255],
         "salary": (job.salary or "面议").strip()[:120],
         "salary_level": _normalize_salary_level(job.salary_level),
@@ -96,6 +100,9 @@ def _build_jobees_payload(job: Job) -> dict:
         "channel_contact_type": job.channel_contact_type or "telegram",
         "is_published": True,
     }
+    if post_date:
+        payload["created_at"] = post_date.isoformat()
+    return payload
 
 
 async def publish_jobs(job_ids: Optional[list[int]] = None) -> dict:
@@ -114,7 +121,9 @@ async def publish_jobs(job_ids: Optional[list[int]] = None) -> dict:
 
     async with AsyncSessionLocal() as db:
         try:
-            query = select(Job).filter(
+            query = select(Job).options(
+                selectinload(Job.message)
+            ).filter(
                 Job.published_to_jobees == False,
                 Job.is_hidden == False,
                 Job.title.isnot(None),

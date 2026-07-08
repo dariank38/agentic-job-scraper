@@ -1,7 +1,10 @@
 import asyncio
-from sqlalchemy import select, func
+
+from sqlalchemy import func, select
+
 from app.connection import get_db
 from app.models import Job
+
 
 async def check():
     db = await get_db()

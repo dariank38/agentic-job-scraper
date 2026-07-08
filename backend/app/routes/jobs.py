@@ -1,6 +1,7 @@
 """Job-related API routes."""
 
 from typing import Optional
+
 from fastapi import Depends, Form, HTTPException
 from pydantic import BaseModel
 from sqlalchemy import func, select
@@ -44,7 +45,7 @@ def register_job_routes(app):
 
         # Apply search filter — searches all text fields
         if search:
-            from sqlalchemy import cast, String
+            from sqlalchemy import String, cast
             search_pattern = f"%{search}%"
             query = query.where(
                 (Job.title.ilike(search_pattern)) |

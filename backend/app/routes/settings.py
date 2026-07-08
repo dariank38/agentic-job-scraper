@@ -8,12 +8,9 @@ from pathlib import Path
 from fastapi import HTTPException
 from pydantic import BaseModel
 
-from telegram_processor.config import (
-    ANALYZE_PROVIDER as _DEFAULT_ANALYZE,
-    RESUME_PROVIDER as _DEFAULT_RESUME,
-    OLLAMA_BASE_URL,
-    OLLAMA_MODEL,
-)
+from telegram_processor.config import ANALYZE_PROVIDER as _DEFAULT_ANALYZE
+from telegram_processor.config import OLLAMA_BASE_URL, OLLAMA_MODEL
+from telegram_processor.config import RESUME_PROVIDER as _DEFAULT_RESUME
 
 logger = logging.getLogger(__name__)
 

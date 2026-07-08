@@ -1,16 +1,11 @@
 """Cron job and auto-analyze API routes."""
 
 import logging
+
 from fastapi import HTTPException, Query
 
-from app.tasks import (
-    start_cron_task,
-    stop_cron_task,
-    is_cron_running,
-    get_auto_analyze,
-    set_auto_analyze,
-    broadcast_progress,
-)
+from app.tasks import (broadcast_progress, get_auto_analyze, is_cron_running,
+                       set_auto_analyze, start_cron_task, stop_cron_task)
 
 logger = logging.getLogger(__name__)
 

@@ -9,11 +9,14 @@ from sqlalchemy import select
 
 from app.connection import AsyncSessionLocal
 from app.models import Channel, Message, TelegramAccount
-from telegram_processor import TelegramClientManager
-from telegram_processor.listener import TelegramMessageListener
-from telegram_processor.config import TELEGRAM_SESSION_PATH
-from app.tasks.stop_events import get_fetch_lock
 from app.tasks.operations import broadcast_progress
+from app.tasks.stop_events import get_fetch_lock
+from telegram_processor import TelegramClientManager
+from telegram_processor.config import TELEGRAM_SESSION_PATH
+from telegram_processor.listener import TelegramMessageListener
+from app.tasks.analyze import _analyze_single
+from app.tasks.operations import broadcast_progress as _bp
+from services.ollama_service import (get_analyzer, is_ollama_available)
 
 logger = logging.getLogger(__name__)
 
@@ -155,9 +158,7 @@ async def start_telegram_listener(
                         "account_id": telegram_account_id,
                     })
 
-                    from app.tasks.operations import broadcast_progress as _bp
-                    from services.ollama_service import get_analyzer, is_ollama_available
-                    from app.tasks.analyze import _analyze_single
+                    
 
                     if auto_analyze and await is_ollama_available():
                         analyzer = get_analyzer()

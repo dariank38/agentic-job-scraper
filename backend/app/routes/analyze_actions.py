@@ -1,5 +1,6 @@
 """Analyze-related API routes."""
 
+import asyncio
 import logging
 import uuid
 from datetime import datetime
@@ -10,24 +11,23 @@ from pydantic import BaseModel
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.connection import get_db, AsyncSessionLocal
-from app.models import Channel, Developer, Job, Message, Operation, WebsiteSource
-from app.tasks.helpers import _to_bool, _to_str, _resolve_contacts, _normalize_category, _normalize_salary_level, _normalize_priority, _extract_title
-from app.tasks import (
-    analyze_messages,
-    broadcast_progress,
-    reset_bulk_stop_event,
-    is_bulk_operation_stopped,
-    cleanup_bulk_stop_event,
-    stop_analysis,
-    analysis_stop_events,
-    cleanup_stale_operations,
-    _analyze_single,
-    _to_str,
-    _to_bool,
-)
+from app.connection import AsyncSessionLocal, get_db
+from app.models import (Channel, Developer, Job, Message, Operation,
+                        WebsiteSource)
+from app.tasks import (_analyze_single, _to_bool, _to_str,
+                       analysis_stop_events, analyze_messages,
+                       broadcast_progress, cleanup_bulk_stop_event,
+                       cleanup_stale_operations, is_bulk_operation_stopped,
+                       reset_bulk_stop_event, stop_analysis)
+from app.tasks.analyze import _analyzing_channels
+from app.tasks.helpers import (_extract_title, _normalize_category,
+                               _normalize_priority, _normalize_salary_level,
+                               _resolve_contacts, _to_bool, _to_str)
 
 logger = logging.getLogger(__name__)
+
+# Keep references to background tasks so they aren't garbage collected mid-flight
+_bulk_tasks: set[asyncio.Task] = set()
 
 
 def register_analyze_action_routes(app):
@@ -102,12 +102,15 @@ def register_analyze_action_routes(app):
                                 success_count += 1
                             else:
                                 error_count += 1
+                                logger.warning(f"[BULK ANALYZE] analyze_messages returned success=False for channel {channel_id}: {analyze_result.get('error')}")
                         else:
                             logger.warning(f"[BULK ANALYZE] Channel {channel_id} not found")
                     except Exception as e:
                         error_count += 1
                         logger.error(f"[BULK ANALYZE] Exception in channel {channel_id}: {e}", exc_info=True)
             logger.info(f"[BULK ANALYZE] Operation {operation_id} complete: {success_count} success, {error_count} errors")
+        except Exception as e:
+            logger.error(f"[BULK ANALYZE] Operation {operation_id} failed: {e}", exc_info=True)
         finally:
             cleanup_bulk_stop_event(operation_id)
 
@@ -121,8 +124,24 @@ def register_analyze_action_routes(app):
         channel_ids = [row[0] for row in channels_result.all()]
         if not channel_ids:
             return {"success": True, "message": "No channels with pending messages found"}
+
+        already_analyzing = [cid for cid in channel_ids if cid in _analyzing_channels]
+        if already_analyzing:
+            logger.warning(f"[ANALYZE-ALL] {len(already_analyzing)} channel(s) already analyzing, skipping them: {already_analyzing}")
+        channel_ids = [cid for cid in channel_ids if cid not in _analyzing_channels]
+
+        if not channel_ids:
+            return {
+                "success": False,
+                "message": "All channels with pending messages are already being analyzed. Wait for them to finish or stop them first.",
+                "already_analyzing": already_analyzing,
+            }
+
         operation_id = f"analyze-all-{uuid.uuid4().hex[:8]}"
-        background_tasks.add_task(_run_analyze_all, channel_ids, operation_id)
+        task = asyncio.create_task(_run_analyze_all(channel_ids, operation_id))
+        task.add_done_callback(_bulk_tasks.discard)
+        _bulk_tasks.add(task)
+        logger.info(f"[ANALYZE-ALL] Starting bulk analysis for {len(channel_ids)} channel(s), operation_id={operation_id}")
         return {"success": True, "message": f"Analysis started for {len(channel_ids)} channel(s)", "channels": len(channel_ids), "operation_id": operation_id}
 
     @app.post("/api/reanalyze")

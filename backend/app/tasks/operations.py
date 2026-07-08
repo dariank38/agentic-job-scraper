@@ -1,7 +1,7 @@
 """Operation records and WebSocket broadcast helpers."""
 
 import logging
-from datetime import datetime, timezone, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Optional
 
 from sqlalchemy import select
@@ -9,6 +9,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.connection import AsyncSessionLocal, manager
 from app.models import Channel, Operation
+from sqlalchemy import func
+
+from app.models import Channel, Developer, Job, Message
 
 logger = logging.getLogger(__name__)
 
@@ -22,8 +25,7 @@ async def broadcast_progress(event_type: str, data: dict):
 
 async def broadcast_stats_update(db: AsyncSession):
     try:
-        from sqlalchemy import func
-        from app.models import Channel, Job, Developer, Message
+
 
         total_channels = (await db.execute(select(func.count()).select_from(Channel))).scalar()
         job_postings = (await db.execute(select(func.count()).select_from(Job))).scalar()

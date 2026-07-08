@@ -4,13 +4,9 @@ Sub-modules:
   app/routes/website_sources_crud.py — GET/POST/PUT/DELETE /api/website-sources, toggle
   app/routes/website_actions.py      — fetch, fetch-all, analyze, analyze-all, stop
 """
-
 from app.routes.website_sources_crud import register_website_source_crud_routes, detect_site_type
 from app.routes.website_actions import (
-    register_website_action_routes,
-    _fetch_bossjob_bg,
-    _analyze_website_source_bg,
-    _run_analyze_websites,
+    register_website_action_routes
 )
 
 

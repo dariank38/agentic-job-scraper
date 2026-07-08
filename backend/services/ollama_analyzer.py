@@ -10,10 +10,10 @@ from typing import Any
 
 from ollama import AsyncClient
 
-from telegram_processor.config import OLLAMA_BASE_URL
 from app.routes.settings import get_ollama_model
 from services.language import detect_language
 from services.message_filter import SYSTEM_PROMPT, should_analyze_message
+from telegram_processor.config import OLLAMA_BASE_URL
 
 logger = logging.getLogger(__name__)
 

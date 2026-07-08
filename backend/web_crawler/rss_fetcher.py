@@ -1,10 +1,11 @@
 """RSS fetcher for job postings."""
 
-import httpx
-import feedparser
 import logging
 from datetime import datetime, timedelta, timezone
-from typing import Optional, Any
+from typing import Any, Optional
+
+import feedparser
+import httpx
 
 from web_crawler.config import USER_AGENT
 

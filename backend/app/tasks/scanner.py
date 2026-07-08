@@ -4,7 +4,7 @@ import asyncio
 import logging
 import re
 from contextlib import asynccontextmanager
-from datetime import datetime, timezone, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Optional
 
 from sqlalchemy import func, select
@@ -12,9 +12,16 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.connection import AsyncSessionLocal
 from app.models import Channel, Message, WebsiteSource
-from services.ollama_service import get_analyzer, is_ollama_available
-from app.tasks.fetch import fetch_and_store_messages
 from app.tasks.analyze import analyze_messages, analyze_website_posts
+from app.tasks.fetch import fetch_and_store_messages
+from services.ollama_service import get_analyzer, is_ollama_available
+
+from sqlalchemy.orm import selectinload
+
+from app.models import Developer, Job
+from web_crawler import Fetcher
+from web_crawler.config import DEFAULT_DAYS_BACK as WEB_DAYS_BACK
+from app.tasks.listener import (stop_telegram_listener, telegram_listener_running)
 
 logger = logging.getLogger(__name__)
 
@@ -63,8 +70,6 @@ async def stop_cron_task() -> bool:
 
 
 async def cleanup_old_messages():
-    from app.models import Job, Developer
-    from sqlalchemy.orm import selectinload
 
     async with AsyncSessionLocal() as db:
         try:
@@ -134,9 +139,6 @@ async def continuous_scanner(
                                         pass
                             except Exception:
                                 pass
-
-                    from web_crawler import Fetcher
-                    from web_crawler.config import DEFAULT_DAYS_BACK as WEB_DAYS_BACK
 
                     website_sources_result = await db.execute(select(WebsiteSource).filter(WebsiteSource.is_active == True))
                     website_sources = website_sources_result.scalars().all()
@@ -265,7 +267,7 @@ async def lifespan(app):
     try:
         yield
     finally:
-        from app.tasks.listener import telegram_listener_running, stop_telegram_listener
+        
         try:
             for account_id in list(telegram_listener_running.keys()):
                 if telegram_listener_running.get(account_id, False):

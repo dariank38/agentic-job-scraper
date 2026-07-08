@@ -1,8 +1,10 @@
-from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select
 from typing import List, Optional
+
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
+
 from app.connection import get_db
 from app.models import TelegramAccount
 
@@ -104,6 +106,7 @@ def register_telegram_account_routes(app):
     async def delete_telegram_account(account_id: int, db: AsyncSession = Depends(get_db)):
         """Delete a Telegram account and clean up session file."""
         from pathlib import Path
+
         from telegram_processor import TelegramClientManager
 
         result = await db.execute(select(TelegramAccount).filter(TelegramAccount.id == account_id))
@@ -148,8 +151,9 @@ def register_telegram_account_routes(app):
         if not account:
             raise HTTPException(status_code=404, detail="Account not found")
 
-        from telegram_processor import TelegramClientManager
         from pathlib import Path
+
+        from telegram_processor import TelegramClientManager
 
         # Create a client manager for this account
         manager = TelegramClientManager(

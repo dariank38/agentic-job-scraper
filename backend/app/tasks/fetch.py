@@ -8,14 +8,10 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models import AnalysisRun, Channel, Message, TelegramAccount
-from telegram_processor import TelegramClientManager, fetch_messages
+from app.tasks.operations import (broadcast_progress, broadcast_stats_update,
+                                  create_operation, update_operation)
 from app.tasks.stop_events import get_fetch_lock, is_bulk_operation_stopped
-from app.tasks.operations import (
-    broadcast_progress,
-    broadcast_stats_update,
-    create_operation,
-    update_operation,
-)
+from telegram_processor import TelegramClientManager, fetch_messages
 
 logger = logging.getLogger(__name__)
 

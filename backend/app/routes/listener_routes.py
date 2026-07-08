@@ -9,17 +9,11 @@ from sqlalchemy import select
 
 from app.connection import AsyncSessionLocal
 from app.models import Channel
-from app.tasks import (
-    broadcast_progress,
-    set_auto_analyze,
-    start_telegram_listener,
-    stop_telegram_listener,
-    add_listener_channels,
-    remove_listener_channels,
-    get_listener_channels,
-    telegram_listener_running,
-    telegram_listeners,
-)
+from app.tasks import (add_listener_channels, broadcast_progress,
+                       get_listener_channels, remove_listener_channels,
+                       set_auto_analyze, start_telegram_listener,
+                       stop_telegram_listener, telegram_listener_running,
+                       telegram_listeners)
 
 logger = logging.getLogger(__name__)
 

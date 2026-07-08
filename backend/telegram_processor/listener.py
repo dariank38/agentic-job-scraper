@@ -3,10 +3,13 @@
 import asyncio
 import logging
 from typing import Callable, Optional
+
 from telethon import events
 from telethon.tl.types import Channel as TelegramChannel
 
 from telegram_processor.client import TelegramClientManager
+from telegram_processor.client import TelegramClientManager
+from telegram_processor.config import TELEGRAM_API_HASH, TELEGRAM_API_ID
 
 logger = logging.getLogger(__name__)
 
@@ -305,9 +308,8 @@ class TelegramMessageListener:
 # Example usage
 async def example_usage():
     """Example of how to use the TelegramMessageListener."""
-    from telegram_processor.client import TelegramClientManager
-    from telegram_processor.config import TELEGRAM_API_ID, TELEGRAM_API_HASH
-    
+
+
     # Initialize client manager
     manager = TelegramClientManager(
         api_id=TELEGRAM_API_ID,

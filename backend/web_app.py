@@ -4,6 +4,15 @@ import logging
 import sys
 from pathlib import Path
 
+from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse
+from fastapi.staticfiles import StaticFiles
+
+from app.api_routes import register_api_routes
+from app.tasks import lifespan
+from colored_logging import setup_colored_logging
+
 # Fix Python 3.13 asyncio subprocess issue on Windows (must be before any asyncio usage)
 if sys.platform == 'win32' and sys.version_info >= (3, 13):
     import asyncio
@@ -16,7 +25,6 @@ if sys.platform == 'win32':
 
 # Configure colored logging
 log_file = Path(__file__).parent / "app.log"
-from colored_logging import setup_colored_logging
 setup_colored_logging(str(log_file))
 logging.info(f"Logging to file: {log_file}")
 
@@ -41,14 +49,7 @@ class _SuppressWsDisconnect(logging.Filter):
 logging.getLogger("uvicorn.error").addFilter(_SuppressWsDisconnect())
 logging.getLogger("uvicorn").addFilter(_SuppressWsDisconnect())
 
-from fastapi import FastAPI
-from fastapi.middleware.cors import CORSMiddleware
-from fastapi.staticfiles import StaticFiles
-from fastapi.responses import FileResponse
-from pathlib import Path
 
-from app.tasks import lifespan
-from app.api_routes import register_api_routes
 
 app = FastAPI(
     title="Telegram Job Scraper API",

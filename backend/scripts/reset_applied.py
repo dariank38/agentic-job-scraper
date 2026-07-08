@@ -1,9 +1,12 @@
 """Reset all is_applied flags to False for jobs."""
 
 import asyncio
+
 from sqlalchemy import select, update
+
 from app.connection import get_db
 from app.models import Job
+
 
 async def reset_applied():
     async for db in get_db():
