@@ -13,8 +13,8 @@ from app.models import (AnalysisRun, Channel, Developer, Job, Message,
                         WebsiteSource)
 from app.tasks.helpers import (_extract_title, _first_contact,
                                _normalize_category, _normalize_priority,
-                               _normalize_salary_level, _resolve_contacts,
-                               _to_bool, _to_str)
+                               _normalize_salary_level, _resolve_contact,
+                               _resolve_contacts, _to_bool, _to_str)
 from app.tasks.operations import (broadcast_progress, broadcast_stats_update,
                                   create_operation, update_operation)
 from app.tasks.stop_events import (cleanup_stop_event,
