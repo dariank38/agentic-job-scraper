@@ -64,7 +64,7 @@ CORS_ALLOWED_ORIGINS = [o.strip() for o in os.environ.get("CORS_ALLOWED_ORIGINS"
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=CORS_ALLOWED_ORIGINS,
+    allow_origins=["*"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

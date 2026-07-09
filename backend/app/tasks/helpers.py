@@ -149,12 +149,32 @@ JOBEE_CATEGORIES = {
 }
 
 
+# Common English/Chinese keywords mapped to canonical Jobees categories.
+# Order matters: earlier categories are checked first (e.g., AI before general tech).
+_CATEGORY_KEYWORDS = [
+    ("AI专项", {"ai", "artificial intelligence", "machine learning", "deep learning", "ml", "大模型", "llm", "nlp", "自然语言处理", "计算机视觉", "cv", "aigc", "生成式", "生成式ai", "多模态", "强化学习", "算法", "数据科学", "data scientist", "scientist", "quant", "量化", "推荐算法", "搜索算法"}),
+    ("技术", {"tech", "technology", "engineering", "software", "developer", "开发", "程序", "程序员", "工程", "工程师", "frontend", "backend", "fullstack", "full-stack", "devops", "mobile", "blockchain", "security", "qa", "data", "cloud", "sre", "运维", "测试", "安全", "区块链", "web", "全栈", "前端", "后端", "移动", "大数据", "云计算", "云原生", "架构师", "架构", "cto", "首席技术官", "技术负责人", "技术经理", "技术总监"}),
+    ("产品", {"产品", "product", "产品经理", "产品专员", "产品负责人", "产品总监", "产品设计"}),
+    ("设计", {"设计", "design", "ui", "ux", "graphic", "平面", "视觉", "交互", "工业设计", "ui设计", "ux设计", "视觉设计", "平面设计", "原画", "插画", "动画", "动效", "设计师"}),
+    ("运营", {"运营", "operation", "operations", "市场运营", "新媒体运营", "社群运营", "活动运营", "用户运营", "内容运营"}),
+    ("增长", {"增长", "growth", "增长运营", "用户增长", "业务增长"}),
+    ("内容", {"内容", "content", "编辑", "文案", "写手", "新媒体", "自媒体", "内容运营", "内容编辑", "内容创作", "文案策划", "内容策划", "主播", "短视频", "视频", "直播", "导演", "编剧", "记者", "媒介", "公关", "品牌"}),
+    ("职能", {"职能", "hr", "human resources", "人力资源", "人事", "行政", "财务", "会计", "出纳", "法务", "legal", "采购", "供应链", "物流", "招聘", "前台", "manager", "management", "project manager", "项目管理", "经理", "主管", "总监", "高管"}),
+    ("客服", {"客服", "customer service", "support", "售后", "售前", "客户支持", "客户关系", "helpdesk", "呼叫中心", "在线客服", "用户支持"}),
+]
+
+
 def _normalize_category(value) -> Optional[str]:
     if not value:
         return None
     value = str(value).strip()
     if value in JOBEE_CATEGORIES:
         return value
+
+    normalized = value.lower()
+    for category, keywords in _CATEGORY_KEYWORDS:
+        if any(keyword in normalized for keyword in keywords):
+            return category
     return "其他"
 
 
