@@ -1,6 +1,7 @@
 """FastAPI API application for job scraper."""
 
 import logging
+import os
 import sys
 from pathlib import Path
 
@@ -57,10 +58,13 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
-# Add CORS middleware - update for production domain
+# Add CORS middleware - set CORS_ALLOWED_ORIGINS in production
+_default_origins = "http://localhost:5173,http://127.0.0.1:5173,http://localhost:3000,http://127.0.0.1:3000"
+CORS_ALLOWED_ORIGINS = [o.strip() for o in os.environ.get("CORS_ALLOWED_ORIGINS", _default_origins).split(",") if o.strip()]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # In production, specify your domain
+    allow_origins=CORS_ALLOWED_ORIGINS,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

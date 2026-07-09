@@ -113,6 +113,8 @@ async def run_migrations() -> None:
             await conn.execute(text("ALTER TABLE jobs ADD COLUMN IF NOT EXISTS published_to_jobees BOOLEAN DEFAULT FALSE"))
             await conn.execute(text("ALTER TABLE jobs ADD COLUMN IF NOT EXISTS published_at TIMESTAMP"))
             await conn.execute(text("ALTER TABLE jobs ADD COLUMN IF NOT EXISTS jobees_job_id VARCHAR(255)"))
+            await conn.execute(text("ALTER TABLE jobs ADD COLUMN IF NOT EXISTS is_reviewed BOOLEAN DEFAULT FALSE"))
+            await conn.execute(text("ALTER TABLE jobs ADD COLUMN IF NOT EXISTS is_approved BOOLEAN"))
             # Migrate data from old columns to new ones, then drop old columns
             # Guard with column-existence checks since columns may already be dropped
             await conn.execute(text("""
@@ -134,9 +136,6 @@ async def run_migrations() -> None:
             await conn.execute(text("ALTER TABLE jobs DROP COLUMN IF EXISTS summary"))
             await conn.execute(text("ALTER TABLE jobs DROP COLUMN IF EXISTS confidence"))
             await conn.execute(text("ALTER TABLE developers DROP COLUMN IF EXISTS confidence"))
-            await conn.execute(text("DROP TABLE IF EXISTS autonomous_states"))
-            await conn.execute(text("DROP TABLE IF EXISTS fetch_outcomes"))
-            await conn.execute(text("DROP TABLE IF EXISTS source_scorings"))
     except Exception as e:
         logger.error(f"Error running migrations: {e}")
         raise

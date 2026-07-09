@@ -177,6 +177,8 @@ class Job(Base):
     applied_at = Column(DateTime, nullable=True)
     is_hidden = Column(Boolean, default=False)
     is_favorite = Column(Boolean, default=False)
+    is_reviewed = Column(Boolean, default=False)
+    is_approved = Column(Boolean, nullable=True)
     notes = Column(Text, nullable=True)
 
     created_at = Column(DateTime, default=datetime.utcnow)
@@ -220,7 +222,28 @@ class Job(Base):
             "applied_at": self.applied_at.isoformat() if self.applied_at else None,
             "is_favorite": self.is_favorite,
             "notes": self.notes,
-            "message": self.message.to_dict() if self.message else None,
+            "message": {
+                "id": self.message.id,
+                "text": self.message.text,
+                "date": self.message.date.isoformat() if self.message.date else None,
+                "has_image": self.message.has_image,
+                "sender_id": self.message.sender_id,
+                "sender_username": self.message.sender_username,
+                "sender_first_name": self.message.sender_first_name,
+            } if self.message else None,
+            "channel": {
+                "id": self.channel.id,
+                "username": self.channel.username,
+                "name": self.channel.name,
+            } if self.channel else None,
+            "website_source": {
+                "id": self.website_source.id,
+                "name": self.website_source.name,
+                "url": self.website_source.url,
+            } if self.website_source else None,
+            "is_hidden": self.is_hidden,
+            "is_reviewed": self.is_reviewed,
+            "is_approved": self.is_approved,
         }
 
 
@@ -351,7 +374,15 @@ class Developer(Base):
             "is_contacted": self.is_contacted,
             "contacted_at": self.contacted_at.isoformat() if self.contacted_at else None,
             "notes": self.notes,
-            "message": self.message.to_dict() if self.message else None,
+            "message": {
+                "id": self.message.id,
+                "text": self.message.text,
+                "date": self.message.date.isoformat() if self.message.date else None,
+                "has_image": self.message.has_image,
+                "sender_id": self.message.sender_id,
+                "sender_username": self.message.sender_username,
+                "sender_first_name": self.message.sender_first_name,
+            } if self.message else None,
             "channel": {"id": self.channel.id, "username": self.channel.username, "name": self.channel.name} if self.channel else None,
             "website_source": {"id": self.website_source.id, "name": self.website_source.name, "url": self.website_source.url} if self.website_source else None,
         }

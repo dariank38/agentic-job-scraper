@@ -121,14 +121,20 @@ async def start_telegram_listener(
                             telegram_id=channel_id,
                             name=message_data.get('channel_name', identifier),
                             telegram_account_id=telegram_account_id,
-                            is_active=1,
+                            is_active=True,
                             is_listened=1,
                         )
                         db.add(channel)
                         await db.commit()
                         await db.refresh(channel)
 
-                    existing_result = await db.execute(select(Message).filter(Message.text == message_data['text']))
+                    message_telegram_id = message_data.get('id')
+                    existing_result = await db.execute(
+                        select(Message).filter(
+                            Message.channel_id == channel.id,
+                            Message.telegram_id == message_telegram_id,
+                        )
+                    )
                     if existing_result.scalars().first():
                         return
 

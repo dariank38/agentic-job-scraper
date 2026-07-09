@@ -87,9 +87,27 @@ async def fetch_and_store_messages(
                     break
 
                 try:
-                    result = await db.execute(select(Message).filter(Message.text == msg_data.get("text")))
-                    if result.scalars().first():
-                        continue
+                    message_telegram_id = msg_data.get("id")
+                    if message_telegram_id:
+                        result = await db.execute(
+                            select(Message).filter(
+                                Message.channel_id == channel.id,
+                                Message.telegram_id == message_telegram_id,
+                            )
+                        )
+                        if result.scalars().first():
+                            continue
+
+                    # Fallback for messages without a telegram_id
+                    if msg_data.get("text"):
+                        result = await db.execute(
+                            select(Message).filter(
+                                Message.channel_id == channel.id,
+                                Message.text == msg_data.get("text"),
+                            )
+                        )
+                        if result.scalars().first():
+                            continue
 
                     sender = msg_data.get("sender") or {}
                     has_text = bool(msg_data.get("text"))

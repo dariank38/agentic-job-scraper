@@ -73,7 +73,7 @@ async def cleanup_old_messages():
 
     async with AsyncSessionLocal() as db:
         try:
-            cutoff_date = datetime.utcnow() - timedelta(days=2)
+            cutoff_date = datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(days=2)
             result = await db.execute(
                 select(Message).options(
                     selectinload(Message.job),
@@ -94,7 +94,8 @@ async def cleanup_old_messages():
                 deleted_count += 1
 
             await db.commit()
-        except Exception:
+        except Exception as e:
+            logger.error(f"[CLEANUP] Error cleaning old messages: {e}", exc_info=True)
             await db.rollback()
 
 
@@ -135,10 +136,10 @@ async def continuous_scanner(
                                     last_fetch_time[channel_id] = now
                                     try:
                                         await analyze_messages(db, channel)
-                                    except Exception:
-                                        pass
-                            except Exception:
-                                pass
+                                    except Exception as e:
+                                        logger.warning(f"[CRON] Analysis failed for {channel.username}: {e}")
+                            except Exception as e:
+                                logger.warning(f"[CRON] Fetch failed for {channel.username}: {e}")
 
                     website_sources_result = await db.execute(select(WebsiteSource).filter(WebsiteSource.is_active == True))
                     website_sources = website_sources_result.scalars().all()
@@ -231,21 +232,21 @@ async def continuous_scanner(
 
                                         try:
                                             await analyze_website_posts(db, website)
-                                        except Exception:
-                                            pass
+                                        except Exception as e:
+                                            logger.warning(f"[CRON] Website analysis failed for {website.name}: {e}")
                                 else:
                                     last_website_fetch_time[website_id] = now
 
                             except Exception as e:
                                 logger.warning(f"[CRON] Error fetching website {website.name}: {e}", exc_info=True)
 
-                except Exception:
-                    pass
+                except Exception as e:
+                    logger.error(f"[CRON] Error during scanner loop: {e}", exc_info=True)
 
         except asyncio.CancelledError:
             break
-        except Exception:
-            pass
+        except Exception as e:
+            logger.error(f"[CRON] Unexpected scanner error: {e}", exc_info=True)
 
         await asyncio.sleep(sleep_interval_seconds)
 
