@@ -1,5 +1,4 @@
 import { useEffect, useState } from 'react';
-import { useSearchParams } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader } from '@/components/ui/card';
@@ -30,20 +29,18 @@ const Channels = () => {
   const [addDialogOpen, setAddDialogOpen] = useState(false);
   const [stats, setStats] = useState<any>(null);
   const [total, setTotal] = useState(0);
-  const [searchParams, setSearchParams] = useSearchParams();
   const [searchQuery, setSearchQuery] = useState('');
   const [searchInput, setSearchInput] = useState('');
   const [activeFilter, setActiveFilter] = useState('all');
   const [telegramAccounts, setTelegramAccounts] = useState<TelegramAccount[]>([]);
   const [selectedAccountId, setSelectedAccountId] = useState<number | null>(null);
   const [listenedChannels, setListenedChannels] = useState<string[]>([]);
-  const limit = 10;
-  const offset = parseInt(searchParams.get('offset') || '0');
+  const limit = 100;
   const { progress: wsProgress, channelProgress, operations, stoppingChannels, tokenUsage, messageResults, requestStop } = useWebSocketProgress();
 
   useEffect(() => {
     if (wsProgress && (wsProgress.type === 'analyze_complete' || wsProgress.type === 'error' || wsProgress.type === 'fetch_complete')) {
-      // Reload channels but maintain current pagination
+      // Reload channels
       loadChannels();
     }
   }, [wsProgress]);
@@ -52,7 +49,7 @@ const Channels = () => {
     loadChannels();
     loadStats();
     loadTelegramAccounts();
-  }, [offset, searchQuery, activeFilter]);
+  }, [searchQuery, activeFilter]);
 
   useEffect(() => {
     if (telegramAccounts.length > 0) {
@@ -132,7 +129,7 @@ const Channels = () => {
 
   const loadChannels = async () => {
     try {
-      const params: any = { limit, offset };
+      const params: any = { limit };
       if (searchQuery) params.search = searchQuery;
       if (activeFilter === 'active') params.is_active = true;
       if (activeFilter === 'inactive') params.is_active = false;
@@ -150,17 +147,6 @@ const Channels = () => {
       showToast('error', `${t('common.error')}: ${errorMessage}`);
     }
   };
-
-  const handleNext = () => {
-    const newOffset = offset + limit;
-    setSearchParams({ offset: newOffset.toString() });
-  };
-
-  const handlePrevious = () => {
-    const newOffset = Math.max(0, offset - limit);
-    setSearchParams({ offset: newOffset.toString() });
-  };
-
 
   const withLoading = async <T,>(
     actionKey: string,
@@ -466,7 +452,7 @@ const Channels = () => {
                 placeholder={t('channels.searchPlaceholder')}
                 value={searchInput}
                 onChange={(e) => setSearchInput(e.target.value)}
-                onKeyDown={(e) => { if (e.key === 'Enter') { setSearchParams({}); setSearchQuery(searchInput); } }}
+                onKeyDown={(e) => { if (e.key === 'Enter') { setSearchQuery(searchInput); } }}
                 className="pl-9"
               />
             </div>
@@ -489,7 +475,7 @@ const Channels = () => {
         </CardHeader>
         <CardContent className="p-0">
           {channels.length > 0 ? (
-            <div className="divide-y">
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 p-4">
               {channels.map((channel) => {
                 const prog = channelProgress[channel.username];
                 const isFetching = operations[channel.username]?.type === 'fetch';
@@ -498,165 +484,148 @@ const Channels = () => {
                 const isListened = channel.is_listened === 1 || channel.is_listened === true || listenedChannels.includes(channel.username);
                 const pct = prog ? Math.round((prog.analyzed / Math.max(prog.total, 1)) * 100) : 0;
                 const results = messageResults[channel.username] || [];
+                const hasPending = (channel.pending_count || 0) > 0;
                 return (
-                  <div key={channel.id} className="p-4 hover:bg-muted/30 transition-colors">
-                    <div className="flex flex-col sm:flex-row gap-4">
-                      {/* Left: avatar + info */}
-                      <div className="flex gap-3 flex-1 min-w-0">
-                        <div className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 font-bold text-sm ${
-                          channel.is_active ? 'bg-blue-100 text-blue-700' : 'bg-muted text-muted-foreground'
-                        }`}>
-                          {(channel.username || '@').substring(0, 2).toUpperCase()}
-                        </div>
-                        <div className="flex-1 min-w-0">
-                          <div className="flex items-center gap-2 flex-wrap mb-1">
-                            <span className="font-semibold text-sm">{channel.username}</span>
-                            <Badge variant={channel.is_active ? 'default' : 'secondary'} className="text-xs px-1.5 py-0">
-                              {channel.is_active ? t('channels.active') : t('channels.inactive')}
-                            </Badge>
-                            {isListened && (
-                              <Badge className="bg-green-50 text-green-700 border border-green-200 text-xs px-1.5 py-0">
-                                <span className="w-1.5 h-1.5 rounded-full bg-green-500 mr-1 inline-block animate-pulse" />
-                                {t('dashboard.listening')}
+                  <Card key={channel.id} className={`hover:shadow-md transition-shadow ${hasPending ? 'border-amber-300 bg-amber-50/50' : ''}`}>
+                    <CardContent className="p-4">
+                      <div className="flex flex-col gap-3">
+                        {/* Header: avatar + info */}
+                        <div className="flex gap-3">
+                          <div className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 font-bold text-sm ${
+                            channel.is_active ? 'bg-blue-100 text-blue-700' : 'bg-muted text-muted-foreground'
+                          }`}>
+                            {(channel.username || '@').substring(0, 2).toUpperCase()}
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center gap-2 flex-wrap mb-1">
+                              <span className="font-semibold text-sm truncate">{channel.username}</span>
+                              <Badge variant={channel.is_active ? 'default' : 'secondary'} className="text-xs px-1.5 py-0 shrink-0">
+                                {channel.is_active ? t('channels.active') : t('channels.inactive')}
                               </Badge>
-                            )}
-                          </div>
-                          {channel.name && <p className="text-xs font-medium text-muted-foreground mb-1">{channel.name}</p>}
-                          <div className="flex items-center gap-3 text-xs text-muted-foreground flex-wrap">
-                            <span className="flex items-center gap-1">
-                              <MessageSquare className="w-3 h-3" />
-                              {channel.message_count || 0}
-                            </span>
-                            <span className="flex items-center gap-1">
-                              <Briefcase className="w-3 h-3" />
-                              {channel.job_count || 0}
-                            </span>
-                            {(channel.last_fetch_new_count || 0) > 0 && (
-                              <Badge className="bg-emerald-50 text-emerald-700 border-emerald-200 text-[10px] px-1.5 py-0">+{channel.last_fetch_new_count} {t('channels.fetched')}</Badge>
-                            )}
-                            {(channel.pending_count || 0) > 0 && (
-                              <Badge className="bg-amber-50 text-amber-700 border-amber-200 text-[10px] px-1.5 py-0">{channel.pending_count} {t('channels.pending')}</Badge>
-                            )}
-                          </div>
-                          {/* Progress */}
-                          {prog && (
-                            <div className="mt-2.5 space-y-1">
-                              <div className="flex justify-between text-[10px] text-muted-foreground">
-                                <span className={isStopping ? 'text-orange-600 font-medium' : 'text-blue-600 font-medium'}>
-                                  {isStopping ? t('channels.stopping') : t('channels.analyzing')} — {pct}%
-                                </span>
-                                <span>{prog.analyzed}/{prog.total}</span>
-                              </div>
-                              <Progress value={pct} className={`h-1.5 ${isStopping ? '[&>div]:bg-orange-500' : ''}`} />
-                              {tokenUsage[channel.username] && (
-                                <div className="flex gap-2 text-[10px] text-muted-foreground">
-                                  <Badge variant="outline" className="text-[10px] px-1.5 py-0 font-mono">
-                                    <Zap className="w-2.5 h-2.5 mr-0.5" />
-                                    {(tokenUsage[channel.username].total / 1000).toFixed(1)}k tok
-                                  </Badge>
-                                </div>
-                              )}
-                              {results.length > 0 && (
-                                <div className="flex gap-2 text-[10px]">
-                                  <span className="text-emerald-600">✓ {results.filter((r: any) => r.status === 'success').length}</span>
-                                  <span className="text-amber-500">⚠ {results.filter((r: any) => r.status === 'json_cutoff').length}</span>
-                                  <span className="text-red-500">✗ {results.filter((r: any) => r.status === 'failed').length}</span>
-                                </div>
+                              {isListened && (
+                                <Badge className="bg-green-50 text-green-700 border border-green-200 text-xs px-1.5 py-0 shrink-0">
+                                  <span className="w-1.5 h-1.5 rounded-full bg-green-500 mr-1 inline-block animate-pulse" />
+                                  {t('dashboard.listening')}
+                                </Badge>
                               )}
                             </div>
+                            {channel.name && <p className="text-xs font-medium text-muted-foreground truncate">{channel.name}</p>}
+                          </div>
+                        </div>
+                        
+                        {/* Stats */}
+                        <div className="flex items-center gap-3 text-xs text-muted-foreground flex-wrap">
+                          <span className="flex items-center gap-1">
+                            <MessageSquare className="w-3 h-3" />
+                            {channel.message_count || 0}
+                          </span>
+                          <span className="flex items-center gap-1">
+                            <Briefcase className="w-3 h-3" />
+                            {channel.job_count || 0}
+                          </span>
+                          {(channel.last_fetch_new_count || 0) > 0 && (
+                            <Badge className="bg-emerald-50 text-emerald-700 border-emerald-200 text-[10px] px-1.5 py-0">+{channel.last_fetch_new_count} {t('channels.fetched')}</Badge>
+                          )}
+                          {(channel.pending_count || 0) > 0 && (
+                            <Badge className="bg-amber-50 text-amber-700 border-amber-200 text-[10px] px-1.5 py-0">{channel.pending_count} {t('channels.pending')}</Badge>
                           )}
                         </div>
+                        
+                        {/* Progress */}
+                        {prog && (
+                          <div className="space-y-1">
+                            <div className="flex justify-between text-[10px] text-muted-foreground">
+                              <span className={isStopping ? 'text-orange-600 font-medium' : 'text-blue-600 font-medium'}>
+                                {isStopping ? t('channels.stopping') : t('channels.analyzing')} — {pct}%
+                              </span>
+                              <span>{prog.analyzed}/{prog.total}</span>
+                            </div>
+                            <Progress value={pct} className={`h-1.5 ${isStopping ? '[&>div]:bg-orange-500' : ''}`} />
+                            {tokenUsage[channel.username] && (
+                              <div className="flex gap-2 text-[10px] text-muted-foreground">
+                                <Badge variant="outline" className="text-[10px] px-1.5 py-0 font-mono">
+                                  <Zap className="w-2.5 h-2.5 mr-0.5" />
+                                  {(tokenUsage[channel.username].total / 1000).toFixed(1)}k tok
+                                </Badge>
+                              </div>
+                            )}
+                            {results.length > 0 && (
+                              <div className="flex gap-2 text-[10px]">
+                                <span className="text-emerald-600">✓ {results.filter((r: any) => r.status === 'success').length}</span>
+                                <span className="text-amber-500">⚠ {results.filter((r: any) => r.status === 'json_cutoff').length}</span>
+                                <span className="text-red-500">✗ {results.filter((r: any) => r.status === 'failed').length}</span>
+                              </div>
+                            )}
+                          </div>
+                        )}
+                        
+                        {/* Actions */}
+                        <div className="flex flex-wrap gap-1.5 pt-2 border-t">
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <Button size="sm" className="h-7 text-xs flex-1"
+                                variant={isFetching ? 'destructive' : 'outline'}
+                                onClick={() => isFetching ? stopAnalyzeChannel(channel.id, channel.username) : fetchChannel(channel.id)}
+                                disabled={loadingActions.has(`fetch-${channel.id}`) || (isFetching && isStopping)}
+                              >
+                                {isFetching ? <><Square size={10} className="mr-1" />{isStopping ? t('channels.stopping') : t('dashboard.fetching')}</> : <><RefreshCw size={10} className="mr-1" />{t('channels.fetch')}</>}
+                              </Button>
+                            </TooltipTrigger>
+                            <TooltipContent>{isFetching ? t('common.stop') : t('channels.fetch')}</TooltipContent>
+                          </Tooltip>
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <Button size="sm" className="h-7 text-xs flex-1"
+                                variant={isAnalyzing ? 'destructive' : 'default'}
+                                onClick={() => isAnalyzing ? stopAnalyzeChannel(channel.id, channel.username) : analyzeChannel(channel.id)}
+                                disabled={loadingActions.has(`analyze-${channel.id}`) || (isAnalyzing && isStopping)}
+                              >
+                                {isAnalyzing ? <><Square size={10} className="mr-1" />{isStopping ? t('channels.stopping') : t('dashboard.analyzing')}</> : <><Bot size={10} className="mr-1" />{t('channels.analyze')}</>}
+                              </Button>
+                            </TooltipTrigger>
+                            <TooltipContent>{isAnalyzing ? t('common.stop') : t('channels.analyze')}</TooltipContent>
+                          </Tooltip>
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <Button size="sm" className="h-7 text-xs" variant="outline"
+                                onClick={() => toggleChannel(channel.id)}
+                                disabled={loadingActions.has(`toggle-${channel.id}`) || !!(operations[channel.username])}
+                              >
+                                {loadingActions.has(`toggle-${channel.id}`) ? t('channels.toggling') : channel.is_active ? t('channels.disable') : t('channels.enable')}
+                              </Button>
+                            </TooltipTrigger>
+                            <TooltipContent>{channel.is_active ? t('channels.disable') : t('channels.enable')}</TooltipContent>
+                          </Tooltip>
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <Button size="sm" className="h-7 text-xs"
+                                variant={isListened ? 'destructive' : 'outline'}
+                                onClick={() => toggleChannelListener(channel)}
+                                disabled={loadingActions.has(`listener-${channel.id}`)}
+                              >
+                                <Radio size={10} className="mr-1" />
+                                {isListened ? t('common.stop') : t('common.listen')}
+                              </Button>
+                            </TooltipTrigger>
+                            <TooltipContent>{isListened ? t('common.stop') : t('common.listen')}</TooltipContent>
+                          </Tooltip>
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <Button size="sm" className="h-7 text-xs" variant="ghost"
+                                onClick={() => confirmDelete(channel.id)}
+                                disabled={loadingActions.has(`delete-${channel.id}`) || !!(operations[channel.username])}
+                              >
+                                ✕
+                              </Button>
+                            </TooltipTrigger>
+                            <TooltipContent>{t('channels.delete')}</TooltipContent>
+                          </Tooltip>
+                        </div>
                       </div>
-                      {/* Right: actions */}
-                      <div className="flex flex-wrap gap-1.5 sm:items-start">
-                        <Tooltip>
-                          <TooltipTrigger asChild>
-                            <Button size="sm" className="h-7 text-xs"
-                              variant={isFetching ? 'destructive' : 'outline'}
-                              onClick={() => isFetching ? stopAnalyzeChannel(channel.id, channel.username) : fetchChannel(channel.id)}
-                              disabled={loadingActions.has(`fetch-${channel.id}`) || (isFetching && isStopping)}
-                            >
-                              {isFetching ? <><Square size={10} className="mr-1" />{isStopping ? t('channels.stopping') : t('dashboard.fetching')}</> : <><RefreshCw size={10} className="mr-1" />{t('channels.fetch')}</>}
-                            </Button>
-                          </TooltipTrigger>
-                          <TooltipContent>{isFetching ? t('common.stop') : t('channels.fetch')}</TooltipContent>
-                        </Tooltip>
-                        <Tooltip>
-                          <TooltipTrigger asChild>
-                            <Button size="sm" className="h-7 text-xs"
-                              variant={isAnalyzing ? 'destructive' : 'default'}
-                              onClick={() => isAnalyzing ? stopAnalyzeChannel(channel.id, channel.username) : analyzeChannel(channel.id)}
-                              disabled={loadingActions.has(`analyze-${channel.id}`) || (isAnalyzing && isStopping)}
-                            >
-                              {isAnalyzing ? <><Square size={10} className="mr-1" />{isStopping ? t('channels.stopping') : t('dashboard.analyzing')}</> : <><Bot size={10} className="mr-1" />{t('channels.analyze')}</>}
-                            </Button>
-                          </TooltipTrigger>
-                          <TooltipContent>{isAnalyzing ? t('common.stop') : t('channels.analyze')}</TooltipContent>
-                        </Tooltip>
-                        <Tooltip>
-                          <TooltipTrigger asChild>
-                            <Button size="sm" className="h-7 text-xs" variant="outline"
-                              onClick={() => toggleChannel(channel.id)}
-                              disabled={loadingActions.has(`toggle-${channel.id}`) || !!(operations[channel.username])}
-                            >
-                              {loadingActions.has(`toggle-${channel.id}`) ? t('channels.toggling') : channel.is_active ? t('channels.disable') : t('channels.enable')}
-                            </Button>
-                          </TooltipTrigger>
-                          <TooltipContent>{channel.is_active ? t('channels.disable') : t('channels.enable')}</TooltipContent>
-                        </Tooltip>
-                        <Tooltip>
-                          <TooltipTrigger asChild>
-                            <Button size="sm" className="h-7 text-xs"
-                              variant={isListened ? 'destructive' : 'outline'}
-                              onClick={() => toggleChannelListener(channel)}
-                              disabled={loadingActions.has(`listener-${channel.id}`)}
-                            >
-                              <Radio size={10} className="mr-1" />
-                              {isListened ? t('common.stop') : t('common.listen')}
-                            </Button>
-                          </TooltipTrigger>
-                          <TooltipContent>{isListened ? t('common.stop') : t('common.listen')}</TooltipContent>
-                        </Tooltip>
-                        <Tooltip>
-                          <TooltipTrigger asChild>
-                            <Button size="sm" className="h-7 text-xs" variant="ghost"
-                              onClick={() => confirmDelete(channel.id)}
-                              disabled={loadingActions.has(`delete-${channel.id}`) || !!(operations[channel.username])}
-                            >
-                              ✕
-                            </Button>
-                          </TooltipTrigger>
-                          <TooltipContent>{t('channels.delete')}</TooltipContent>
-                        </Tooltip>
-                      </div>
-                    </div>
-                  </div>
+                    </CardContent>
+                  </Card>
                 );
               })}
-              {/* Pagination */}
-              <div className="flex flex-col sm:flex-row items-center justify-between gap-3 pt-3 border-t">
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={handlePrevious}
-                  disabled={offset === 0}
-                  className="w-full sm:w-auto"
-                >
-                  {t('common.previous')}
-                </Button>
-                <span className="text-sm text-muted-foreground text-center">
-                  {t('common.page')} {Math.floor(offset / limit) + 1} / {Math.ceil(total / limit)}
-                </span>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={handleNext}
-                  disabled={offset + limit >= total}
-                  className="w-full sm:w-auto"
-                >
-                  {t('common.next')}
-                </Button>
-              </div>
             </div>
           ) : (
             <div className="flex flex-col items-center justify-center py-16 text-muted-foreground">
