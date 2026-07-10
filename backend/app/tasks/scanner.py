@@ -115,7 +115,7 @@ async def continuous_scanner(
             async with AsyncSessionLocal() as db:
                 try:
                     channels_result = await db.execute(
-                        select(Channel).filter(Channel.is_active == True, Channel.is_listened == False)
+                        select(Channel).filter(Channel.is_active == True, Channel.is_listened == 0)
                     )
                     channels = channels_result.scalars().all()
 

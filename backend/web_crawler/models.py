@@ -15,6 +15,7 @@ class JobPosting(BaseModel):
     location: Optional[str] = Field(None, description="Job location")
     is_remote: Optional[bool] = Field(None, description="Whether the job is remote")
     salary: Optional[str] = Field(None, description="Salary range")
+    category: Optional[str] = Field(None, description="Job category, one of 运营/增长/技术/产品/AI专项/设计/内容/职能/客服/其他")
     contacts: List[dict] = Field(default_factory=list, description="Contact info [{type, value}]")
 
 

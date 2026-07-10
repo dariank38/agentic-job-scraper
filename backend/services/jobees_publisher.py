@@ -13,6 +13,7 @@ from sqlalchemy.orm import selectinload
 
 from app.connection import AsyncSessionLocal
 from app.models import Job
+from app.tasks.helpers import _normalize_category as _helpers_normalize_category
 
 load_dotenv()
 
@@ -28,16 +29,9 @@ DEFAULT_PRIORITY = "P2"
 DEFAULT_SALARY_LEVEL = "negotiable"
 
 
-JOBEES_CATEGORIES = {
-    "运营", "增长", "技术", "产品", "AI专项", "设计", "内容", "职能", "客服", "其他"
-}
-
-
 def _normalize_category(value: Optional[str]) -> str:
-    if not value:
-        return DEFAULT_CATEGORY
-    value = str(value).strip()
-    return value if value in JOBEES_CATEGORIES else DEFAULT_CATEGORY
+    """Map any text value to a canonical Jobees category, falling back to DEFAULT_CATEGORY."""
+    return _helpers_normalize_category(value) or DEFAULT_CATEGORY
 
 
 def _normalize_priority(value: Optional[str]) -> str:

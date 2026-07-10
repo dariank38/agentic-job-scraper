@@ -6,11 +6,12 @@ RSS_PROMPT = """你是RSS招聘帖提取器。仅输出JSON，无markdown。
 规则：
 - 提取招聘信息：职位、公司、薪资、地点、要求、联系方式
 - is_remote：true=远程，false=现场，null=未提及
-- 所有字段翻译为英文
+- category：岗位大类，仅限以下中文之一：运营 / 增长 / 技术 / 产品 / AI专项 / 设计 / 内容 / 职能 / 客服 / 其他。技术岗位若聚焦AI/算法/大模型则选"AI专项"
+- 除category外，其他字段翻译为英文
 - 未知字段：null
 
 输出：
-{{"job_postings":[{{"title":"英文职位名","company":null,"location":null,"requirements":null,"salary":null,"deadline":null,"url":null,"is_remote":null}}],"developer_info":{{"team_name":null,"tech_stack":[],"open_source_links":[],"description":null}},"contact_info":{{"emails":[],"phone_numbers":[],"social_links":[],"contact_persons":[]}}}}
+{{"job_postings":[{{"title":"英文职位名","company":null,"location":null,"requirements":null,"salary":null,"deadline":null,"url":null,"is_remote":null,"category":"其他"}}],"developer_info":{{"team_name":null,"tech_stack":[],"open_source_links":[],"description":null}},"contact_info":{{"emails":[],"phone_numbers":[],"social_links":[],"contact_persons":[]}}}}
 
 待分析内容：
 {content}
@@ -23,14 +24,14 @@ V2EX_PROMPT = """你是V2EX招聘帖提取器。仅输出JSON，无markdown。
 规则：
 - 每条消息仅一个招聘帖，返回一个job_postings对象
 - 招聘/诚聘/hiring = 雇主发帖；求职帖返回空job_postings
-- 所有字段翻译为英文
 - is_remote：true=远程/wfh，false=现场，null=未提及
 - role_type：frontend|backend|fullstack|devops|mobile|blockchain|data|ml_ai|qa|security|other_tech
+- category：岗位大类，仅限以下中文之一：运营 / 增长 / 技术 / 产品 / AI专项 / 设计 / 内容 / 职能 / 客服 / 其他。技术岗位若聚焦AI/算法/大模型则选"AI专项"
 - contacts：[{{type,value}}]，type可为email/telegram/linkedin/github/website/wechat/other
 - 未知字段：null
 
 输出：
-{{"job_postings":[{{"title":"英文职位名","company":null,"location":null,"requirements":null,"salary":null,"deadline":null,"url":null,"is_remote":null,"role_type":null,"contacts":[]}}],"developer_info":null,"contact_info":{{"emails":[],"phone_numbers":[],"social_links":[],"contact_persons":[]}}}}
+{{"job_postings":[{{"title":"英文职位名","company":null,"location":null,"requirements":null,"salary":null,"deadline":null,"url":null,"is_remote":null,"role_type":null,"category":"其他","contacts":[]}}],"developer_info":null,"contact_info":{{"emails":[],"phone_numbers":[],"social_links":[],"contact_persons":[]}}}}
 
 待分析帖子：
 {content}
@@ -44,14 +45,14 @@ ELEDUCK_PROMPT = """你是电鸭社区招聘帖提取器。仅输出JSON，无ma
 - 每条消息仅一个招聘帖，返回一个job_postings对象
 - RSS描述可能被截断，提取可用信息即可
 - 招聘/诚聘/hiring = 雇主发帖；求职帖返回空job_postings
-- 所有字段翻译为英文
 - is_remote：true=远程/wfh，false=现场，null=未提及
 - role_type：frontend|backend|fullstack|devops|mobile|blockchain|data|ml_ai|qa|security|other_tech
+- category：岗位大类，仅限以下中文之一：运营 / 增长 / 技术 / 产品 / AI专项 / 设计 / 内容 / 职能 / 客服 / 其他。技术岗位若聚焦AI/算法/大模型则选"AI专项"
 - contacts：[{{type,value}}]，type可为email/telegram/linkedin/github/website/wechat/other
 - 未知字段：null
 
 输出：
-{{"job_postings":[{{"title":"英文职位名","company":null,"location":null,"requirements":null,"salary":null,"deadline":null,"url":null,"is_remote":null,"role_type":null,"contacts":[]}}],"developer_info":null,"contact_info":{{"emails":[],"phone_numbers":[],"social_links":[],"contact_persons":[]}}}}
+{{"job_postings":[{{"title":"英文职位名","company":null,"location":null,"requirements":null,"salary":null,"deadline":null,"url":null,"is_remote":null,"role_type":null,"category":"其他","contacts":[]}}],"developer_info":null,"contact_info":{{"emails":[],"phone_numbers":[],"social_links":[],"contact_persons":[]}}}}
 
 待分析RSS条目：
 {content}

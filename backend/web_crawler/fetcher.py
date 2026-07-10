@@ -6,11 +6,9 @@ Bossjob-specific logic lives in web_crawler/bossjob_fetcher.py.
 
 
 import asyncio
-
 import logging
-
+import re
 from datetime import datetime, timedelta, timezone
-
 from typing import Any, Optional
 
 from playwright.async_api import async_playwright, Page
@@ -46,29 +44,37 @@ async def fetch_posts(
     today_midnight = datetime.now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0)
     cutoff_date = today_midnight - timedelta(days=days_back)
 
+    browser = None
+    context = None
     try:
         async with async_playwright() as p:
             browser = await p.chromium.launch(headless=HEADLESS)
-            context = await browser.new_context(user_agent=USER_AGENT, viewport={"width": 1920, "height": 1080})
-            if cookies:
-                await context.add_cookies(cookies)
-                logger.info(f"[FETCH] Added {len(cookies)} cookies for authentication")
-            page = await context.new_page()
-            page_timeout = 120000 if site_type == "bossjob" else TIMEOUT
-            page.set_default_timeout(page_timeout)
-            logger.info(f"[FETCH] Navigating to {url}")
-            wait_until = "commit" if site_type == "bossjob" else "networkidle"
-            await page.goto(url, wait_until=wait_until, timeout=page_timeout)
-            if site_type == "v2ex":
-                posts = await _fetch_v2ex_posts(page, cutoff_date, batch_size, batch_delay)
-            elif site_type == "eleduck":
-                posts = await _fetch_eleduck_posts(page, cutoff_date, batch_size, batch_delay)
-            elif site_type == "bossjob":
-                posts = await _fetch_bossjob_posts(page, cutoff_date, batch_size, batch_delay)
-            else:
-                logger.error(f"[FETCH] Unknown site type: {site_type}")
-            await context.close()
-            await browser.close()
+            try:
+                context = await browser.new_context(user_agent=USER_AGENT, viewport={"width": 1920, "height": 1080})
+                try:
+                    if cookies:
+                        await context.add_cookies(cookies)
+                        logger.info(f"[FETCH] Added {len(cookies)} cookies for authentication")
+                    page = await context.new_page()
+                    page_timeout = 120000 if site_type == "bossjob" else TIMEOUT
+                    page.set_default_timeout(page_timeout)
+                    logger.info(f"[FETCH] Navigating to {url}")
+                    wait_until = "commit" if site_type == "bossjob" else "networkidle"
+                    await page.goto(url, wait_until=wait_until, timeout=page_timeout)
+                    if site_type == "v2ex":
+                        posts = await _fetch_v2ex_posts(page, cutoff_date, batch_size, batch_delay)
+                    elif site_type == "eleduck":
+                        posts = await _fetch_eleduck_posts(page, cutoff_date, batch_size, batch_delay)
+                    elif site_type == "bossjob":
+                        posts = await _fetch_bossjob_posts(page, cutoff_date, batch_size, batch_delay)
+                    else:
+                        logger.error(f"[FETCH] Unknown site type: {site_type}")
+                finally:
+                    if context is not None:
+                        await context.close()
+            finally:
+                if browser is not None:
+                    await browser.close()
     except Exception as e:
         logger.error(f"[FETCH] Error fetching from {url}: {e}", exc_info=True)
 
@@ -179,31 +185,23 @@ async def _fetch_eleduck_posts(page: Page, cutoff_date: datetime, batch_size: in
     return posts
 
 
-def _parse_v2ex_date(date_text: str) -> datetime:
+def _parse_relative_date(date_text: str) -> datetime:
+    """Parse a Chinese relative date string into an aware UTC datetime."""
     now = datetime.now(timezone.utc)
-    if "分钟前" in date_text:
-        return now - timedelta(minutes=int(date_text.replace("分钟前", "")))
-    elif "小时前" in date_text:
-        return now - timedelta(hours=int(date_text.replace("小时前", "")))
-    elif "天前" in date_text:
-        return now - timedelta(days=int(date_text.replace("天前", "")))
-    else:
-        try:
-            return datetime.strptime(date_text, "%Y-%m-%d").replace(tzinfo=timezone.utc)
-        except Exception:
-            return now
+    match = re.search(r"(\d+)", date_text)
+    if match:
+        value = int(match.group(1))
+        if "分钟" in date_text:
+            return now - timedelta(minutes=value)
+        elif "小时" in date_text:
+            return now - timedelta(hours=value)
+        elif "天" in date_text:
+            return now - timedelta(days=value)
+    try:
+        return datetime.strptime(date_text.strip(), "%Y-%m-%d").replace(tzinfo=timezone.utc)
+    except Exception:
+        return now
 
 
-def _parse_eleduck_date(date_text: str) -> datetime:
-    now = datetime.now(timezone.utc)
-    if "分钟前" in date_text:
-        return now - timedelta(minutes=int(date_text.replace("分钟前", "")))
-    elif "小时前" in date_text:
-        return now - timedelta(hours=int(date_text.replace("小时前", "")))
-    elif "天前" in date_text:
-        return now - timedelta(days=int(date_text.replace("天前", "")))
-    else:
-        try:
-            return datetime.strptime(date_text, "%Y-%m-%d").replace(tzinfo=timezone.utc)
-        except Exception:
-            return now
+_parse_v2ex_date = _parse_relative_date
+_parse_eleduck_date = _parse_relative_date

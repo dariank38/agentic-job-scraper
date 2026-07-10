@@ -16,6 +16,7 @@ from app.models import Developer, Job, Message, WebsiteSource
 from app.tasks import (analyze_website_posts, broadcast_progress,
                        create_operation, stop_website_operation,
                        update_operation, website_stop_events)
+from app.tasks.helpers import _normalize_category, _normalize_priority
 from services.ollama_service import get_analyzer, is_ollama_available
 from web_crawler import Fetcher
 from web_crawler.config import DEFAULT_DAYS_BACK
@@ -150,6 +151,12 @@ async def _fetch_bossjob_bg(source_id: int, operation_id: str, days_back: int):
                     )
                     if existing_job.scalar_one_or_none():
                         continue
+                    job_category = (
+                        _normalize_category(title)
+                        or _normalize_category(requirements)
+                        or _normalize_category(description)
+                        or "技术"
+                    )
                     db.add(Job(
                         website_source_id=source_id,
                         channel_name=source.name,
@@ -160,6 +167,8 @@ async def _fetch_bossjob_bg(source_id: int, operation_id: str, days_back: int):
                         jd=post.get("description", "") + f"\n\nURL: {job_url}",
                         skills=post.get("requirements", ""),
                         channel_contact=job_url,
+                        category=job_category,
+                        priority=_normalize_priority("P2"),
                         is_applied=False,
                         is_hidden=False,
                     ))

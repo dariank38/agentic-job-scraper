@@ -192,7 +192,7 @@ async def fetch_bossjob_posts(
                         "title": title,
                         "url": job_url,
                         "company": company,
-                        "date": datetime.now(),
+                        "date": datetime.now(timezone.utc),
                         "text": full_text,
                         "analysis_text": analysis_text,
                         "salary": salary,

@@ -616,6 +616,7 @@ async def analyze_website_posts(
                             elif ci.contact_persons:
                                 hr_contact = ci.contact_persons[0]
 
+                        job_category = _normalize_category(job.category) or _normalize_category(job.title) or "技术"
                         job_obj = Job(
                             message_id=message_id,
                             website_source_id=source_id,
@@ -628,7 +629,7 @@ async def analyze_website_posts(
                             company_link=job.url,
                             salary=_to_str(job.salary),
                             salary_level=_normalize_salary_level(None),
-                            category="技术",
+                            category=job_category,
                             priority="P2",
                             jd=job.requirements,
                             hr_contact=hr_contact,
