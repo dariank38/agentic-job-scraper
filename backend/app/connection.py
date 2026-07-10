@@ -100,21 +100,117 @@ async def run_migrations() -> None:
 
     try:
         async with engine.begin() as conn:
-            await conn.execute(text("ALTER TABLE jobs ADD COLUMN IF NOT EXISTS is_favorite BOOLEAN DEFAULT FALSE"))
-            await conn.execute(text("ALTER TABLE messages ADD COLUMN IF NOT EXISTS is_manual_skip BOOLEAN DEFAULT FALSE"))
-            # Jobees integration columns
+            # Jobs table
+            await conn.execute(text("ALTER TABLE jobs ADD COLUMN IF NOT EXISTS message_id INTEGER"))
+            await conn.execute(text("ALTER TABLE jobs ADD COLUMN IF NOT EXISTS channel_id INTEGER"))
+            await conn.execute(text("ALTER TABLE jobs ADD COLUMN IF NOT EXISTS website_source_id INTEGER"))
+            await conn.execute(text("ALTER TABLE jobs ADD COLUMN IF NOT EXISTS channel_name VARCHAR(255)"))
+            await conn.execute(text("ALTER TABLE jobs ADD COLUMN IF NOT EXISTS source_type VARCHAR(255)"))
+            await conn.execute(text("ALTER TABLE jobs ADD COLUMN IF NOT EXISTS title VARCHAR(255)"))
+            await conn.execute(text("ALTER TABLE jobs ADD COLUMN IF NOT EXISTS company VARCHAR(255)"))
+            await conn.execute(text("ALTER TABLE jobs ADD COLUMN IF NOT EXISTS company_link VARCHAR(255)"))
+            await conn.execute(text("ALTER TABLE jobs ADD COLUMN IF NOT EXISTS location VARCHAR(255)"))
+            await conn.execute(text("ALTER TABLE jobs ADD COLUMN IF NOT EXISTS is_remote BOOLEAN"))
+            await conn.execute(text("ALTER TABLE jobs ADD COLUMN IF NOT EXISTS role_type VARCHAR(255)"))
+            await conn.execute(text("ALTER TABLE jobs ADD COLUMN IF NOT EXISTS skills JSON"))
             await conn.execute(text("ALTER TABLE jobs ADD COLUMN IF NOT EXISTS salary VARCHAR(120)"))
             await conn.execute(text("ALTER TABLE jobs ADD COLUMN IF NOT EXISTS salary_level VARCHAR(20)"))
             await conn.execute(text("ALTER TABLE jobs ADD COLUMN IF NOT EXISTS category VARCHAR(40)"))
             await conn.execute(text("ALTER TABLE jobs ADD COLUMN IF NOT EXISTS priority VARCHAR(4)"))
             await conn.execute(text("ALTER TABLE jobs ADD COLUMN IF NOT EXISTS jd TEXT"))
             await conn.execute(text("ALTER TABLE jobs ADD COLUMN IF NOT EXISTS hr_contact VARCHAR(255)"))
+            await conn.execute(text("ALTER TABLE jobs ADD COLUMN IF NOT EXISTS hr_contact_type VARCHAR(255) DEFAULT 'telegram'"))
             await conn.execute(text("ALTER TABLE jobs ADD COLUMN IF NOT EXISTS channel_contact VARCHAR(255)"))
+            await conn.execute(text("ALTER TABLE jobs ADD COLUMN IF NOT EXISTS channel_contact_type VARCHAR(255) DEFAULT 'telegram'"))
             await conn.execute(text("ALTER TABLE jobs ADD COLUMN IF NOT EXISTS published_to_jobees BOOLEAN DEFAULT FALSE"))
             await conn.execute(text("ALTER TABLE jobs ADD COLUMN IF NOT EXISTS published_at TIMESTAMP"))
             await conn.execute(text("ALTER TABLE jobs ADD COLUMN IF NOT EXISTS jobees_job_id VARCHAR(255)"))
+            await conn.execute(text("ALTER TABLE jobs ADD COLUMN IF NOT EXISTS is_applied BOOLEAN DEFAULT FALSE"))
+            await conn.execute(text("ALTER TABLE jobs ADD COLUMN IF NOT EXISTS applied_at TIMESTAMP"))
+            await conn.execute(text("ALTER TABLE jobs ADD COLUMN IF NOT EXISTS is_hidden BOOLEAN DEFAULT FALSE"))
+            await conn.execute(text("ALTER TABLE jobs ADD COLUMN IF NOT EXISTS is_favorite BOOLEAN DEFAULT FALSE"))
             await conn.execute(text("ALTER TABLE jobs ADD COLUMN IF NOT EXISTS is_reviewed BOOLEAN DEFAULT FALSE"))
             await conn.execute(text("ALTER TABLE jobs ADD COLUMN IF NOT EXISTS is_approved BOOLEAN"))
+            await conn.execute(text("ALTER TABLE jobs ADD COLUMN IF NOT EXISTS notes TEXT"))
+            await conn.execute(text("ALTER TABLE jobs ADD COLUMN IF NOT EXISTS analyzed_at TIMESTAMP"))
+
+            # Messages table
+            await conn.execute(text("ALTER TABLE messages ADD COLUMN IF NOT EXISTS telegram_id BIGINT"))
+            await conn.execute(text("ALTER TABLE messages ADD COLUMN IF NOT EXISTS website_post_id VARCHAR(255)"))
+            await conn.execute(text("ALTER TABLE messages ADD COLUMN IF NOT EXISTS website_source_id INTEGER"))
+            await conn.execute(text("ALTER TABLE messages ADD COLUMN IF NOT EXISTS source_type VARCHAR(255) DEFAULT 'telegram'"))
+            await conn.execute(text("ALTER TABLE messages ADD COLUMN IF NOT EXISTS date TIMESTAMP"))
+            await conn.execute(text("ALTER TABLE messages ADD COLUMN IF NOT EXISTS text TEXT"))
+            await conn.execute(text("ALTER TABLE messages ADD COLUMN IF NOT EXISTS analysis_text TEXT"))
+            await conn.execute(text("ALTER TABLE messages ADD COLUMN IF NOT EXISTS sender_id BIGINT"))
+            await conn.execute(text("ALTER TABLE messages ADD COLUMN IF NOT EXISTS sender_username VARCHAR(255)"))
+            await conn.execute(text("ALTER TABLE messages ADD COLUMN IF NOT EXISTS sender_first_name VARCHAR(255)"))
+            await conn.execute(text("ALTER TABLE messages ADD COLUMN IF NOT EXISTS has_image BOOLEAN DEFAULT FALSE"))
+            await conn.execute(text("ALTER TABLE messages ADD COLUMN IF NOT EXISTS needs_reanalysis BOOLEAN DEFAULT FALSE"))
+            await conn.execute(text("ALTER TABLE messages ADD COLUMN IF NOT EXISTS analysis_status VARCHAR(255) DEFAULT 'pending'"))
+            await conn.execute(text("ALTER TABLE messages ADD COLUMN IF NOT EXISTS skip_reason VARCHAR(255)"))
+            await conn.execute(text("ALTER TABLE messages ADD COLUMN IF NOT EXISTS is_manual_skip BOOLEAN DEFAULT FALSE"))
+
+            # Developers table
+            await conn.execute(text("ALTER TABLE developers ADD COLUMN IF NOT EXISTS message_id INTEGER"))
+            await conn.execute(text("ALTER TABLE developers ADD COLUMN IF NOT EXISTS channel_id INTEGER"))
+            await conn.execute(text("ALTER TABLE developers ADD COLUMN IF NOT EXISTS website_source_id INTEGER"))
+            await conn.execute(text("ALTER TABLE developers ADD COLUMN IF NOT EXISTS name VARCHAR(255)"))
+            await conn.execute(text("ALTER TABLE developers ADD COLUMN IF NOT EXISTS skills JSON"))
+            await conn.execute(text("ALTER TABLE developers ADD COLUMN IF NOT EXISTS experience TEXT"))
+            await conn.execute(text("ALTER TABLE developers ADD COLUMN IF NOT EXISTS portfolio VARCHAR(255)"))
+            await conn.execute(text("ALTER TABLE developers ADD COLUMN IF NOT EXISTS github VARCHAR(255)"))
+            await conn.execute(text("ALTER TABLE developers ADD COLUMN IF NOT EXISTS linkedin VARCHAR(255)"))
+            await conn.execute(text("ALTER TABLE developers ADD COLUMN IF NOT EXISTS contact VARCHAR(255)"))
+            await conn.execute(text("ALTER TABLE developers ADD COLUMN IF NOT EXISTS contact_type VARCHAR(255)"))
+            await conn.execute(text("ALTER TABLE developers ADD COLUMN IF NOT EXISTS looking_for_work BOOLEAN"))
+            await conn.execute(text("ALTER TABLE developers ADD COLUMN IF NOT EXISTS summary TEXT"))
+            await conn.execute(text("ALTER TABLE developers ADD COLUMN IF NOT EXISTS is_contacted BOOLEAN DEFAULT FALSE"))
+            await conn.execute(text("ALTER TABLE developers ADD COLUMN IF NOT EXISTS contacted_at TIMESTAMP"))
+            await conn.execute(text("ALTER TABLE developers ADD COLUMN IF NOT EXISTS is_hidden BOOLEAN DEFAULT FALSE"))
+            await conn.execute(text("ALTER TABLE developers ADD COLUMN IF NOT EXISTS notes TEXT"))
+            await conn.execute(text("ALTER TABLE developers ADD COLUMN IF NOT EXISTS analyzed_at TIMESTAMP"))
+
+            # Channels table
+            await conn.execute(text("ALTER TABLE channels ADD COLUMN IF NOT EXISTS telegram_id BIGINT"))
+            await conn.execute(text("ALTER TABLE channels ADD COLUMN IF NOT EXISTS telegram_account_id INTEGER"))
+            await conn.execute(text("ALTER TABLE channels ADD COLUMN IF NOT EXISTS is_active BOOLEAN DEFAULT TRUE"))
+            await conn.execute(text("ALTER TABLE channels ADD COLUMN IF NOT EXISTS is_listened INTEGER DEFAULT 0"))
+            await conn.execute(text("ALTER TABLE channels ADD COLUMN IF NOT EXISTS last_fetch_new_count INTEGER DEFAULT 0"))
+            await conn.execute(text("ALTER TABLE channels ADD COLUMN IF NOT EXISTS last_fetch_at TIMESTAMP"))
+            await conn.execute(text("ALTER TABLE channels ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP"))
+
+            # Website sources table
+            await conn.execute(text("ALTER TABLE website_sources ADD COLUMN IF NOT EXISTS is_active BOOLEAN DEFAULT TRUE"))
+            await conn.execute(text("ALTER TABLE website_sources ADD COLUMN IF NOT EXISTS last_fetch_new_count INTEGER DEFAULT 0"))
+            await conn.execute(text("ALTER TABLE website_sources ADD COLUMN IF NOT EXISTS last_fetch_at TIMESTAMP"))
+            await conn.execute(text("ALTER TABLE website_sources ADD COLUMN IF NOT EXISTS extraction_prompt TEXT"))
+            await conn.execute(text("ALTER TABLE website_sources ADD COLUMN IF NOT EXISTS cookies TEXT"))
+            await conn.execute(text("ALTER TABLE website_sources ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP"))
+
+            # Operations table
+            await conn.execute(text("ALTER TABLE operations ADD COLUMN IF NOT EXISTS channel_username VARCHAR(255)"))
+            await conn.execute(text("ALTER TABLE operations ADD COLUMN IF NOT EXISTS bulk_operation_id VARCHAR(255)"))
+            await conn.execute(text("ALTER TABLE operations ADD COLUMN IF NOT EXISTS total_messages INTEGER DEFAULT 0"))
+            await conn.execute(text("ALTER TABLE operations ADD COLUMN IF NOT EXISTS analyzed INTEGER DEFAULT 0"))
+            await conn.execute(text("ALTER TABLE operations ADD COLUMN IF NOT EXISTS jobs_found INTEGER DEFAULT 0"))
+            await conn.execute(text("ALTER TABLE operations ADD COLUMN IF NOT EXISTS developers_found INTEGER DEFAULT 0"))
+            await conn.execute(text("ALTER TABLE operations ADD COLUMN IF NOT EXISTS error_message TEXT"))
+            await conn.execute(text("ALTER TABLE operations ADD COLUMN IF NOT EXISTS completed_at TIMESTAMP"))
+
+            # Telegram accounts table
+            await conn.execute(text("ALTER TABLE telegram_accounts ADD COLUMN IF NOT EXISTS is_active BOOLEAN DEFAULT TRUE"))
+            await conn.execute(text("ALTER TABLE telegram_accounts ADD COLUMN IF NOT EXISTS is_authenticated BOOLEAN DEFAULT FALSE"))
+            await conn.execute(text("ALTER TABLE telegram_accounts ADD COLUMN IF NOT EXISTS phone_code_hash VARCHAR(255)"))
+            await conn.execute(text("ALTER TABLE telegram_accounts ADD COLUMN IF NOT EXISTS last_used_at TIMESTAMP"))
+
+            # Analysis runs table
+            await conn.execute(text("ALTER TABLE analysis_runs ADD COLUMN IF NOT EXISTS messages_fetched INTEGER DEFAULT 0"))
+            await conn.execute(text("ALTER TABLE analysis_runs ADD COLUMN IF NOT EXISTS messages_analyzed INTEGER DEFAULT 0"))
+            await conn.execute(text("ALTER TABLE analysis_runs ADD COLUMN IF NOT EXISTS jobs_found INTEGER DEFAULT 0"))
+            await conn.execute(text("ALTER TABLE analysis_runs ADD COLUMN IF NOT EXISTS error_message TEXT"))
+            await conn.execute(text("ALTER TABLE analysis_runs ADD COLUMN IF NOT EXISTS completed_at TIMESTAMP"))
+
             # Migrate data from old columns to new ones, then drop old columns
             # Guard with column-existence checks since columns may already be dropped
             await conn.execute(text("""

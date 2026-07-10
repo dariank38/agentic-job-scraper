@@ -260,7 +260,8 @@ async def lifespan(app):
         pass
 
     try:
-        from app.connection import run_migrations
+        from app.connection import init_db, run_migrations
+        await init_db()
         await run_migrations()
     except Exception:
         pass
