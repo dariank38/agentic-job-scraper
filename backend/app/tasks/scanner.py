@@ -190,7 +190,7 @@ async def continuous_scanner(
                                         published_date = None
                                         if published_date_str:
                                             try:
-                                                published_date = datetime.fromisoformat(published_date_str)
+                                                published_date = datetime.fromisoformat(published_date_str.replace('Z', '+00:00')).replace(tzinfo=None)
                                             except Exception:
                                                 pass
 
@@ -239,6 +239,10 @@ async def continuous_scanner(
 
                             except Exception as e:
                                 logger.warning(f"[CRON] Error fetching website {website.name}: {e}", exc_info=True)
+                                try:
+                                    await db.rollback()
+                                except Exception:
+                                    pass
 
                 except Exception as e:
                     logger.error(f"[CRON] Error during scanner loop: {e}", exc_info=True)

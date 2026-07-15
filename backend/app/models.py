@@ -5,7 +5,7 @@ from typing import Optional
 
 from sqlalchemy import (JSON, BigInteger, Boolean, Column, DateTime,
                         ForeignKey, Integer, String, Text)
-from sqlalchemy.orm import declarative_base, relationship
+from sqlalchemy.orm import declarative_base, relationship, validates
 
 Base = declarative_base()
 
@@ -90,6 +90,12 @@ class Message(Base):
     is_manual_skip = Column(Boolean, default=False)  # User-marked skip; AI should not analyze
 
     created_at = Column(DateTime, default=datetime.utcnow)
+
+    @validates('date')
+    def _validate_date(self, key, value):
+        if value is not None and value.tzinfo is not None:
+            return value.replace(tzinfo=None)
+        return value
 
     # Relationships
     channel = relationship("Channel", back_populates="messages", lazy="noload")

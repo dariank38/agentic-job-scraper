@@ -12,9 +12,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.models import (AnalysisRun, Channel, Developer, Job, Message,
                         WebsiteSource)
 from app.tasks.helpers import (_extract_title, _first_contact,
-                               _normalize_category, _normalize_priority,
-                               _normalize_salary_level, _resolve_contact,
-                               _resolve_contacts, _to_bool, _to_str)
+                               _infer_contact_type, _normalize_category,
+                               _normalize_priority, _normalize_salary_level,
+                               _resolve_contact, _resolve_contacts, _to_bool,
+                               _to_str)
 from app.tasks.operations import (broadcast_progress, broadcast_stats_update,
                                   create_operation, update_operation)
 from app.tasks.stop_events import (cleanup_stop_event,
@@ -633,7 +634,9 @@ async def analyze_website_posts(
                             priority="P2",
                             jd=job.requirements,
                             hr_contact=hr_contact,
+                            hr_contact_type=_infer_contact_type(hr_contact),
                             channel_contact=source_name,
+                            channel_contact_type="website",
                         )
                         db.add(job_obj)
                         await db.flush()
