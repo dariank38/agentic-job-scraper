@@ -135,6 +135,7 @@ async def publish_jobs(job_ids: Optional[list[int]] = None) -> dict:
                 Job.published_to_jobees == False,
                 Job.is_hidden == False,
                 Job.title.isnot(None),
+                Job.source_type == "telegram",
             )
             if job_ids:
                 query = query.filter(Job.id.in_(job_ids))

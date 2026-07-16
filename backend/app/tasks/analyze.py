@@ -762,15 +762,7 @@ async def analyze_website_posts(
             "operation_id": operation_id,
         })
 
-        # Auto-publish new jobs to Jobees
-        if jobs_added > 0:
-            logger.info(f"[ANALYZE WEBSITE] [{source_name}] Auto-publishing {jobs_added} new job(s) to Jobees...")
-            try:
-                from services.jobees_publisher import publish_jobs
-                result = await publish_jobs()
-                logger.info(f"[ANALYZE WEBSITE] [{source_name}] Jobees publish result: created={result.get('created',0)} skipped={result.get('skipped',0)} failed={result.get('failed',0)}")
-            except Exception as e:
-                logger.warning(f"[ANALYZE WEBSITE] Auto-publish to Jobees failed: {e}")
+        # Auto-publish is Telegram-only; website jobs are not pushed to Jobees
 
         logger.info(f"[ANALYZE WEBSITE] ✓ COMPLETE | source={source_name} | analyzed={analyzed_count}/{total_messages} | jobs_saved={jobs_added} | devs_saved={devs_added} | skipped={skipped_count} | status={status} | tokens: in={total_input_tokens} out={total_output_tokens}")
 
