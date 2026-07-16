@@ -2,6 +2,7 @@
 
 import logging
 import os
+import re
 from datetime import datetime
 from typing import Optional
 
@@ -27,6 +28,18 @@ logger.info("[JOBEES] Configured → URL=%s key=%s", JOBEES_API_URL, "***" if JO
 DEFAULT_CATEGORY = "其他"
 DEFAULT_PRIORITY = "P2"
 DEFAULT_SALARY_LEVEL = "negotiable"
+
+_VALID_URL_RE = re.compile(r'''^https?://[^\s<>"'{}|\\^`[\]]+\.[a-z]{2,}''', re.IGNORECASE)
+
+
+def _sanitize_company_link(value: Optional[str]) -> Optional[str]:
+    """Return *value* if it's a valid HTTP(S) URL, else None."""
+    if not value:
+        return None
+    s = value.strip()
+    if not _VALID_URL_RE.match(s):
+        return None
+    return s
 
 
 def _normalize_category(value: Optional[str]) -> str:
@@ -88,7 +101,7 @@ def _build_jobees_payload(job: Job) -> dict:
         "category": _normalize_category(job.category),
         "priority": _normalize_priority(job.priority),
         "jd": jd,
-        "company_link": (job.company_link or "").strip()[:500] or None,
+        "company_link": _sanitize_company_link(job.company_link) or None,
         "hr_contact": (job.hr_contact or "").strip()[:120],
         "hr_contact_type": job.hr_contact_type or "telegram",
         "channel_contact": (job.channel_contact or job.channel_name or "").strip()[:120],
@@ -147,6 +160,7 @@ async def publish_jobs(job_ids: Optional[list[int]] = None) -> dict:
 
             created = int(data.get("created", 0))
             skipped = int(data.get("skipped", 0))
+            updated = int(data.get("updated", 0))
             failed = int(data.get("failed", 0))
             errors = data.get("errors", []) or []
 
@@ -158,11 +172,11 @@ async def publish_jobs(job_ids: Optional[list[int]] = None) -> dict:
                 job.published_at = now
 
             await db.commit()
-            logger.info(f"[JOBEES] ✓ Done: created={created} skipped={skipped} failed={failed}")
+            logger.info(f"[JOBEES] ✓ Done: created={created} updated={updated} skipped={skipped} failed={failed}")
             if errors:
                 for err in errors:
                     logger.warning(f"[JOBEES]   ⚠ {err}")
-            return {"published": len(jobs), "created": created, "skipped": skipped, "failed": failed, "errors": errors}
+            return {"published": len(jobs), "created": created, "updated": updated, "skipped": skipped, "failed": failed, "errors": errors}
 
         except httpx.HTTPStatusError as e:
             logger.error(f"[JOBEES] HTTP error {e.response.status_code}: {e.response.text[:200]}")

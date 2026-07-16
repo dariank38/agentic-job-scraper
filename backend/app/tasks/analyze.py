@@ -14,8 +14,8 @@ from app.models import (AnalysisRun, Channel, Developer, Job, Message,
 from app.tasks.helpers import (_extract_title, _first_contact,
                                _infer_contact_type, _normalize_category,
                                _normalize_priority, _normalize_salary_level,
-                               _resolve_contact, _resolve_contacts, _to_bool,
-                               _to_str)
+                               _resolve_contact, _resolve_contacts,
+                               _sanitize_company_link, _to_bool, _to_str)
 from app.tasks.operations import (broadcast_progress, broadcast_stats_update,
                                   create_operation, update_operation)
 from app.tasks.stop_events import (cleanup_stop_event,
@@ -193,7 +193,7 @@ async def analyze_messages(
                 )
 
                 if title and company:
-                    company_link = _to_str(job_data.get("company_link"))
+                    company_link = _sanitize_company_link(job_data.get("company_link"))
                     if company_link:
                         existing_job_result = await db.execute(select(Job).filter(Job.company_link == company_link))
                     else:
@@ -213,7 +213,7 @@ async def analyze_messages(
                         source_type="telegram",
                         title=title,
                         company=company,
-                        company_link=_to_str(job_data.get("company_link")),
+                        company_link=_sanitize_company_link(job_data.get("company_link")),
                         location=location,
                         is_remote=is_remote,
                         role_type=role_str,
@@ -627,7 +627,7 @@ async def analyze_website_posts(
                             company=job.company or "Unknown",
                             location=job.location,
                             is_remote=job.is_remote,
-                            company_link=job.url,
+                            company_link=_sanitize_company_link(job.url),
                             salary=_to_str(job.salary),
                             salary_level=_normalize_salary_level(None),
                             category=job_category,

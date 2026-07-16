@@ -74,6 +74,21 @@ def _to_bool(value) -> Optional[bool]:
     return bool(value)
 
 
+_VALID_URL_RE = re.compile(r'''^https?://[^\s<>"'{}|\\^`[\]]+\.[a-z]{2,}''', re.IGNORECASE)
+
+
+def _sanitize_company_link(value) -> Optional[str]:
+    """Return a clean URL string if *value* looks like a real HTTP(S) URL, else None."""
+    s = _to_str(value)
+    if not s:
+        return None
+    s = s.strip()
+    if not _VALID_URL_RE.match(s):
+        logger.debug("[company_link] rejected %r — not a valid URL", s)
+        return None
+    return s
+
+
 def _resolve_contact(contacts, message) -> tuple[Optional[str], Optional[str]]:
     contact = _first_contact(contacts)
     contact_type = _first_contact_type(contacts)

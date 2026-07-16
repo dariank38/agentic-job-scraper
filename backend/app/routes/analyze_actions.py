@@ -22,7 +22,8 @@ from app.tasks import (_analyze_single, _to_bool, _to_str,
 from app.tasks.analyze import _analyzing_channels
 from app.tasks.helpers import (_extract_title, _normalize_category,
                                _normalize_priority, _normalize_salary_level,
-                               _resolve_contacts, _to_bool, _to_str)
+                               _resolve_contacts, _sanitize_company_link,
+                               _to_bool, _to_str)
 
 logger = logging.getLogger(__name__)
 
@@ -385,7 +386,7 @@ def register_analyze_action_routes(app):
                     source_type=message.source_type,
                     title=title,
                     company=company,
-                    company_link=job_data.get("company_link"),
+                    company_link=_sanitize_company_link(job_data.get("company_link")),
                     location=location,
                     is_remote=is_remote,
                     role_type=job_data.get("role_type"),
